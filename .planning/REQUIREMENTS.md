@@ -18,7 +18,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **GH-01**: Developer can authenticate RunnerKit for a GitHub repository with the minimum permissions needed for self-hosted runner management.
 - [x] **GH-02**: Developer can register a repository-scoped GitHub Actions self-hosted runner without manually copying GitHub setup commands.
-- [ ] **GH-03**: Developer can deregister a GitHub Actions runner when removing or recreating a RunnerKit-managed runner.
+- [x] **GH-03**: Developer can deregister a GitHub Actions runner when removing or recreating a RunnerKit-managed runner.
 - [x] **GH-04**: Developer can use predictable RunnerKit labels to target the registered runner from GitHub Actions workflows.
 - [x] **GH-05**: Developer can view copy-paste `runs-on` guidance for the registered runner labels without RunnerKit editing workflow files.
 
@@ -42,7 +42,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **REL-01**: Developer can run `runnerkit status` to see GitHub runner status, local service status, labels, and machine reachability for managed runners.
 - [x] **REL-02**: Developer can run `runnerkit logs` to inspect relevant runner, service, bootstrap, or remote-install logs without manual SSH spelunking.
 - [x] **REL-03**: Developer can run `runnerkit doctor` to diagnose common setup and runner failures with actionable remediation guidance.
-- [ ] **REL-04**: Developer can restart or recover a stopped/offline RunnerKit-managed persistent runner using documented or guided CLI steps.
+- [x] **REL-04**: Developer can restart or recover a stopped/offline RunnerKit-managed persistent runner using documented or guided CLI steps.
 - [ ] **REL-05**: Developer can update the runner binary/service or follow a documented upgrade path that prevents immediate runner rot.
 
 ### Cleanup and State
@@ -101,7 +101,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-04      | Phase 2 | Complete |
 | GH-01       | Phase 1 | Complete |
 | GH-02       | Phase 2 | Complete |
-| GH-03       | Phase 3 | Pending  |
+| GH-03       | Phase 3 | Complete |
 | GH-04       | Phase 2 | Complete |
 | GH-05       | Phase 2 | Complete |
 | MACH-01     | Phase 2 | Complete |
@@ -116,7 +116,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REL-01      | Phase 3 | Complete |
 | REL-02      | Phase 3 | Complete |
 | REL-03      | Phase 3 | Complete |
-| REL-04      | Phase 3 | Pending  |
+| REL-04      | Phase 3 | Complete |
 | REL-05      | Phase 6 | Pending  |
 | CLEAN-01    | Phase 4 | Pending  |
 | CLEAN-02    | Phase 3 | Pending  |
