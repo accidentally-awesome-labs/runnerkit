@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 2 complete; ready for Phase 3 planning
-last_updated: "2026-04-29T18:06:21.058Z"
-last_activity: 2026-04-29 - Phase 2 BYO persistent runner happy path completed and verified.
+status: in_progress
+stopped_at: Phase 3 context gathered
+last_updated: "2026-04-29T22:20:51Z"
+last_activity: 2026-04-29 - Phase 3 context gathered; ready for Phase 3 planning.
 progress:
   total_phases: 6
   completed_phases: 2
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 
 ## Current Position
 
-Phase: 02 of 2 (byo persistent runner happy path)
-Plan: 4 of 4
-Status: Milestone complete
-Last activity: 2026-04-29 - Phase 2 BYO persistent runner happy path completed and verified.
+Phase: 03 of 6 (operations, diagnostics, and BYO cleanup)
+Plan: Context gathered
+Status: Ready for planning
+Last activity: 2026-04-29 - Phase 3 context gathered; ready for Phase 3 planning.
 
 Milestone Progress: [███░░░░░░░] 33%
 
@@ -83,6 +83,8 @@ Recent decisions affecting current work:
 - Plan 02-02: Bootstrap uses pinned GitHub Actions runner 2.334.0 packages and installs the service as `runnerkit-runner`.
 - Plan 02-03: Runner registration is just-in-time after preflight and duplicate checks; state is saved only after GitHub reports the runner online with RunnerKit labels.
 - Plan 02-04: Persistent BYO is documented and warned as trusted-private-repository only; RunnerKit prints snippets and does not edit workflow YAML.
+- Phase 3 context: `runnerkit status` should default to the current repo, stay read-only, use fast health probes, show derived health plus source facts, include the saved `runs-on` snippet, flag label drift, and expose the same model in JSON.
+- Phase 3 context: BYO cleanup should use `runnerkit down`; interactive cleanup asks artifact-by-artifact, while `down --yes` applies a safe default plan limited to RunnerKit-managed runner-specific artifacts.
 
 ### Pending Todos
 
@@ -101,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Phase 2 complete; ready for Phase 3 planning
+Stopped at: Phase 3 context gathered
 Resume file: .planning/phases/03-operations-diagnostics-and-byo-cleanup/03-CONTEXT.md
