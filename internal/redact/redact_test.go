@@ -1,0 +1,71 @@
+package redact
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestStringRedactsRegisteredValuesAndKnownPatterns(t *testing.T) {
+	r := New()
+	r.Register(GitHubToken, "registered-gh-token")
+	r.Register(RunnerRegistrationToken, "registered-registration-token")
+	r.Register(RunnerRemovalToken, "registered-remove-token")
+	r.Register(ProviderCredential, "registered-provider-secret")
+	r.Register(MachineRef, "machine-123.internal")
+
+	input := strings.Join([]string{
+		"registered registered-gh-token",
+		"classic ghp_example token",
+		"fine grained github_pat_example token",
+		"runner registration-token-secret value",
+		"runner remove-token-secret value",
+		"-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END OPENSSH PRIVATE KEY-----",
+		"HCLOUD_TOKEN=provider-secret",
+		"registered-provider-secret",
+		"machine-123.internal",
+	}, "\n")
+
+	got := r.String(input)
+	for _, raw := range []string{
+		"registered-gh-token",
+		"ghp_example",
+		"github_pat_example",
+		"registration-token-secret",
+		"remove-token-secret",
+		"-----BEGIN OPENSSH PRIVATE KEY-----",
+		"provider-secret",
+		"registered-provider-secret",
+		"machine-123.internal",
+	} {
+		if strings.Contains(got, raw) {
+			t.Fatalf("redacted output still contains %q: %s", raw, got)
+		}
+	}
+	for _, replacement := range []string{
+		"<redacted:github-token>",
+		"<redacted:runner-registration-token>",
+		"<redacted:runner-removal-token>",
+		"<redacted:ssh-private-key>",
+		"<redacted:provider-credential>",
+		"<redacted:machine-ref>",
+	} {
+		if !strings.Contains(got, replacement) {
+			t.Fatalf("redacted output missing %q: %s", replacement, got)
+		}
+	}
+}
+
+func TestJSONBytesRedactsTokenLikeFields(t *testing.T) {
+	r := New()
+	input := []byte(`{"github_token":"plain-token","runner_registration_token":"reg-token","runner_removal_token":"remove-token","private_key":"-----BEGIN OPENSSH PRIVATE KEY-----secret","HCLOUD_TOKEN":"hcloud-secret","nested":{"url":"https://ghp_example@github.com/owner/repo"}}`)
+	got := r.JSONBytes(input)
+	if !json.Valid(got) {
+		t.Fatalf("redacted bytes are not json: %s", got)
+	}
+	for _, raw := range []string{"plain-token", "reg-token", "remove-token", "OPENSSH", "hcloud-secret", "ghp_example"} {
+		if strings.Contains(string(got), raw) {
+			t.Fatalf("redacted json still contains %q: %s", raw, got)
+		}
+	}
+}
