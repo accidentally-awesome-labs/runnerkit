@@ -12,13 +12,14 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 Phase: 1 of 6 (CLI, Auth, State, and Safety Foundation)
 Plan: 0 of 3 in current phase
 Status: Ready to plan
-Last activity: 2026-04-28 - Initial roadmap created and all v1 requirements mapped to phases.
+Last activity: 2026-04-29 - Phase 1 context gathered; ready to plan with captured CLI/auth/state decisions.
 
 Progress: ░░░░░░░░░░ 0%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: N/A
 - Total execution time: 0.0 hours
@@ -30,10 +31,11 @@ Progress: ░░░░░░░░░░ 0%
 | -     | -     | -     | -        |
 
 **Recent Trend:**
+
 - Last 5 plans: None yet
 - Trend: N/A
 
-*Updated after each plan completion*
+_Updated after each plan completion_
 
 ## Accumulated Context
 
@@ -46,6 +48,7 @@ Recent decisions affecting current work:
 - Initialization: Support both BYO machines and one recommended low-cost cloud provisioning path.
 - Initialization: Persistent runners are the default for trusted private repos; ephemeral mode is explicit for stronger isolation.
 - Roadmap: Build BYO persistent runner before cloud provisioning; harden diagnostics/cleanup before adding billable cloud resources.
+- Phase 1 context: Prefer richer CLI wizard/TUI setup, `gh` auth first with fine-grained token fallback, git remote repo detection with confirmation, fail-closed permission handling, and optional project config plus user-local state.
 
 ### Pending Todos
 
@@ -62,6 +65,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-28
-Stopped at: Roadmap initialized; ready to discuss or plan Phase 1.
-Resume file: None
+Last session: 2026-04-29
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-cli-auth-state-and-safety-foundation/01-CONTEXT.md
