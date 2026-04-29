@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/salar/runnerkit/internal/github"
+	"github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/ui"
 )
 
@@ -215,5 +220,104 @@ func TestUpPublicRepoOverrideJSONIncludesWarning(t *testing.T) {
 	warnings := payload["warnings"].([]any)
 	if len(warnings) == 0 || !strings.Contains(warnings[0].(string), "public_repo_risk") {
 		t.Fatalf("JSON warning missing public_repo_risk: %#v", payload)
+	}
+}
+
+type missingToolCommandRunner struct{}
+
+func (missingToolCommandRunner) LookPath(string) (string, error) { return "", errors.New("not found") }
+func (missingToolCommandRunner) Run(context.Context, string, ...string) (string, error) {
+	return "", errors.New("not found")
+}
+
+func TestDefaultGitHubServiceMissingCredentialsFailsClosed(t *testing.T) {
+	stateDir := t.TempDir()
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:       "test-version",
+		Out:           &out,
+		Err:           &errOut,
+		CommandRunner: missingToolCommandRunner{},
+		GitHubEnv:     map[string]string{},
+		StateBaseDir:  stateDir,
+	})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--dry-run", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected missing credentials to fail closed")
+	}
+	if got := ExitCode(err); got != ExitGitHubAuth {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitGitHubAuth)
+	}
+	if strings.TrimSpace(errOut.String()) != "" {
+		t.Fatalf("json mode wrote stderr: %q", errOut.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json error output: %v\n%s", err, out.String())
+	}
+	errorObject := payload["error"].(map[string]any)
+	if errorObject["code"] != "github_permission_denied" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+	remediation := errorObject["remediation"].([]any)[0].(string)
+	if !strings.Contains(remediation, "fine-grained token scoped only to owner/name") {
+		t.Fatalf("missing selected-repo remediation: %#v", payload)
+	}
+	if _, err := os.Stat(state.NewStore(stateDir).Path()); !os.IsNotExist(err) {
+		t.Fatalf("missing-auth default path wrote state or stat failed unexpectedly: %v", err)
+	}
+}
+
+func TestDefaultGitHubServiceUsesRealMetadataAndBlocksPublicRepo(t *testing.T) {
+	var sawRegistration, sawRepository bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer ghp_cli_fixturetoken12345" {
+			t.Fatalf("Authorization header = %q, want bearer CLI fixture token", got)
+		}
+		switch r.URL.Path {
+		case "/repos/owner/name/actions/runners/registration-token":
+			sawRegistration = true
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": "registration-token-cli-fixture-12345", "expires_at": "2026-04-29T03:00:00Z"})
+		case "/repos/owner/name":
+			sawRepository = true
+			_, _ = w.Write([]byte(`{"full_name":"owner/name","private":false,"fork":false,"owner":{"login":"owner"},"name":"name"}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:       "test-version",
+		Out:           &out,
+		Err:           &errOut,
+		CommandRunner: missingToolCommandRunner{},
+		// GitHubEnv: map[string]string{"RUNNERKIT_GITHUB_TOKEN":"ghp_cli_fixturetoken12345"}
+		GitHubEnv:        map[string]string{"RUNNERKIT_GITHUB_TOKEN": "ghp_cli_fixturetoken12345"},
+		GitHubBaseURL:    server.URL,
+		GitHubHTTPClient: server.Client(),
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--dry-run", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected public repo safety gate")
+	}
+	if got := ExitCode(err); got != ExitSafetyGate {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitSafetyGate)
+	}
+	if !strings.Contains(errOut.String(), "WARNING: Public repository risk") {
+		t.Fatalf("missing public repo warning in stderr: %q", errOut.String())
+	}
+	if !sawRegistration || !sawRepository {
+		t.Fatalf("expected registration and repository endpoints, registration=%t repository=%t", sawRegistration, sawRepository)
+	}
+	combinedOutput := out.String() + errOut.String()
+	for _, raw := range []string{"ghp_cli_fixturetoken12345", "registration-token-cli-fixture-12345"} {
+		if strings.Contains(combinedOutput, raw) {
+			t.Fatalf("output leaked raw token %q:\n%s", raw, combinedOutput)
+		}
 	}
 }
