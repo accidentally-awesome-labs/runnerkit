@@ -62,7 +62,7 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient})
 	}
 	if deps.RemoteExecutor == nil {
-		deps.RemoteExecutor = remote.UnavailableExecutor{}
+		deps.RemoteExecutor = remote.NewSystemExecutor()
 	}
 	if deps.PollInterval == 0 {
 		deps.PollInterval = defaultRunnerPollInterval
