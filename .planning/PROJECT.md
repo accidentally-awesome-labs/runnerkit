@@ -16,14 +16,12 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 
 - Phase 1 complete (2026-04-29): RunnerKit has a runnable Go/Cobra CLI foundation, guided `runnerkit up` scaffold, real GitHub auth/metadata/runner-permission checks in the production default path, versioned non-secret local state, stable labels/snippet guidance, and shared redaction.
 - Phase 2 complete (2026-04-29): RunnerKit has the BYO persistent runner happy path: SSH target intake, host-key trust, Linux/systemd preflight, non-root bootstrap scripts, repository runner registration, online verification, persistent state, RunnerKit label guidance, safety warnings, fake smoke coverage, and BYO quickstart docs.
+- Phase 3 complete (2026-04-29): RunnerKit has BYO operations hardening: read-only `status`, bounded redacted `logs`, read-only `doctor` findings, guided `recover`, safe `down` cleanup, stale GitHub deregistration, partial cleanup checkpoints, and updated troubleshooting/cleanup docs.
 
 ### Active
 
 - [ ] Developer can use a recommended cost-effective cloud provisioning path when they do not already have a machine.
 - [ ] Developer can choose, or be guided toward, ephemeral-per-job runners when stronger isolation is needed.
-- [ ] Developer can inspect runner status from the CLI and understand whether the runner is online and ready.
-- [ ] Developer can recover from common fragility points such as stopped services, offline runners, stale registrations, or failed installs.
-- [ ] Developer can cleanly remove runner infrastructure and GitHub runner registration when done.
 
 ### Out of Scope
 
@@ -35,7 +33,7 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 
 ## Current State
 
-Phase 2 is complete and verified. RunnerKit can run the BYO persistent happy path through fake adapters: resolve a repository, enforce trusted-private safety, collect an SSH target, verify host-key trust, run Linux/systemd preflight, render/apply a non-root bootstrap plan, request a just-in-time registration token, verify the GitHub runner online with RunnerKit labels, save secret-free BYO state, and print copy-paste `runs-on` guidance. Phase 3 should harden operations: status, logs, doctor diagnostics, recovery, and BYO cleanup when GitHub, SSH, systemd, or local state drift.
+Phase 3 is complete and verified. RunnerKit can run the BYO persistent happy path and now has operational hardening around it: `runnerkit status` reconciles local state, GitHub runner inventory, SSH, systemd, and labels; `runnerkit logs` and `runnerkit doctor` provide redacted diagnostics; `runnerkit recover` guides restart/reinstall/re-registration; and `runnerkit down` safely removes RunnerKit-managed BYO artifacts or deletes stale GitHub runner records while preserving partial cleanup state.
 
 ## Context
 
@@ -70,12 +68,13 @@ Important product shape decisions gathered during initialization:
 | Optimize for solo developers                                       | User selected solo developers as the first audience; this keeps v1 simple and cost-focused.                                                                                        | - Pending   |
 | Make the interface CLI-only                                        | User selected CLI-only for day-to-day use; avoids dashboard scope and supports fast setup.                                                                                         | - Pending   |
 | Register runners only, do not edit workflows                       | User wants the tool to register runners and labels; developers update workflow files themselves. Phase 2 completion output and docs print snippets without mutating workflow YAML. | Accepted    |
-| Support BYO machines and cloud provisioning                        | Phase 2 delivered the BYO Linux/systemd persistent path; cloud provisioning remains planned for Phase 4.                                                                           | In Progress |
+| Support BYO machines and cloud provisioning                        | Phases 2-3 delivered the BYO Linux/systemd persistent lifecycle through setup, operations, recovery, and cleanup; cloud provisioning remains planned for Phase 4.                  | In Progress |
 | Support both ephemeral and persistent runner models with a default | Phase 2 established persistent as the trusted-private default; explicit ephemeral mode remains planned for Phase 5.                                                                | In Progress |
 | Defer enterprise features                                          | User explicitly scoped out enterprise controls for v1.                                                                                                                             | - Pending   |
 | Use real GitHub service as production default                      | Phase 1 verification found fake-permitted auth/metadata unsafe; production now defaults to `gh.NewService` with `github.OSCommandRunner{}` while tests inject fakes explicitly.    | Accepted    |
 | Store explicit SSH host-key trust                                  | Phase 2 requires accepted fingerprints in state and fail-closed behavior on mismatch before remote mutation.                                                                       | Accepted    |
 | Install persistent BYO service as non-root                         | Phase 2 bootstrap uses the dedicated `runnerkit-runner` service user and never installs the service as root by default.                                                            | Accepted    |
+| Use `down` for BYO cleanup and reserve `destroy` for cloud         | Phase 3 established safe BYO cleanup through `runnerkit down`; future billable cloud resource removal should use a separate destroy flow.                                          | Accepted    |
 
 ## Evolution
 
@@ -98,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-_Last updated: 2026-04-29 after Phase 2 completion_
+_Last updated: 2026-04-29 after Phase 3 completion_

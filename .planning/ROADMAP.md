@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: CLI, Auth, State, and Safety Foundation** - Establish the installable CLI shell, guided setup skeleton, GitHub authentication, versioned state, and redaction rules. _(completed 2026-04-29)_
 - [x] **Phase 2: BYO Persistent Runner Happy Path** - Let a solo developer connect an existing Linux machine and register a repository-scoped persistent runner with labels and next-step guidance. _(completed 2026-04-29)_
-- [ ] **Phase 3: Operations, Diagnostics, and BYO Cleanup** - Make managed BYO runners observable, recoverable, and safely removable when GitHub, SSH, or local state is imperfect.
+- [x] **Phase 3: Operations, Diagnostics, and BYO Cleanup** - Make managed BYO runners observable, recoverable, and safely removable when GitHub, SSH, or local state is imperfect. _(completed 2026-04-29)_
 - [ ] **Phase 4: Recommended Cloud Path and Billable Cleanup** - Add one low-cost cloud provisioning path that reuses the BYO lifecycle and can be destroyed without surprise bills.
 - [ ] **Phase 5: Scoped Ephemeral Mode and Safety Profiles** - Add explicit ephemeral mode for stronger isolation and make mode tradeoffs understandable before selection.
 - [ ] **Phase 6: Release, Upgrade, Docs, and v1 Validation** - Package RunnerKit for real users, document operations, and validate the end-to-end v1 promise.
@@ -152,7 +152,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | ---------------------------------------------- | -------------- | ----------- | ---------- |
 | 1. CLI, Auth, State, and Safety Foundation     | 4/4            | Complete    | 2026-04-29 |
 | 2. BYO Persistent Runner Happy Path            | 4/4            | Complete    | 2026-04-29 |
-| 3. Operations, Diagnostics, and BYO Cleanup    | 0/4            | Not started | -          |
+| 3. Operations, Diagnostics, and BYO Cleanup    | 4/4            | Complete    | 2026-04-29 |
 | 4. Recommended Cloud Path and Billable Cleanup | 0/4            | Not started | -          |
 | 5. Scoped Ephemeral Mode and Safety Profiles   | 0/3            | Not started | -          |
 | 6. Release, Upgrade, Docs, and v1 Validation   | 0/4            | Not started | -          |
