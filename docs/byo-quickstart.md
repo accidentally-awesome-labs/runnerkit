@@ -84,3 +84,18 @@ Review logs before sharing; redaction is best-effort for workflow-produced secre
 - **sudo or systemd missing**: Use a systemd Linux host where your SSH user can run required sudo setup commands.
 - **Runner service is not active**: Run runnerkit status --repo owner/name, then runnerkit logs --repo owner/name --since 30m and runnerkit doctor --repo owner/name before restarting anything manually.
 - **GitHub runner stays offline**: Check outbound HTTPS to GitHub, the runner service logs, and the repository Actions runner settings.
+
+## Recovery
+
+Preview recovery before changing the host:
+
+```bash
+runnerkit recover --repo owner/name --dry-run
+runnerkit recover --repo owner/name --restart-service --yes
+runnerkit recover --repo owner/name --reinstall-service --yes
+runnerkit recover --repo owner/name --reregister --yes
+```
+
+Do not blindly rerun runnerkit up for recovery; start with status, logs, doctor, and recover --dry-run.
+
+RunnerKit fails closed on SSH host-key mismatch and will not recover until you verify the machine identity.

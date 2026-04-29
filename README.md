@@ -20,4 +20,6 @@ Start with read-only operations before manual SSH troubleshooting:
 runnerkit status --repo owner/name
 runnerkit logs --repo owner/name --lines 50
 runnerkit doctor --repo owner/name
+runnerkit recover --repo owner/name --dry-run
+runnerkit recover --repo owner/name --restart-service --yes
 ```
