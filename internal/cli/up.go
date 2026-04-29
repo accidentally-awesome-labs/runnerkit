@@ -29,6 +29,8 @@ func (defaultGitHubService) Repository(_ context.Context, repo gh.Repo) (gh.Repo
 	if repo.Host == "" {
 		repo.Host = "github.com"
 	}
+	// Default Phase 1 adapter is fake-permitted and deterministic for dry runs.
+	repo.Private = true
 	return repo, nil
 }
 
@@ -75,15 +77,55 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		}
 		return NewExitError(ExitGitHubAuth, err)
 	}
-	if _, err := deps.GitHub.Repository(ctx, resolution.Repo); err != nil {
+	repo, err := deps.GitHub.Repository(ctx, resolution.Repo)
+	if err != nil {
 		message := fmt.Sprintf("RunnerKit can't read repository metadata for %s.", resolution.Repo.FullName)
 		_ = renderer.Error("github_permission_denied", message, []string{"Verify GitHub credentials can read repository metadata for " + resolution.Repo.FullName + "."})
 		return NewExitError(ExitGitHubAuth, err)
 	}
-	if jsonOutput {
-		return renderer.JSON(upJSONPayload(resolution.Repo.FullName, status.Source, nil))
+	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
+	if err := enforceSafetyDecision(ctx, deps, renderer, repo, decision, opts, jsonOutput); err != nil {
+		return err
 	}
-	return renderUpHuman(renderer, opts, resolution.Repo, status.Source, nil)
+	if jsonOutput {
+		return renderer.JSON(upJSONPayload(repo.FullName, status.Source, decision.Warnings))
+	}
+	return renderUpHuman(renderer, opts, repo, status.Source, decision.Warnings)
+}
+
+func enforceSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, opts *upOptions, jsonOutput bool) error {
+	if decision.Allowed {
+		if decision.Code == gh.SafetyCodePublicRisk && opts.allowPublicRepoRisk && deps.TTY.StdinTTY && !opts.yes {
+			inputPrompter, ok := deps.Prompts.(interface {
+				Input(context.Context, ui.Prompt) (string, error)
+			})
+			if !ok {
+				message := "RunnerKit can't continue because public repository risk acknowledgement requires typed confirmation."
+				_ = renderer.Error("input_required", message, []string{"Type allow public repo risk for " + repo.FullName + " in an interactive terminal or pass --yes only after reviewing the risk."})
+				return NewExitError(ExitInputRequired, errors.New(message))
+			}
+			want := "allow public repo risk for " + repo.FullName
+			got, err := inputPrompter.Input(ctx, ui.Prompt{Message: want})
+			if err != nil {
+				return err
+			}
+			if got != want {
+				message := "Canceled; no changes made."
+				_ = renderer.Error("canceled", message, nil)
+				return NewExitError(ExitCanceled, errors.New(message))
+			}
+		}
+		return nil
+	}
+	if jsonOutput {
+		_ = renderer.Error(decision.Code, gh.PublicRepoRiskTitle, append(decision.Warnings, gh.PublicRepoRiskNextAction))
+	} else if decision.Code == gh.SafetyCodePublicRisk {
+		// WARNING: Public repository risk
+		_ = renderer.Warning(gh.PublicRepoRiskTitle, []string{gh.PublicRepoRiskBody}, gh.PublicRepoRiskNextAction)
+	} else {
+		_ = renderer.Warning("WARNING: Fork repository risk", decision.Warnings, "Use a trusted private repository before persistent setup.")
+	}
+	return NewExitError(ExitSafetyGate, errors.New(decision.Code))
 }
 
 func resolveUpRepo(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions) (gh.Resolution, error) {
