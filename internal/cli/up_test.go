@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/salar/runnerkit/internal/github"
+	"github.com/salar/runnerkit/internal/ui"
 )
 
 func TestUpDryRunDisplaysPhaseOneWizard(t *testing.T) {
@@ -50,5 +55,61 @@ func TestUpJSONDryRunContract(t *testing.T) {
 	}
 	if payload["runner_installed"] != false || payload["redactions_applied"] != true {
 		t.Fatalf("unexpected up payload: %#v", payload)
+	}
+}
+
+type fakeGitCommandRunner struct {
+	output string
+}
+
+func (f fakeGitCommandRunner) LookPath(name string) (string, error) { return name, nil }
+func (f fakeGitCommandRunner) Run(_ context.Context, _ string, _ ...string) (string, error) {
+	return f.output, nil
+}
+
+type denyingRepoPrompter struct{}
+
+func (denyingRepoPrompter) Confirm(context.Context, ui.Prompt) (bool, error) { return false, nil }
+func (denyingRepoPrompter) Select(context.Context, ui.Prompt, []ui.Option) (string, error) {
+	return "", nil
+}
+
+type recordingGitHubService struct {
+	authCalls int
+}
+
+func (s *recordingGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
+	return repo, nil
+}
+func (s *recordingGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
+	s.authCalls++
+	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
+}
+
+func TestUpConfirmsDetectedRepoBeforeAuth(t *testing.T) {
+	service := &recordingGitHubService{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:       "test-version",
+		Out:           &out,
+		Err:           &errOut,
+		TTY:           ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:       denyingRepoPrompter{},
+		CommandRunner: fakeGitCommandRunner{output: "git@github.com:owner/name.git\n"},
+		GitHub:        service,
+	})
+	cmd.SetArgs([]string{"up", "--dry-run", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected canceled repository confirmation")
+	}
+	if got := ExitCode(err); got != ExitCanceled {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitCanceled)
+	}
+	if service.authCalls != 0 {
+		t.Fatalf("auth called before repository confirmation: %d", service.authCalls)
+	}
+	if !strings.Contains(out.String()+errOut.String(), "Choose repository: owner/name") {
+		t.Fatalf("repository choice was not shown before confirmation; stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
