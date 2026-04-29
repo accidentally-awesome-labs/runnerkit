@@ -56,6 +56,23 @@ func RenderServiceScript(opts Options) string {
 		"sudo ./svc.sh status\n"
 }
 
+func RenderRemoveConfigScript(installPath string, serviceUser string) string {
+	serviceUser = defaultString(serviceUser, DefaultServiceUser)
+	return "set -euo pipefail\n" +
+		"cd " + installPath + "\n" +
+		"sudo -u " + serviceUser + " RUNNERKIT_REMOVAL_TOKEN=\"$RUNNERKIT_REMOVAL_TOKEN\" ./config.sh remove --token \"$RUNNERKIT_REMOVAL_TOKEN\"\n"
+}
+
+func RenderReconfigureScript(opts Options) string {
+	serviceUser := defaultString(opts.ServiceUser, DefaultServiceUser)
+	installPath := defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName))
+	workDir := defaultString(opts.WorkDir, filepath.Join("/var/lib/runnerkit/work", opts.RunnerName))
+	labels := strings.Join(opts.Labels, ",")
+	return "set -euo pipefail\n" +
+		"cd " + installPath + "\n" +
+		"sudo -u " + serviceUser + " RUNNERKIT_REGISTRATION_TOKEN=\"$RUNNERKIT_REGISTRATION_TOKEN\" ./config.sh --unattended --url " + opts.RepoURL + " --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name " + opts.RunnerName + " --labels " + labels + " --work " + workDir + " --replace\n"
+}
+
 func defaultString(value string, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback

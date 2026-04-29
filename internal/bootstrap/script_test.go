@@ -37,3 +37,24 @@ func TestRenderDependencyFixScript(t *testing.T) {
 		t.Fatalf("dependency fix script missing package manager paths:\n%s", script)
 	}
 }
+
+func TestRenderRecoveryScriptsUseEnvironmentTokens(t *testing.T) {
+	removalToken := strings.Join([]string{"removal", "token", "recover", "secret"}, "-")
+	registrationToken := strings.Join([]string{"registration", "token", "recover", "secret"}, "-")
+	opts := Options{RunnerName: "runnerkit-owner-repo-local", RepoURL: "https://github.com/owner/repo", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"}, InstallPath: "/opt/actions-runner/runnerkit-owner-repo-local", WorkDir: "/var/lib/runnerkit/work/runnerkit-owner-repo-local", ServiceUser: "runnerkit-runner"}
+	remove := RenderRemoveConfigScript(opts.InstallPath, opts.ServiceUser)
+	reconfigure := RenderReconfigureScript(opts)
+	for _, want := range []string{"RUNNERKIT_REMOVAL_TOKEN", "cd /opt/actions-runner/runnerkit-owner-repo-local", "./config.sh remove --token \"$RUNNERKIT_REMOVAL_TOKEN\""} {
+		if !strings.Contains(remove, want) {
+			t.Fatalf("remove script missing %q:\n%s", want, remove)
+		}
+	}
+	for _, want := range []string{"RUNNERKIT_REGISTRATION_TOKEN", "./config.sh --unattended --url https://github.com/owner/repo --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name runnerkit-owner-repo-local --labels self-hosted,runnerkit,runnerkit-owner-repo,linux,x64,persistent --work /var/lib/runnerkit/work/runnerkit-owner-repo-local --replace"} {
+		if !strings.Contains(reconfigure, want) {
+			t.Fatalf("reconfigure script missing %q:\n%s", want, reconfigure)
+		}
+	}
+	if strings.Contains(remove, removalToken) || strings.Contains(reconfigure, registrationToken) {
+		t.Fatalf("recovery scripts interpolated token values:\nremove=%s\nreconfigure=%s", remove, reconfigure)
+	}
+}
