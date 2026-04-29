@@ -13,17 +13,23 @@ func TestStringRedactsRegisteredValuesAndKnownPatterns(t *testing.T) {
 	r.Register(RunnerRemovalToken, "registered-remove-token")
 	r.Register(ProviderCredential, "registered-provider-secret")
 	r.Register(MachineRef, "machine-123.internal")
+	r.Register(MachineRef, "alice@example.com:22")
 
 	input := strings.Join([]string{
 		"registered registered-gh-token",
 		"classic ghp_example token",
 		"fine grained github_pat_example token",
 		"runner registration-token-secret value",
+		"runner registration-token-secret-logs value",
 		"runner remove-token-secret value",
+		"runner remove-token-secret-logs value",
+		"runner removal-token-secret-logs value",
 		"-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END OPENSSH PRIVATE KEY-----",
 		"HCLOUD_TOKEN=provider-secret",
+		"HCLOUD_TOKEN=supersecret",
 		"registered-provider-secret",
 		"machine-123.internal",
+		"alice@example.com:22",
 	}, "\n")
 
 	got := r.String(input)
@@ -32,11 +38,16 @@ func TestStringRedactsRegisteredValuesAndKnownPatterns(t *testing.T) {
 		"ghp_example",
 		"github_pat_example",
 		"registration-token-secret",
+		"registration-token-secret-logs",
 		"remove-token-secret",
+		"remove-token-secret-logs",
+		"removal-token-secret-logs",
 		"-----BEGIN OPENSSH PRIVATE KEY-----",
 		"provider-secret",
+		"HCLOUD_TOKEN=supersecret",
 		"registered-provider-secret",
 		"machine-123.internal",
+		"alice@example.com:22",
 	} {
 		if strings.Contains(got, raw) {
 			t.Fatalf("redacted output still contains %q: %s", raw, got)
