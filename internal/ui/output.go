@@ -175,6 +175,10 @@ func (r *Renderer) writeWrapped(w io.Writer, prefix string, text string) error {
 	if strings.TrimSpace(linePrefix) != "" {
 		linePrefix += " "
 	}
+	if strings.HasPrefix(text, "runs-on:") {
+		_, err := fmt.Fprintf(w, "%s%s\n", linePrefix, text)
+		return err
+	}
 	for i, line := range wrapText(text, width-len(linePrefix)) {
 		if i == 0 {
 			if _, err := fmt.Fprintf(w, "%s%s\n", linePrefix, line); err != nil {
@@ -195,8 +199,11 @@ func (r *Renderer) clean(text string) string {
 
 func (r *Renderer) wrapWidth() int {
 	width := r.caps.Width
-	if width <= 0 || width > 64 {
-		width = 64
+	if width <= 0 {
+		width = 80
+	}
+	if width > 100 {
+		width = 100
 	}
 	if width < 20 {
 		width = 20
