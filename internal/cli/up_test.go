@@ -155,3 +155,65 @@ func TestUpPermissionDeniedReturnsExitCodeThreeAndJSONError(t *testing.T) {
 		t.Fatalf("missing selected-repo remediation: %#v", payload)
 	}
 }
+
+type publicRepoGitHubService struct {
+	repo github.Repo
+}
+
+func (s publicRepoGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
+	if s.repo.FullName == "" {
+		return repo, nil
+	}
+	return s.repo, nil
+}
+func (s publicRepoGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
+	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
+}
+
+func TestUpPublicRepoWithoutOverrideReturnsExitCodeFour(t *testing.T) {
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version: "test-version",
+		Out:     &out,
+		Err:     &errOut,
+		GitHub: publicRepoGitHubService{repo: github.Repo{
+			Host: "github.com", Owner: "owner", Name: "name", FullName: "owner/name", Private: false,
+		}},
+	})
+	cmd.SetArgs([]string{"up", "--dry-run", "--repo", "owner/name", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected public repo safety gate")
+	}
+	if got := ExitCode(err); got != ExitSafetyGate {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitSafetyGate)
+	}
+	if !strings.Contains(errOut.String(), "WARNING: Public repository risk") {
+		t.Fatalf("missing public repo warning in human stderr: %q", errOut.String())
+	}
+}
+
+func TestUpPublicRepoOverrideJSONIncludesWarning(t *testing.T) {
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version: "test-version",
+		Out:     &out,
+		Err:     &errOut,
+		GitHub: publicRepoGitHubService{repo: github.Repo{
+			Host: "github.com", Owner: "owner", Name: "name", FullName: "owner/name", Private: false,
+		}},
+	})
+	cmd.SetArgs([]string{"--json", "up", "--dry-run", "--repo", "owner/name", "--yes", "--allow-public-repo-risk", "--no-color"})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("override should allow dry run: %v\nstderr=%s", err, errOut.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json output: %v\n%s", err, out.String())
+	}
+	warnings := payload["warnings"].([]any)
+	if len(warnings) == 0 || !strings.Contains(warnings[0].(string), "public_repo_risk") {
+		t.Fatalf("JSON warning missing public_repo_risk: %#v", payload)
+	}
+}

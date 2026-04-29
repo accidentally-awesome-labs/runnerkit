@@ -180,3 +180,37 @@ func TestRunnerTokenFixtureTextNeverAppearsInRenderedOutput(t *testing.T) {
 		t.Fatalf("fixture token appeared in rendered output: %s", out.String())
 	}
 }
+
+func TestEvaluateSafetyPrivateRepoOK(t *testing.T) {
+	decision := EvaluateSafety(Repo{FullName: "owner/name", Private: true}, SafetyOptions{})
+	if !decision.Allowed || decision.Code != "ok" {
+		t.Fatalf("private repo decision = %#v, want allowed ok", decision)
+	}
+}
+
+func TestEvaluateSafetyPublicRepoRequiresOverride(t *testing.T) {
+	decision := EvaluateSafety(Repo{FullName: "owner/name", Private: false}, SafetyOptions{})
+	if decision.Allowed || decision.Code != "public_repo_risk" || decision.RequiresOverride != "--allow-public-repo-risk" {
+		t.Fatalf("public repo decision = %#v, want blocked public_repo_risk", decision)
+	}
+	if len(decision.Warnings) == 0 || !strings.Contains(decision.Warnings[0], "WARNING: Public repository risk") {
+		t.Fatalf("public repo warning missing: %#v", decision.Warnings)
+	}
+}
+
+func TestEvaluateSafetyPublicRepoOverrideWarns(t *testing.T) {
+	decision := EvaluateSafety(Repo{FullName: "owner/name", Private: false}, SafetyOptions{AllowPublicRepoRisk: true})
+	if !decision.Allowed || decision.Code != "public_repo_risk" {
+		t.Fatalf("public override decision = %#v, want allowed warning", decision)
+	}
+	if len(decision.Warnings) == 0 || !strings.Contains(decision.Warnings[0], "public_repo_risk") {
+		t.Fatalf("public override warning missing code: %#v", decision.Warnings)
+	}
+}
+
+func TestEvaluateSafetyForkRisk(t *testing.T) {
+	decision := EvaluateSafety(Repo{FullName: "owner/name", Private: true, Fork: true}, SafetyOptions{})
+	if decision.Allowed || decision.Code != "fork_risk" {
+		t.Fatalf("fork repo decision = %#v, want blocked fork_risk", decision)
+	}
+}
