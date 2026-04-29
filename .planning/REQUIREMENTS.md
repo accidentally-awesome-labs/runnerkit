@@ -9,8 +9,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### CLI Onboarding
 
-- [ ] **CLI-01**: Developer can install and run a `runnerkit` CLI binary on their local machine.
-- [ ] **CLI-02**: Developer can start a guided setup flow that explains required choices and prerequisites before making changes.
+- [x] **CLI-01**: Developer can install and run a `runnerkit` CLI binary on their local machine.
+- [x] **CLI-02**: Developer can start a guided setup flow that explains required choices and prerequisites before making changes.
 - [ ] **CLI-03**: Developer can complete a happy-path setup in about 10 minutes for a supported repository and machine path.
 - [ ] **CLI-04**: Developer can see a clear completion summary that includes runner name, labels, machine target, and next workflow step.
 
@@ -52,7 +52,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **CLEAN-03**: Developer can remove BYO runner files/services from a machine without deleting unrelated user data.
 - [ ] **CLEAN-04**: Developer can destroy RunnerKit-created cloud resources and verify they are no longer billable.
 - [ ] **STATE-01**: RunnerKit persists versioned local state/config containing repo scope, runner name, labels, machine path, provider IDs, and cleanup metadata.
-- [ ] **STATE-02**: RunnerKit redacts secrets and sensitive tokens from local state, logs, diagnostics, and command output.
+- [x] **STATE-02**: RunnerKit redacts secrets and sensitive tokens from local state, logs, diagnostics, and command output.
 
 ### Documentation and Safety
 
@@ -95,8 +95,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase   | Status  |
 | ----------- | ------- | ------- |
-| CLI-01      | Phase 1 | Pending |
-| CLI-02      | Phase 1 | Pending |
+| CLI-01      | Phase 1 | Complete |
+| CLI-02      | Phase 1 | Complete |
 | CLI-03      | Phase 2 | Pending |
 | CLI-04      | Phase 2 | Pending |
 | GH-01       | Phase 1 | Pending |
@@ -123,7 +123,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLEAN-03    | Phase 3 | Pending |
 | CLEAN-04    | Phase 4 | Pending |
 | STATE-01    | Phase 1 | Pending |
-| STATE-02    | Phase 1 | Pending |
+| STATE-02    | Phase 1 | Complete |
 | DOC-01      | Phase 2 | Pending |
 | DOC-02      | Phase 4 | Pending |
 | DOC-03      | Phase 5 | Pending |
@@ -138,4 +138,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 ---
 
 _Requirements defined: 2026-04-28_
-_Last updated: 2026-04-28 after roadmap creation_
+_Last updated: 2026-04-29 after Plan 01-01 execution_

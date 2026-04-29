@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 
-- [ ] 01-01-PLAN.md — Go CLI skeleton, command routing, prompts, flags, output conventions, guided setup scaffold, and redaction minimum.
+- [x] 01-01-PLAN.md — Go CLI skeleton, command routing, prompts, flags, output conventions, guided setup scaffold, and redaction minimum.
 - [ ] 01-02-PLAN.md — GitHub repo resolution, least-privilege authentication, runner-token adapter, safety gate, and API test fixtures.
 - [ ] 01-03-PLAN.md — Versioned state/config schema, label conventions, fake adapters, and idempotent workflow primitives.
 
@@ -149,7 +149,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase                                          | Plans Complete | Status      | Completed |
 | ---------------------------------------------- | -------------- | ----------- | --------- |
-| 1. CLI, Auth, State, and Safety Foundation     | 0/3            | Not started | -         |
+| 1. CLI, Auth, State, and Safety Foundation     | 1/3            | In Progress | -         |
 | 2. BYO Persistent Runner Happy Path            | 0/4            | Not started | -         |
 | 3. Operations, Diagnostics, and BYO Cleanup    | 0/4            | Not started | -         |
 | 4. Recommended Cloud Path and Billable Cleanup | 0/4            | Not started | -         |
