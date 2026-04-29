@@ -68,9 +68,19 @@ A successful setup prints and records:
 
 ## Troubleshooting
 
+Start with RunnerKit's read-only operations commands before manual SSH troubleshooting.
+
+```bash
+runnerkit status --repo owner/name
+runnerkit logs --repo owner/name --since 30m --lines 200
+runnerkit doctor --repo owner/name
+```
+
+Review logs before sharing; redaction is best-effort for workflow-produced secrets.
+
 - **SSH connection fails**: Confirm `ssh user@host` works from the same machine and that the host/port are correct.
 - **Host key changed**: Stop and verify the machine identity. RunnerKit fails closed when the stored fingerprint differs from the observed fingerprint.
 - **Unsupported OS or architecture**: Use Linux `x64` or `arm64`; pass `--allow-unknown-linux` only when you understand the best-effort risk.
 - **sudo or systemd missing**: Use a systemd Linux host where your SSH user can run required sudo setup commands.
-- **Runner service is not active**: SSH to the host, enter the runner directory, and run `sudo ./svc.sh status`, then re-run `runnerkit up` after fixing the service.
+- **Runner service is not active**: Run runnerkit status --repo owner/name, then runnerkit logs --repo owner/name --since 30m and runnerkit doctor --repo owner/name before restarting anything manually.
 - **GitHub runner stays offline**: Check outbound HTTPS to GitHub, the runner service logs, and the repository Actions runner settings.

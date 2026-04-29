@@ -11,3 +11,13 @@ runnerkit up --repo owner/name --host user@host
 ```
 
 See [docs/byo-quickstart.md](docs/byo-quickstart.md) for prerequisites, safety notes, the workflow label snippet, and troubleshooting.
+
+## BYO operations
+
+Start with read-only operations before manual SSH troubleshooting:
+
+```bash
+runnerkit status --repo owner/name
+runnerkit logs --repo owner/name --lines 50
+runnerkit doctor --repo owner/name
+```
