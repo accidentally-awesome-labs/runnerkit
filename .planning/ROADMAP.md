@@ -81,7 +81,7 @@ Plans:
 - [x] 03-01: Multi-source status reconciliation across local state, GitHub runner inventory, SSH reachability, and systemd.
 - [x] 03-02: Remote/local log collection, diagnostic checks, redacted output, and actionable `doctor` findings.
 - [x] 03-03: Guided persistent-runner restart, re-registration, and recovery workflows for common offline/stopped-service failures.
-- [ ] 03-04: BYO cleanup flow, stale GitHub deregistration, partial-state checkpoints, and safe file/service removal.
+- [x] 03-04: BYO cleanup flow, stale GitHub deregistration, partial-state checkpoints, and safe file/service removal.
 
 ### Phase 4: Recommended Cloud Path and Billable Cleanup
 
