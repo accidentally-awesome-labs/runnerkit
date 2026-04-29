@@ -13,7 +13,7 @@ import (
 func executeWithStateDir(t *testing.T, stateDir string, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir})
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: fakePermittedGitHubService{}})
 	cmd.SetArgs(args)
 	runErr := cmd.Execute()
 	return out.String(), errOut.String(), runErr

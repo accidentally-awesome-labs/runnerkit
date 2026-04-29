@@ -2,6 +2,7 @@ package cli
 
 import (
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -22,7 +23,11 @@ type Dependencies struct {
 	Clock         func() time.Time
 	CommandRunner gh.CommandRunner
 	GitHub        GitHubService
-	StateBaseDir  string
+	GitHubEnv     map[string]string
+	// GitHubBaseURL string is a test-only GitHub API base URL override.
+	GitHubBaseURL    string
+	GitHubHTTPClient *http.Client
+	StateBaseDir     string
 }
 
 func normalizeDependencies(deps Dependencies) Dependencies {
@@ -44,8 +49,11 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 	if deps.TTY.Width == 0 {
 		deps.TTY.Width = 80
 	}
+	if deps.CommandRunner == nil {
+		deps.CommandRunner = gh.OSCommandRunner{}
+	}
 	if deps.GitHub == nil {
-		deps.GitHub = defaultGitHubService{}
+		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient})
 	}
 	return deps
 }

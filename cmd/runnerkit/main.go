@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/salar/runnerkit/internal/cli"
+	"github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/ui"
 )
 
@@ -27,7 +28,8 @@ func main() {
 			Color:     true,
 			Width:     80,
 		},
-		Clock: time.Now,
+		Clock:         time.Now,
+		CommandRunner: github.OSCommandRunner{},
 	})
 	if err := cmd.Execute(); err != nil {
 		os.Exit(cli.ExitCode(err))

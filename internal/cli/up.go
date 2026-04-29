@@ -29,21 +29,6 @@ type GitHubService interface {
 	VerifyAuth(ctx context.Context, repo gh.Repo) (gh.PermissionStatus, error)
 }
 
-type defaultGitHubService struct{}
-
-func (defaultGitHubService) Repository(_ context.Context, repo gh.Repo) (gh.Repo, error) {
-	if repo.Host == "" {
-		repo.Host = "github.com"
-	}
-	// Default Phase 1 adapter is fake-permitted and deterministic for dry runs and state saves.
-	repo.Private = true
-	return repo, nil
-}
-
-func (defaultGitHubService) VerifyAuth(_ context.Context, _ gh.Repo) (gh.PermissionStatus, error) {
-	return gh.PermissionStatus{OK: true, Source: gh.AuthSource{Kind: "gh", Reference: "gh"}}, nil
-}
-
 func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
 	opts := &upOptions{}
 	cmd := &cobra.Command{Use: "up"}
