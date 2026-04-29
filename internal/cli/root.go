@@ -66,7 +66,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
 
 	root.AddCommand(newVersionCommand(deps, &jsonOutput, &noColor))
-	root.AddCommand(newUpPlaceholderCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newUpCommand(deps, &jsonOutput, &noColor))
 
 	return root
 }
@@ -100,18 +100,8 @@ func newRenderer(deps Dependencies, jsonOutput bool, noColor bool) *ui.Renderer 
 	if noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("CLICOLOR") == "0" || os.Getenv("TERM") == "dumb" {
 		caps.Color = false
 	}
-	if os.Getenv("TERM") == "dumb" {
+	if os.Getenv("TERM") == "dumb" || !caps.StdoutTTY {
 		caps.ASCII = true
 	}
 	return ui.NewRenderer(deps.Out, deps.Err, format, caps, redact.New())
-}
-
-func newUpPlaceholderCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
-	cmd := &cobra.Command{Use: "up"}
-	cmd.Short = "Prepare foundation"
-	cmd.RunE = func(_ *cobra.Command, _ []string) error {
-		renderer := newRenderer(deps, *jsonOutput, *noColor)
-		return renderer.Step(1, 1, "Welcome", ui.Bullet("Phase 1 does not install a runner yet."))
-	}
-	return cmd
 }
