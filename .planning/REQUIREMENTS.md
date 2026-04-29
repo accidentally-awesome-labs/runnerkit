@@ -93,49 +93,49 @@ Explicitly excluded. Documented to prevent scope creep.
 
 Which phases cover which requirements. Updated during roadmap creation.
 
-| Requirement | Phase | Status  |
-| ----------- | ----- | ------- |
-| CLI-01      | TBD   | Pending |
-| CLI-02      | TBD   | Pending |
-| CLI-03      | TBD   | Pending |
-| CLI-04      | TBD   | Pending |
-| GH-01       | TBD   | Pending |
-| GH-02       | TBD   | Pending |
-| GH-03       | TBD   | Pending |
-| GH-04       | TBD   | Pending |
-| GH-05       | TBD   | Pending |
-| MACH-01     | TBD   | Pending |
-| MACH-02     | TBD   | Pending |
-| MACH-03     | TBD   | Pending |
-| MACH-04     | TBD   | Pending |
-| MACH-05     | TBD   | Pending |
-| RUN-01      | TBD   | Pending |
-| RUN-02      | TBD   | Pending |
-| RUN-03      | TBD   | Pending |
-| RUN-04      | TBD   | Pending |
-| REL-01      | TBD   | Pending |
-| REL-02      | TBD   | Pending |
-| REL-03      | TBD   | Pending |
-| REL-04      | TBD   | Pending |
-| REL-05      | TBD   | Pending |
-| CLEAN-01    | TBD   | Pending |
-| CLEAN-02    | TBD   | Pending |
-| CLEAN-03    | TBD   | Pending |
-| CLEAN-04    | TBD   | Pending |
-| STATE-01    | TBD   | Pending |
-| STATE-02    | TBD   | Pending |
-| DOC-01      | TBD   | Pending |
-| DOC-02      | TBD   | Pending |
-| DOC-03      | TBD   | Pending |
-| DOC-04      | TBD   | Pending |
+| Requirement | Phase   | Status  |
+| ----------- | ------- | ------- |
+| CLI-01      | Phase 1 | Pending |
+| CLI-02      | Phase 1 | Pending |
+| CLI-03      | Phase 2 | Pending |
+| CLI-04      | Phase 2 | Pending |
+| GH-01       | Phase 1 | Pending |
+| GH-02       | Phase 2 | Pending |
+| GH-03       | Phase 3 | Pending |
+| GH-04       | Phase 2 | Pending |
+| GH-05       | Phase 2 | Pending |
+| MACH-01     | Phase 2 | Pending |
+| MACH-02     | Phase 2 | Pending |
+| MACH-03     | Phase 4 | Pending |
+| MACH-04     | Phase 4 | Pending |
+| MACH-05     | Phase 4 | Pending |
+| RUN-01      | Phase 2 | Pending |
+| RUN-02      | Phase 5 | Pending |
+| RUN-03      | Phase 2 | Pending |
+| RUN-04      | Phase 5 | Pending |
+| REL-01      | Phase 3 | Pending |
+| REL-02      | Phase 3 | Pending |
+| REL-03      | Phase 3 | Pending |
+| REL-04      | Phase 3 | Pending |
+| REL-05      | Phase 6 | Pending |
+| CLEAN-01    | Phase 4 | Pending |
+| CLEAN-02    | Phase 3 | Pending |
+| CLEAN-03    | Phase 3 | Pending |
+| CLEAN-04    | Phase 4 | Pending |
+| STATE-01    | Phase 1 | Pending |
+| STATE-02    | Phase 1 | Pending |
+| DOC-01      | Phase 2 | Pending |
+| DOC-02      | Phase 4 | Pending |
+| DOC-03      | Phase 5 | Pending |
+| DOC-04      | Phase 6 | Pending |
 
 **Coverage:**
 
 - v1 requirements: 33 total
-- Mapped to phases: 0
-- Unmapped: 33 ⚠️
+- Mapped to phases: 33
+- Unmapped: 0 ✓
 
 ---
 
 _Requirements defined: 2026-04-28_
-_Last updated: 2026-04-28 after initial definition_
+_Last updated: 2026-04-28 after roadmap creation_
