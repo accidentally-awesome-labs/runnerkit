@@ -99,3 +99,20 @@ runnerkit recover --repo owner/name --reregister --yes
 Do not blindly rerun runnerkit up for recovery; start with status, logs, doctor, and recover --dry-run.
 
 RunnerKit fails closed on SSH host-key mismatch and will not recover until you verify the machine identity.
+
+## Cleanup
+
+```bash
+runnerkit down --repo owner/name --dry-run
+runnerkit down --repo owner/name
+runnerkit down --repo owner/name --yes
+runnerkit down --repo owner/name --github-runner-id 123 --yes
+```
+
+RunnerKit down removes only RunnerKit-managed runner-specific BYO artifacts recorded in state.
+
+RunnerKit down does not delete the BYO machine, shared users, shared /var/lib/runnerkit parents, or unrelated user data.
+
+Use destroy only for future cloud resources; BYO cleanup uses down.
+
+If SSH is unreachable, RunnerKit can delete the stale GitHub runner and keep local state with remote_cleanup_pending so you know what may remain on the host.

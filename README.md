@@ -22,4 +22,6 @@ runnerkit logs --repo owner/name --lines 50
 runnerkit doctor --repo owner/name
 runnerkit recover --repo owner/name --dry-run
 runnerkit recover --repo owner/name --restart-service --yes
+runnerkit down --repo owner/name --dry-run
+runnerkit down --repo owner/name --yes
 ```

@@ -36,6 +36,13 @@ func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
 		"runnerkit recover --repo owner/name --reregister --yes",
 		"Do not blindly rerun runnerkit up for recovery; start with status, logs, doctor, and recover --dry-run.",
 		"RunnerKit fails closed on SSH host-key mismatch and will not recover until you verify the machine identity.",
+		"runnerkit down --repo owner/name --dry-run",
+		"runnerkit down --repo owner/name --yes",
+		"runnerkit down --repo owner/name --github-runner-id 123 --yes",
+		"RunnerKit down removes only RunnerKit-managed runner-specific BYO artifacts recorded in state.",
+		"RunnerKit down does not delete the BYO machine, shared users, shared /var/lib/runnerkit parents, or unrelated user data.",
+		"Use destroy only for future cloud resources; BYO cleanup uses down.",
+		"remote_cleanup_pending",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("docs missing %q", want)
@@ -49,5 +56,9 @@ func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
 	allowedWarning := "Do not blindly rerun runnerkit up for recovery"
 	if strings.Contains(combined, badRecoveryCopy) && !strings.Contains(combined, allowedWarning) {
 		t.Fatal("docs must only mention rerunning up for recovery as a warning")
+	}
+	forbiddenDestroy := "runnerkit" + " destroy" + " --repo owner/name"
+	if strings.Contains(combined, forbiddenDestroy) {
+		t.Fatal("docs must not use destroy for BYO cleanup")
 	}
 }
