@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 Phase: 1 of 6 (CLI, Auth, State, and Safety Foundation)
 Plan: 0 of 3 in current phase
 Status: Ready to plan
-Last activity: 2026-04-29 - Phase 1 context gathered; ready to plan with captured CLI/auth/state decisions.
+Last activity: 2026-04-29 - Phase 1 UI-SPEC approved; ready to plan with terminal UX contract plus captured CLI/auth/state decisions.
 
 Progress: ░░░░░░░░░░ 0%
 
@@ -66,5 +66,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-cli-auth-state-and-safety-foundation/01-CONTEXT.md
+Stopped at: Phase 1 UI-SPEC approved
+Resume file: .planning/phases/01-cli-auth-state-and-safety-foundation/01-UI-SPEC.md
