@@ -110,6 +110,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newVersionCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newStatusCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newLogsCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newStateCommand(deps, &jsonOutput, &noColor))
 
 	return root
