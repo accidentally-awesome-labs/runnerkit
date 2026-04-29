@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-04-29T02:36:17.968Z"
-last_activity: "2026-04-29 - Completed 01-03: versioned state/config, labels, workflow primitives, and state save/show."
+status: blocked
+stopped_at: Phase 01 verification gaps found
+last_updated: "2026-04-29T02:44:26.204Z"
+last_activity: 2026-04-29 - Phase 01 verification found GitHub auth/safety wiring gaps; gap closure required.
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 3
   completed_plans: 3
   percent: 100
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 01 of 1 (cli auth state and safety foundation)
 Plan: 3 of 3
-Status: Phase complete - ready for verification
-Last activity: 2026-04-29 - Completed 01-03: versioned state/config, labels, workflow primitives, and state save/show.
+Status: Verification gaps found - gap closure required
+Last activity: 2026-04-29 - Phase 01 verification found GitHub auth/safety wiring gaps; gap closure required.
 
 Progress: [██████████] 100%
 
@@ -42,14 +42,14 @@ Progress: [██████████] 100%
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-| ----- | ----- | ----- | -------- |
+| Phase | Plans | Total  | Avg/Plan |
+| ----- | ----- | ------ | -------- |
 | 01    | 3/3   | 26 min | 9 min    |
 
 **Recent Trend:**
 
 - Last 5 plans: 01-01 (13 min), 01-02 (5 min), 01-03 (8 min)
-- Trend: Phase 1 completed with fast state/CLI integration after foundation adapters
+- Trend: Phase 1 plans completed, but verification found GitHub auth/safety wiring gaps before phase completion
 
 _Updated after each plan completion_
 
@@ -84,6 +84,7 @@ None yet.
 
 [Issues that affect future work]
 
+- Phase 1 verification gap: production `runnerkit up` still uses fake-permitted GitHub auth/metadata; wire the default CLI path to real `gh`/token discovery, repository metadata, and runner-token permission checks before marking Phase 1 complete.
 - Plan 01-02 validation note: automated fixtures cover GitHub success/denial/redaction paths; a controlled live GitHub permission smoke remains recommended before public release.
 - Phase 4: Default cloud provider should be validated for cost, availability, quota friction, and SSH readiness before locking the user-facing recommendation.
 - Plan 01-01 validation note: `go run` wraps non-zero binary exits as process exit 1 while printing `exit status 6`; the direct built binary exits 6 for input-required paths.
@@ -91,5 +92,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Completed 01-03-PLAN.md
-Resume file: None
+Stopped at: Phase 01 verification gaps found
+Resume file: .planning/phases/01-cli-auth-state-and-safety-foundation/01-VERIFICATION.md

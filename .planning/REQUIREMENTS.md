@@ -16,7 +16,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### GitHub Integration
 
-- [x] **GH-01**: Developer can authenticate RunnerKit for a GitHub repository with the minimum permissions needed for self-hosted runner management.
+- [ ] **GH-01**: Developer can authenticate RunnerKit for a GitHub repository with the minimum permissions needed for self-hosted runner management. _(verification gap: production CLI still uses fake-permitted GitHub auth/metadata)_
 - [ ] **GH-02**: Developer can register a repository-scoped GitHub Actions self-hosted runner without manually copying GitHub setup commands.
 - [ ] **GH-03**: Developer can deregister a GitHub Actions runner when removing or recreating a RunnerKit-managed runner.
 - [ ] **GH-04**: Developer can use predictable RunnerKit labels to target the registered runner from GitHub Actions workflows.
@@ -93,41 +93,41 @@ Explicitly excluded. Documented to prevent scope creep.
 
 Which phases cover which requirements. Updated during roadmap creation.
 
-| Requirement | Phase   | Status  |
-| ----------- | ------- | ------- |
+| Requirement | Phase   | Status   |
+| ----------- | ------- | -------- |
 | CLI-01      | Phase 1 | Complete |
 | CLI-02      | Phase 1 | Complete |
-| CLI-03      | Phase 2 | Pending |
-| CLI-04      | Phase 2 | Pending |
-| GH-01       | Phase 1 | Complete |
-| GH-02       | Phase 2 | Pending |
-| GH-03       | Phase 3 | Pending |
-| GH-04       | Phase 2 | Pending |
-| GH-05       | Phase 2 | Pending |
-| MACH-01     | Phase 2 | Pending |
-| MACH-02     | Phase 2 | Pending |
-| MACH-03     | Phase 4 | Pending |
-| MACH-04     | Phase 4 | Pending |
-| MACH-05     | Phase 4 | Pending |
-| RUN-01      | Phase 2 | Pending |
-| RUN-02      | Phase 5 | Pending |
-| RUN-03      | Phase 2 | Pending |
-| RUN-04      | Phase 5 | Pending |
-| REL-01      | Phase 3 | Pending |
-| REL-02      | Phase 3 | Pending |
-| REL-03      | Phase 3 | Pending |
-| REL-04      | Phase 3 | Pending |
-| REL-05      | Phase 6 | Pending |
-| CLEAN-01    | Phase 4 | Pending |
-| CLEAN-02    | Phase 3 | Pending |
-| CLEAN-03    | Phase 3 | Pending |
-| CLEAN-04    | Phase 4 | Pending |
+| CLI-03      | Phase 2 | Pending  |
+| CLI-04      | Phase 2 | Pending  |
+| GH-01       | Phase 1 | Gaps     |
+| GH-02       | Phase 2 | Pending  |
+| GH-03       | Phase 3 | Pending  |
+| GH-04       | Phase 2 | Pending  |
+| GH-05       | Phase 2 | Pending  |
+| MACH-01     | Phase 2 | Pending  |
+| MACH-02     | Phase 2 | Pending  |
+| MACH-03     | Phase 4 | Pending  |
+| MACH-04     | Phase 4 | Pending  |
+| MACH-05     | Phase 4 | Pending  |
+| RUN-01      | Phase 2 | Pending  |
+| RUN-02      | Phase 5 | Pending  |
+| RUN-03      | Phase 2 | Pending  |
+| RUN-04      | Phase 5 | Pending  |
+| REL-01      | Phase 3 | Pending  |
+| REL-02      | Phase 3 | Pending  |
+| REL-03      | Phase 3 | Pending  |
+| REL-04      | Phase 3 | Pending  |
+| REL-05      | Phase 6 | Pending  |
+| CLEAN-01    | Phase 4 | Pending  |
+| CLEAN-02    | Phase 3 | Pending  |
+| CLEAN-03    | Phase 3 | Pending  |
+| CLEAN-04    | Phase 4 | Pending  |
 | STATE-01    | Phase 1 | Complete |
 | STATE-02    | Phase 1 | Complete |
-| DOC-01      | Phase 2 | Pending |
-| DOC-02      | Phase 4 | Pending |
-| DOC-03      | Phase 5 | Pending |
-| DOC-04      | Phase 6 | Pending |
+| DOC-01      | Phase 2 | Pending  |
+| DOC-02      | Phase 4 | Pending  |
+| DOC-03      | Phase 5 | Pending  |
+| DOC-04      | Phase 6 | Pending  |
 
 **Coverage:**
 
@@ -138,4 +138,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 ---
 
 _Requirements defined: 2026-04-28_
-_Last updated: 2026-04-29 after Plan 01-03 execution_
+_Last updated: 2026-04-29 after Phase 1 verification gaps_
