@@ -39,7 +39,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Reliability and Operations
 
-- [ ] **REL-01**: Developer can run `runnerkit status` to see GitHub runner status, local service status, labels, and machine reachability for managed runners.
+- [x] **REL-01**: Developer can run `runnerkit status` to see GitHub runner status, local service status, labels, and machine reachability for managed runners.
 - [ ] **REL-02**: Developer can run `runnerkit logs` to inspect relevant runner, service, bootstrap, or remote-install logs without manual SSH spelunking.
 - [ ] **REL-03**: Developer can run `runnerkit doctor` to diagnose common setup and runner failures with actionable remediation guidance.
 - [ ] **REL-04**: Developer can restart or recover a stopped/offline RunnerKit-managed persistent runner using documented or guided CLI steps.
@@ -113,7 +113,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUN-02      | Phase 5 | Pending  |
 | RUN-03      | Phase 2 | Complete |
 | RUN-04      | Phase 5 | Pending  |
-| REL-01      | Phase 3 | Pending  |
+| REL-01      | Phase 3 | Complete |
 | REL-02      | Phase 3 | Pending  |
 | REL-03      | Phase 3 | Pending  |
 | REL-04      | Phase 3 | Pending  |
