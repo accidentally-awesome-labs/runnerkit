@@ -2,19 +2,38 @@ package testsupport
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	gh "github.com/salar/runnerkit/internal/github"
 )
 
 type GitHubService struct {
-	Repo             gh.Repo
-	Permission       gh.PermissionStatus
-	RepositoryErr    error
-	VerifyAuthErr    error
-	RepositoryCalls  int
-	VerifyAuthCalls  int
+	Repo       gh.Repo
+	Permission gh.PermissionStatus
+
+	RegistrationToken gh.RunnerToken
+	RemovalToken      gh.RunnerToken
+	Runners           []gh.Runner
+
+	RepositoryErr              error
+	VerifyAuthErr              error
+	CreateRegistrationTokenErr error
+	CreateRemovalTokenErr      error
+	ListRunnersErr             error
+	DeleteRunnerErr            error
+
+	RepositoryCalls              int
+	VerifyAuthCalls              int
+	CreateRegistrationTokenCalls int
+	CreateRemovalTokenCalls      int
+	ListRunnersCalls             int
+	DeleteRunnerCalls            int
+
+	DeletedRunnerIDs []int64
 	LastRepositoryIn gh.Repo
 	LastAuthIn       gh.Repo
+	LastDeleteRepo   gh.Repo
 }
 
 func (s *GitHubService) Repository(_ context.Context, repo gh.Repo) (gh.Repo, error) {
@@ -25,6 +44,9 @@ func (s *GitHubService) Repository(_ context.Context, repo gh.Repo) (gh.Repo, er
 	}
 	if s.Repo.FullName != "" {
 		return s.Repo, nil
+	}
+	if repo.Host == "" {
+		repo.Host = "github.com"
 	}
 	return repo, nil
 }
@@ -42,4 +64,46 @@ func (s *GitHubService) VerifyAuth(_ context.Context, repo gh.Repo) (gh.Permissi
 		s.Permission.OK = true
 	}
 	return s.Permission, nil
+}
+
+func (s *GitHubService) CreateRegistrationToken(_ context.Context, _ gh.Repo) (gh.RunnerToken, error) {
+	s.CreateRegistrationTokenCalls++
+	if s.CreateRegistrationTokenErr != nil {
+		return gh.RunnerToken{}, s.CreateRegistrationTokenErr
+	}
+	if s.RegistrationToken.Token != "" {
+		return s.RegistrationToken, nil
+	}
+	return gh.RunnerToken{Token: strings.Join([]string{"registration", "token", "testsupport"}, "-"), ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+func (s *GitHubService) CreateRemovalToken(_ context.Context, _ gh.Repo) (gh.RunnerToken, error) {
+	s.CreateRemovalTokenCalls++
+	if s.CreateRemovalTokenErr != nil {
+		return gh.RunnerToken{}, s.CreateRemovalTokenErr
+	}
+	if s.RemovalToken.Token != "" {
+		return s.RemovalToken, nil
+	}
+	return gh.RunnerToken{Token: strings.Join([]string{"removal", "token", "testsupport"}, "-"), ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+func (s *GitHubService) ListRunners(_ context.Context, _ gh.Repo) ([]gh.Runner, error) {
+	s.ListRunnersCalls++
+	if s.ListRunnersErr != nil {
+		return nil, s.ListRunnersErr
+	}
+	out := make([]gh.Runner, len(s.Runners))
+	copy(out, s.Runners)
+	return out, nil
+}
+
+func (s *GitHubService) DeleteRunner(_ context.Context, repo gh.Repo, runnerID int64) error {
+	s.DeleteRunnerCalls++
+	s.LastDeleteRepo = repo
+	s.DeletedRunnerIDs = append(s.DeletedRunnerIDs, runnerID)
+	if s.DeleteRunnerErr != nil {
+		return s.DeleteRunnerErr
+	}
+	return nil
 }

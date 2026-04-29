@@ -97,6 +97,35 @@ func (s Store) SaveRepository(repo RepositoryState, replace bool) error {
 	return s.Save(state)
 }
 
+func (s Store) ListRepositories() ([]RepositoryState, error) {
+	state, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+	return state.ListRepositories(), nil
+}
+
+func (s Store) UpdateRepository(repo RepositoryState) error {
+	state, err := s.Load()
+	if err != nil {
+		return err
+	}
+	state.UpdateRepository(repo)
+	return s.Save(state)
+}
+
+func (s Store) RemoveRepository(fullName string) (bool, error) {
+	state, err := s.Load()
+	if err != nil {
+		return false, err
+	}
+	removed := state.RemoveRepository(fullName)
+	if !removed {
+		return false, nil
+	}
+	return true, s.Save(state)
+}
+
 func (s Store) GetRepository(fullName string) (RepositoryState, bool, error) {
 	state, err := s.Load()
 	if err != nil {

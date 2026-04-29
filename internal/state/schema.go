@@ -18,18 +18,19 @@ type State struct {
 }
 
 type RepositoryState struct {
-	Repo                   gh.Repo         `json:"repo"`
-	Auth                   AuthReference   `json:"auth"`
-	Runner                 RunnerIdentity  `json:"runner"`
-	Machine                MachineRef      `json:"machine"`
-	Provider               ProviderRef     `json:"provider"`
-	Cleanup                CleanupMetadata `json:"cleanup"`
-	Safety                 SafetyMetadata  `json:"safety"`
-	RunnerKitVersion       string          `json:"runnerkit_version"`
-	RunnerTemplateVersion  string          `json:"runner_template_version,omitempty"`
-	ServiceTemplateVersion string          `json:"service_template_version,omitempty"`
-	CreatedAt              time.Time       `json:"created_at"`
-	UpdatedAt              time.Time       `json:"updated_at"`
+	Repo                   gh.Repo               `json:"repo"`
+	Auth                   AuthReference         `json:"auth"`
+	Runner                 RunnerIdentity        `json:"runner"`
+	Machine                MachineRef            `json:"machine"`
+	Provider               ProviderRef           `json:"provider"`
+	Cleanup                CleanupMetadata       `json:"cleanup"`
+	Safety                 SafetyMetadata        `json:"safety"`
+	Operations             []OperationCheckpoint `json:"operations,omitempty"`
+	RunnerKitVersion       string                `json:"runnerkit_version"`
+	RunnerTemplateVersion  string                `json:"runner_template_version,omitempty"`
+	ServiceTemplateVersion string                `json:"service_template_version,omitempty"`
+	CreatedAt              time.Time             `json:"created_at"`
+	UpdatedAt              time.Time             `json:"updated_at"`
 }
 
 // AuthReference records where auth came from, never the credential value.
@@ -74,6 +75,14 @@ type CleanupMetadata struct {
 	Notes               []string `json:"notes,omitempty"`
 }
 
+type OperationCheckpoint struct {
+	Command   string    `json:"command"`
+	Artifact  string    `json:"artifact"`
+	Status    string    `json:"status"`
+	Message   string    `json:"message,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type SafetyMetadata struct {
 	Code             string     `json:"code"`
 	Allowed          bool       `json:"allowed"`
@@ -93,6 +102,37 @@ func (s State) FindRepository(fullName string) (RepositoryState, bool) {
 		}
 	}
 	return RepositoryState{}, false
+}
+
+func (s State) ListRepositories() []RepositoryState {
+	repos := make([]RepositoryState, len(s.Repositories))
+	copy(repos, s.Repositories)
+	return repos
+}
+
+func (s *State) UpdateRepository(repo RepositoryState) bool {
+	for i, existing := range s.Repositories {
+		if existing.Repo.FullName != repo.Repo.FullName {
+			continue
+		}
+		if repo.CreatedAt.IsZero() {
+			repo.CreatedAt = existing.CreatedAt
+		}
+		s.Repositories[i] = repo
+		return true
+	}
+	return false
+}
+
+func (s *State) RemoveRepository(fullName string) bool {
+	for i, repo := range s.Repositories {
+		if repo.Repo.FullName != fullName {
+			continue
+		}
+		s.Repositories = append(s.Repositories[:i], s.Repositories[i+1:]...)
+		return true
+	}
+	return false
 }
 
 func (s *State) UpsertRepository(repo RepositoryState, replace bool) error {

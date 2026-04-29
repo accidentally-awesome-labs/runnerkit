@@ -144,3 +144,47 @@ func TestProjectConfigPathUsesRunnerKitConfigYAML(t *testing.T) {
 		t.Fatalf("ProjectConfigPath() = %q, want .runnerkit/config.yaml", path)
 	}
 }
+
+func TestRepositoryStateListUpdateRemoveAndOperationCheckpointPersistence(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 4, 29, 4, 0, 0, 0, time.UTC)
+	repo := RepositoryState{
+		Repo:       gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
+		Auth:       AuthReference{Source: "gh", Reference: "gh"},
+		Runner:     RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted"}},
+		Machine:    MachineRef{Kind: "byo-ssh"},
+		Provider:   ProviderRef{Kind: "byo"},
+		Cleanup:    CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
+		Safety:     SafetyMetadata{Code: "ok", Allowed: true},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Operations: []OperationCheckpoint{{Command: "down", Artifact: "github_runner", Status: "pending", Message: "github_cleanup_pending", UpdatedAt: now}},
+	}
+	if err := store.Save(State{Repositories: []RepositoryState{repo}}); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	repos, err := store.ListRepositories()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("ListRepositories() = %d, %v", len(repos), err)
+	}
+	repo.Cleanup.Notes = []string{"remote_cleanup_pending"}
+	repo.UpdatedAt = now.Add(time.Minute)
+	if err := store.UpdateRepository(repo); err != nil {
+		t.Fatalf("UpdateRepository returned error: %v", err)
+	}
+	loaded, found, err := store.GetRepository("owner/repo")
+	if err != nil || !found {
+		t.Fatalf("GetRepository after update found=%v err=%v", found, err)
+	}
+	if len(loaded.Operations) != 1 || loaded.Operations[0].Message != "github_cleanup_pending" || loaded.Cleanup.Notes[0] != "remote_cleanup_pending" {
+		t.Fatalf("operation checkpoint or cleanup notes did not persist: %#v", loaded)
+	}
+	removed, err := store.RemoveRepository("owner/repo")
+	if err != nil || !removed {
+		t.Fatalf("RemoveRepository removed=%v err=%v", removed, err)
+	}
+	repos, err = store.ListRepositories()
+	if err != nil || len(repos) != 0 {
+		t.Fatalf("ListRepositories after remove = %d, %v", len(repos), err)
+	}
+}
