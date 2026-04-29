@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Phase 01 complete; ready to plan Phase 02
-last_updated: "2026-04-29T17:04:48.348Z"
-last_activity: 2026-04-29 - Phase 01 completed and verified with no remaining gaps.
+stopped_at: Phase 2 context gathered
+last_updated: "2026-04-29T17:19:02.924Z"
+last_activity: 2026-04-29 - Phase 2 context gathered for the BYO persistent runner happy path.
 progress:
   total_phases: 6
   completed_phases: 1
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 
 ## Current Position
 
-Phase: 01 of 1 (cli auth state and safety foundation)
-Plan: 4 of 4
-Status: Milestone complete
-Last activity: 2026-04-29 - Phase 01 completed and verified with no remaining gaps.
+Phase: 02 of 6 (BYO Persistent Runner Happy Path)
+Plan: Context gathered
+Status: Ready for planning
+Last activity: 2026-04-29 - Phase 2 context gathered for the BYO persistent runner happy path.
 
 Milestone Progress: [██░░░░░░░░] 17%
 
@@ -73,6 +73,11 @@ Recent decisions affecting current work:
 - Plan 01-03: Require typed `replace owner/repo` or `--yes --replace` before replacing existing repo state.
 - Plan 01-04: Production `runnerkit up` now defaults to `gh.NewService` plus `github.OSCommandRunner{}`; fake-permitted GitHub behavior is test-only.
 - Plan 01-04: The real GitHub service caches credentials in memory only and uses registration-token creation plus repository metadata for permission/safety checks.
+- Phase 2 context: Extend `runnerkit up` for BYO with wizard-first SSH detail collection and automation-friendly host flags.
+- Phase 2 context: Prompt with SSH host fingerprint, record accepted fingerprint in state, and fail closed on mismatch.
+- Phase 2 context: Support common systemd Linux best-effort; unknown or unverified distros warn, require explicit override, then try.
+- Phase 2 context: Run full preflight before remote mutation, show fix plans before applying changes, and report remote progress with redacted actionable failure copy.
+- Phase 2 context: Exact privilege flow is planner discretion, but the persistent runner service must not run as root by default.
 
 ### Pending Todos
 
@@ -92,5 +97,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Phase 01 complete; ready to plan Phase 02
-Resume file: .planning/ROADMAP.md
+Stopped at: Phase 2 context gathered
+Resume file: .planning/phases/02-byo-persistent-runner-happy-path/02-CONTEXT.md
