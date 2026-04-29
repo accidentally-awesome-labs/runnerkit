@@ -69,3 +69,18 @@ func TestJSONBytesRedactsTokenLikeFields(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONBytesKeepsSafeProviderStateFields(t *testing.T) {
+	r := New()
+	input := []byte(`{"provider":{"kind":"none","ids":{}},"cleanup":{"provider_resource_ids":[]},"provider_credential":"raw-secret"}`)
+	got := string(r.JSONBytes(input))
+	if !strings.Contains(got, `"provider":{"ids":{},"kind":"none"}`) {
+		t.Fatalf("safe provider state was redacted unexpectedly: %s", got)
+	}
+	if !strings.Contains(got, `"provider_resource_ids":[]`) {
+		t.Fatalf("safe provider resource IDs field was redacted unexpectedly: %s", got)
+	}
+	if strings.Contains(got, "raw-secret") || !strings.Contains(got, "<redacted:provider-credential>") {
+		t.Fatalf("provider credential was not redacted: %s", got)
+	}
+}

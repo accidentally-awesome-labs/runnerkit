@@ -139,7 +139,7 @@ func sensitiveKindForKey(key string) (Kind, bool) {
 	if strings.Contains(lower, "github") && strings.Contains(lower, "token") {
 		return GitHubToken, true
 	}
-	if strings.Contains(lower, "hcloud") || strings.Contains(lower, "provider") || strings.Contains(lower, "credential") || strings.Contains(lower, "secret") || strings.Contains(lower, "password") || strings.Contains(lower, "api_token") || strings.Contains(lower, "api_key") {
+	if strings.Contains(lower, "hcloud") || strings.Contains(lower, "provider_credential") || strings.Contains(lower, "credential") || strings.Contains(lower, "secret") || strings.Contains(lower, "password") || strings.Contains(lower, "api_token") || strings.Contains(lower, "api_key") {
 		return ProviderCredential, true
 	}
 	if lower == "token" || strings.HasSuffix(lower, "_token") {
