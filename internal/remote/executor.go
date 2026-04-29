@@ -11,6 +11,10 @@ type Executor interface {
 	Run(ctx context.Context, target Target, command Command) (Result, error)
 }
 
+type HostKeyProber interface {
+	ProbeHostKey(ctx context.Context, target Target) (HostKey, error)
+}
+
 type Command struct {
 	ID         string
 	Script     string

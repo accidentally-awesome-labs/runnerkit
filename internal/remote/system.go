@@ -49,6 +49,14 @@ func (SystemExecutor) Probe(ctx context.Context, target Target) (ProbeResult, er
 	return probe, nil
 }
 
+func (SystemExecutor) ProbeHostKey(ctx context.Context, target Target) (HostKey, error) {
+	hostKey := scanHostKey(ctx, target)
+	if NormalizeHostKey(hostKey).Fingerprint == "" {
+		return hostKey, fmt.Errorf("SSH host key fingerprint was not observed")
+	}
+	return hostKey, nil
+}
+
 func (SystemExecutor) Run(ctx context.Context, target Target, command Command) (Result, error) {
 	script := command.Script
 	if len(command.Env) > 0 {
