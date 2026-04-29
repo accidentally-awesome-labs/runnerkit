@@ -113,3 +113,45 @@ func TestUpConfirmsDetectedRepoBeforeAuth(t *testing.T) {
 		t.Fatalf("repository choice was not shown before confirmation; stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
+
+type permissionDeniedGitHubService struct{}
+
+func (permissionDeniedGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
+	return repo, nil
+}
+func (permissionDeniedGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
+	return github.PermissionStatus{
+		OK:          false,
+		Source:      github.AuthSource{Kind: "gh", Reference: "gh"},
+		Required:    []string{"Administration read/write", "Metadata read"},
+		Remediation: []string{github.FineGrainedTokenRemediation(repo)},
+	}, nil
+}
+
+func TestUpPermissionDeniedReturnsExitCodeThreeAndJSONError(t *testing.T) {
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: permissionDeniedGitHubService{}})
+	cmd.SetArgs([]string{"--json", "up", "--dry-run", "--repo", "owner/name", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected permission denial")
+	}
+	if got := ExitCode(err); got != ExitGitHubAuth {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitGitHubAuth)
+	}
+	if strings.TrimSpace(errOut.String()) != "" {
+		t.Fatalf("json mode wrote stderr: %q", errOut.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json output: %v\n%s", err, out.String())
+	}
+	errorObject := payload["error"].(map[string]any)
+	if errorObject["code"] != "github_permission_denied" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+	remediation := errorObject["remediation"].([]any)[0].(string)
+	if !strings.Contains(remediation, "fine-grained token scoped only to owner/name") {
+		t.Fatalf("missing selected-repo remediation: %#v", payload)
+	}
+}
