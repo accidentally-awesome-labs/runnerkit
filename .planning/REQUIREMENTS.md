@@ -51,7 +51,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **CLEAN-02**: Developer can deregister stale GitHub runner records even when local or remote machine state is partially missing.
 - [ ] **CLEAN-03**: Developer can remove BYO runner files/services from a machine without deleting unrelated user data.
 - [ ] **CLEAN-04**: Developer can destroy RunnerKit-created cloud resources and verify they are no longer billable.
-- [ ] **STATE-01**: RunnerKit persists versioned local state/config containing repo scope, runner name, labels, machine path, provider IDs, and cleanup metadata.
+- [x] **STATE-01**: RunnerKit persists versioned local state/config containing repo scope, runner name, labels, machine path, provider IDs, and cleanup metadata.
 - [x] **STATE-02**: RunnerKit redacts secrets and sensitive tokens from local state, logs, diagnostics, and command output.
 
 ### Documentation and Safety
@@ -122,7 +122,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLEAN-02    | Phase 3 | Pending |
 | CLEAN-03    | Phase 3 | Pending |
 | CLEAN-04    | Phase 4 | Pending |
-| STATE-01    | Phase 1 | Pending |
+| STATE-01    | Phase 1 | Complete |
 | STATE-02    | Phase 1 | Complete |
 | DOC-01      | Phase 2 | Pending |
 | DOC-02      | Phase 4 | Pending |
@@ -138,4 +138,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 ---
 
 _Requirements defined: 2026-04-28_
-_Last updated: 2026-04-29 after Plan 01-02 execution_
+_Last updated: 2026-04-29 after Plan 01-03 execution_
