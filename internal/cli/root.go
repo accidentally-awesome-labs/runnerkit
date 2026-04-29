@@ -1,11 +1,11 @@
 package cli
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
+	"os"
 	"time"
 
+	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -65,41 +65,53 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "write machine-readable JSON to stdout")
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
 
-	root.AddCommand(newVersionCommand(deps, &jsonOutput))
-	root.AddCommand(newUpPlaceholderCommand())
+	root.AddCommand(newVersionCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newUpPlaceholderCommand(deps, &jsonOutput, &noColor))
 
-	_ = noColor // wired for downstream renderer support.
 	return root
 }
 
-func newVersionCommand(deps Dependencies, jsonOutput *bool) *cobra.Command {
+func newVersionCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
 	cmd := &cobra.Command{Use: "version"}
 	cmd.Short = "Print version information"
 	cmd.RunE = func(_ *cobra.Command, _ []string) error {
+		renderer := newRenderer(deps, *jsonOutput, *noColor)
 		if *jsonOutput {
-			payload := map[string]any{
-				"ok":                 true,
-				"command":            "version",
-				"version":            deps.Version,
-				"redactions_applied": true,
-			}
-			enc := json.NewEncoder(deps.Out)
-			enc.SetEscapeHTML(false)
-			return enc.Encode(payload)
+			return renderer.JSON(map[string]any{
+				"ok":      true,
+				"command": "version",
+				"version": deps.Version,
+			})
 		}
-		_, err := fmt.Fprintf(deps.Out, "RunnerKit %s\n", deps.Version)
-		return err
+		return renderer.Step(1, 1, "Version", ui.Success("RunnerKit "+deps.Version))
 	}
 	return cmd
 }
 
-func newUpPlaceholderCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "up",
-		Short: "Prepare foundation",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Phase 1 does not install a runner yet.")
-			return err
-		},
+func newRenderer(deps Dependencies, jsonOutput bool, noColor bool) *ui.Renderer {
+	format := ui.FormatHuman
+	if jsonOutput {
+		format = ui.FormatJSON
 	}
+	caps := deps.TTY
+	if caps.Width == 0 {
+		caps.Width = 80
+	}
+	if noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("CLICOLOR") == "0" || os.Getenv("TERM") == "dumb" {
+		caps.Color = false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		caps.ASCII = true
+	}
+	return ui.NewRenderer(deps.Out, deps.Err, format, caps, redact.New())
+}
+
+func newUpPlaceholderCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
+	cmd := &cobra.Command{Use: "up"}
+	cmd.Short = "Prepare foundation"
+	cmd.RunE = func(_ *cobra.Command, _ []string) error {
+		renderer := newRenderer(deps, *jsonOutput, *noColor)
+		return renderer.Step(1, 1, "Welcome", ui.Bullet("Phase 1 does not install a runner yet."))
+	}
+	return cmd
 }
