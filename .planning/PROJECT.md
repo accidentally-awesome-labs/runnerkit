@@ -14,7 +14,7 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 
 ### Validated
 
-(None yet - ship to validate)
+- Phase 1 complete (2026-04-29): RunnerKit has a runnable Go/Cobra CLI foundation, guided `runnerkit up` scaffold, real GitHub auth/metadata/runner-permission checks in the production default path, versioned non-secret local state, stable labels/snippet guidance, and shared redaction.
 
 ### Active
 
@@ -35,6 +35,10 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 - A hosted dashboard as the primary interface - the chosen experience is CLI-only for v1.
 - Automatic editing of repository workflow files - v1 should register runners and expose labels, leaving workflow changes to the developer.
 - Broad cloud-provider coverage on day one - v1 should pick one headache-free, cost-effective default path and design for additional providers later.
+
+## Current State
+
+Phase 1 is complete and verified. The foundation can run locally, render deterministic human/JSON output, authenticate through `gh` or `RUNNERKIT_GITHUB_TOKEN`, check GitHub runner-management permission via registration-token creation, read repository metadata for public/fork safety, persist secret-free state, and display stable RunnerKit labels. Phase 2 should build the BYO persistent runner happy path on top of these adapters and state contracts.
 
 ## Context
 
@@ -63,15 +67,16 @@ Important product shape decisions gathered during initialization:
 
 ## Key Decisions
 
-| Decision                                                           | Rationale                                                                                            | Outcome   |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | --------- |
-| Start with GitHub Actions                                          | User selected GitHub Actions as the first platform; narrow support improves quality.                 | - Pending |
-| Optimize for solo developers                                       | User selected solo developers as the first audience; this keeps v1 simple and cost-focused.          | - Pending |
-| Make the interface CLI-only                                        | User selected CLI-only for day-to-day use; avoids dashboard scope and supports fast setup.           | - Pending |
-| Register runners only, do not edit workflows                       | User wants the tool to register runners and labels; developers update workflow files themselves.     | - Pending |
-| Support BYO machines and cloud provisioning                        | User wants both, but provider/default path should be chosen for seamlessness and cost-effectiveness. | - Pending |
-| Support both ephemeral and persistent runner models with a default | User wants flexibility while preserving an opinionated default.                                      | - Pending |
-| Defer enterprise features                                          | User explicitly scoped out enterprise controls for v1.                                               | - Pending |
+| Decision                                                           | Rationale                                                                                                                                                                       | Outcome   |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Start with GitHub Actions                                          | User selected GitHub Actions as the first platform; narrow support improves quality.                                                                                            | - Pending |
+| Optimize for solo developers                                       | User selected solo developers as the first audience; this keeps v1 simple and cost-focused.                                                                                     | - Pending |
+| Make the interface CLI-only                                        | User selected CLI-only for day-to-day use; avoids dashboard scope and supports fast setup.                                                                                      | - Pending |
+| Register runners only, do not edit workflows                       | User wants the tool to register runners and labels; developers update workflow files themselves.                                                                                | - Pending |
+| Support BYO machines and cloud provisioning                        | User wants both, but provider/default path should be chosen for seamlessness and cost-effectiveness.                                                                            | - Pending |
+| Support both ephemeral and persistent runner models with a default | User wants flexibility while preserving an opinionated default.                                                                                                                 | - Pending |
+| Defer enterprise features                                          | User explicitly scoped out enterprise controls for v1.                                                                                                                          | - Pending |
+| Use real GitHub service as production default                      | Phase 1 verification found fake-permitted auth/metadata unsafe; production now defaults to `gh.NewService` with `github.OSCommandRunner{}` while tests inject fakes explicitly. | Accepted  |
 
 ## Evolution
 
@@ -94,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-_Last updated: 2026-04-28 after initialization_
+_Last updated: 2026-04-29 after Phase 1 completion_

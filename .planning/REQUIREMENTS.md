@@ -16,7 +16,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### GitHub Integration
 
-- [ ] **GH-01**: Developer can authenticate RunnerKit for a GitHub repository with the minimum permissions needed for self-hosted runner management. _(verification gap: production CLI still uses fake-permitted GitHub auth/metadata)_
+- [x] **GH-01**: Developer can authenticate RunnerKit for a GitHub repository with the minimum permissions needed for self-hosted runner management.
 - [ ] **GH-02**: Developer can register a repository-scoped GitHub Actions self-hosted runner without manually copying GitHub setup commands.
 - [ ] **GH-03**: Developer can deregister a GitHub Actions runner when removing or recreating a RunnerKit-managed runner.
 - [ ] **GH-04**: Developer can use predictable RunnerKit labels to target the registered runner from GitHub Actions workflows.
@@ -99,7 +99,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-02      | Phase 1 | Complete |
 | CLI-03      | Phase 2 | Pending  |
 | CLI-04      | Phase 2 | Pending  |
-| GH-01       | Phase 1 | Gaps     |
+| GH-01       | Phase 1 | Complete |
 | GH-02       | Phase 2 | Pending  |
 | GH-03       | Phase 3 | Pending  |
 | GH-04       | Phase 2 | Pending  |
@@ -138,4 +138,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 ---
 
 _Requirements defined: 2026-04-28_
-_Last updated: 2026-04-29 after Phase 1 verification gaps_
+_Last updated: 2026-04-29 after Phase 1 completion_

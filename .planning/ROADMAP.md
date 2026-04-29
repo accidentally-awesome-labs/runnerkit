@@ -13,7 +13,7 @@ RunnerKit v1 builds from a safe CLI foundation into a usable self-hosted GitHub 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: CLI, Auth, State, and Safety Foundation** - Establish the installable CLI shell, guided setup skeleton, GitHub authentication, versioned state, and redaction rules. _(verification gaps found)_
+- [x] **Phase 1: CLI, Auth, State, and Safety Foundation** - Establish the installable CLI shell, guided setup skeleton, GitHub authentication, versioned state, and redaction rules. _(completed 2026-04-29)_
 - [ ] **Phase 2: BYO Persistent Runner Happy Path** - Let a solo developer connect an existing Linux machine and register a repository-scoped persistent runner with labels and next-step guidance.
 - [ ] **Phase 3: Operations, Diagnostics, and BYO Cleanup** - Make managed BYO runners observable, recoverable, and safely removable when GitHub, SSH, or local state is imperfect.
 - [ ] **Phase 4: Recommended Cloud Path and Billable Cleanup** - Add one low-cost cloud provisioning path that reuses the BYO lifecycle and can be destroyed without surprise bills.
@@ -33,13 +33,14 @@ Decimal phases appear between their surrounding integers in numeric order.
 2. Developer can authenticate RunnerKit for a target GitHub repository using only the permissions required for runner management.
 3. RunnerKit persists versioned local state/config for repo scope, runner identity, labels, machine path, provider IDs, and cleanup metadata.
 4. RunnerKit redacts tokens, secrets, and sensitive machine/provider values from state-adjacent logs, diagnostics, and command output.
-   **Plans**: 3 plans
+   **Plans**: 4 plans
 
 Plans:
 
 - [x] 01-01-PLAN.md — Go CLI skeleton, command routing, prompts, flags, output conventions, guided setup scaffold, and redaction minimum.
 - [x] 01-02-PLAN.md — GitHub repo resolution, least-privilege authentication, runner-token adapter, safety gate, and API test fixtures.
 - [x] 01-03-PLAN.md — Versioned state/config schema, label conventions, fake adapters, and idempotent workflow primitives.
+- [x] 01-04-PLAN.md — Production GitHub service wiring, real CLI defaults, and default-path auth/safety regression tests.
 
 ### Phase 2: BYO Persistent Runner Happy Path
 
@@ -147,11 +148,11 @@ Plans:
 **Execution Order:**
 Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
-| Phase                                          | Plans Complete | Status      | Completed |
-| ---------------------------------------------- | -------------- | ----------- | --------- |
-| 1. CLI, Auth, State, and Safety Foundation     | 3/3            | Gaps found  | -         |
-| 2. BYO Persistent Runner Happy Path            | 0/4            | Not started | -         |
-| 3. Operations, Diagnostics, and BYO Cleanup    | 0/4            | Not started | -         |
-| 4. Recommended Cloud Path and Billable Cleanup | 0/4            | Not started | -         |
-| 5. Scoped Ephemeral Mode and Safety Profiles   | 0/3            | Not started | -         |
-| 6. Release, Upgrade, Docs, and v1 Validation   | 0/4            | Not started | -         |
+| Phase                                          | Plans Complete | Status      | Completed  |
+| ---------------------------------------------- | -------------- | ----------- | ---------- |
+| 1. CLI, Auth, State, and Safety Foundation     | 4/4            | Complete    | 2026-04-29 |
+| 2. BYO Persistent Runner Happy Path            | 0/4            | Not started | -          |
+| 3. Operations, Diagnostics, and BYO Cleanup    | 0/4            | Not started | -          |
+| 4. Recommended Cloud Path and Billable Cleanup | 0/4            | Not started | -          |
+| 5. Scoped Ephemeral Mode and Safety Profiles   | 0/3            | Not started | -          |
+| 6. Release, Upgrade, Docs, and v1 Validation   | 0/4            | Not started | -          |
