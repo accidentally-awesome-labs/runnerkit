@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Phase 2 context gathered
-last_updated: "2026-04-29T17:19:02.924Z"
-last_activity: 2026-04-29 - Phase 2 context gathered for the BYO persistent runner happy path.
+stopped_at: Phase 2 complete; ready for Phase 3 planning
+last_updated: "2026-04-29T18:06:21.058Z"
+last_activity: 2026-04-29 - Phase 2 BYO persistent runner happy path completed and verified.
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 2
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -20,35 +20,36 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-29)
 
 **Core value:** A solo developer can get a reliable, cost-effective GitHub Actions self-hosted runner online and usable in a project in about 10 minutes, without manual GitHub runner setup headaches.
-**Current focus:** Phase 2: BYO Persistent Runner Happy Path
+**Current focus:** Phase 3: Operations, Diagnostics, and BYO Cleanup
 
 ## Current Position
 
-Phase: 02 of 6 (BYO Persistent Runner Happy Path)
-Plan: Context gathered
-Status: Ready for planning
-Last activity: 2026-04-29 - Phase 2 context gathered for the BYO persistent runner happy path.
+Phase: 02 of 2 (byo persistent runner happy path)
+Plan: 4 of 4
+Status: Milestone complete
+Last activity: 2026-04-29 - Phase 2 BYO persistent runner happy path completed and verified.
 
-Milestone Progress: [██░░░░░░░░] 17%
+Milestone Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4
-- Average duration: 18 min
-- Total execution time: 1.2 hours
+- Total plans completed: 8
+- Average duration: 21 min
+- Total execution time: 2.8 hours
 
 **By Phase:**
 
 | Phase | Plans | Total  | Avg/Plan |
 | ----- | ----- | ------ | -------- |
 | 01    | 4/4   | 71 min | 18 min   |
+| 02    | 4/4   | 95 min | 24 min   |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (13 min), 01-02 (5 min), 01-03 (8 min), 01-04 (45 min)
-- Trend: Phase 1 foundation is complete; gap closure replaced fake production GitHub defaults with real auth/metadata/safety wiring.
+- Last 5 plans: 01-04 (45 min), 02-01 (20 min), 02-02 (25 min), 02-03 (30 min), 02-04 (20 min)
+- Trend: BYO happy path is now covered by fake end-to-end tests; next work should harden real-world operations, diagnostics, recovery, and cleanup.
 
 _Updated after each plan completion_
 
@@ -78,6 +79,10 @@ Recent decisions affecting current work:
 - Phase 2 context: Support common systemd Linux best-effort; unknown or unverified distros warn, require explicit override, then try.
 - Phase 2 context: Run full preflight before remote mutation, show fix plans before applying changes, and report remote progress with redacted actionable failure copy.
 - Phase 2 context: Exact privilege flow is planner discretion, but the persistent runner service must not run as root by default.
+- Plan 02-01: BYO SSH target parsing, host-key trust, and preflight checks are separate packages behind `remote.Executor`.
+- Plan 02-02: Bootstrap uses pinned GitHub Actions runner 2.334.0 packages and installs the service as `runnerkit-runner`.
+- Plan 02-03: Runner registration is just-in-time after preflight and duplicate checks; state is saved only after GitHub reports the runner online with RunnerKit labels.
+- Plan 02-04: Persistent BYO is documented and warned as trusted-private-repository only; RunnerKit prints snippets and does not edit workflow YAML.
 
 ### Pending Todos
 
@@ -90,12 +95,11 @@ None yet.
 [Issues that affect future work]
 
 - Plan 01-02/01-04 validation note: automated fixtures cover GitHub success/denial/redaction/default-path behavior; a controlled live GitHub permission smoke remains recommended before public release.
-- Phase 2: BYO runner work should reuse Phase 1 state, labels, auth source references, and public-repo safety decisions rather than adding parallel flows.
 - Phase 4: Default cloud provider should be validated for cost, availability, quota friction, and SSH readiness before locking the user-facing recommendation.
 - Plan 01-01 validation note: `go run` wraps non-zero binary exits as process exit 1 while printing `exit status 6`; the direct built binary exits 6 for input-required paths.
 
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-byo-persistent-runner-happy-path/02-CONTEXT.md
+Stopped at: Phase 2 complete; ready for Phase 3 planning
+Resume file: .planning/phases/03-operations-diagnostics-and-byo-cleanup/03-CONTEXT.md

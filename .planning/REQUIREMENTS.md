@@ -11,30 +11,30 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **CLI-01**: Developer can install and run a `runnerkit` CLI binary on their local machine.
 - [x] **CLI-02**: Developer can start a guided setup flow that explains required choices and prerequisites before making changes.
-- [ ] **CLI-03**: Developer can complete a happy-path setup in about 10 minutes for a supported repository and machine path.
-- [ ] **CLI-04**: Developer can see a clear completion summary that includes runner name, labels, machine target, and next workflow step.
+- [x] **CLI-03**: Developer can complete a happy-path setup in about 10 minutes for a supported repository and machine path.
+- [x] **CLI-04**: Developer can see a clear completion summary that includes runner name, labels, machine target, and next workflow step.
 
 ### GitHub Integration
 
 - [x] **GH-01**: Developer can authenticate RunnerKit for a GitHub repository with the minimum permissions needed for self-hosted runner management.
-- [ ] **GH-02**: Developer can register a repository-scoped GitHub Actions self-hosted runner without manually copying GitHub setup commands.
+- [x] **GH-02**: Developer can register a repository-scoped GitHub Actions self-hosted runner without manually copying GitHub setup commands.
 - [ ] **GH-03**: Developer can deregister a GitHub Actions runner when removing or recreating a RunnerKit-managed runner.
-- [ ] **GH-04**: Developer can use predictable RunnerKit labels to target the registered runner from GitHub Actions workflows.
-- [ ] **GH-05**: Developer can view copy-paste `runs-on` guidance for the registered runner labels without RunnerKit editing workflow files.
+- [x] **GH-04**: Developer can use predictable RunnerKit labels to target the registered runner from GitHub Actions workflows.
+- [x] **GH-05**: Developer can view copy-paste `runs-on` guidance for the registered runner labels without RunnerKit editing workflow files.
 
 ### Machine Setup
 
-- [ ] **MACH-01**: Developer can connect RunnerKit to an existing Linux machine over SSH and run preflight checks before installation.
-- [ ] **MACH-02**: Developer can bootstrap a BYO Linux machine with a dedicated non-root runner user, required dependencies, and a managed runner service.
+- [x] **MACH-01**: Developer can connect RunnerKit to an existing Linux machine over SSH and run preflight checks before installation.
+- [x] **MACH-02**: Developer can bootstrap a BYO Linux machine with a dedicated non-root runner user, required dependencies, and a managed runner service.
 - [ ] **MACH-03**: Developer can provision one recommended low-cost cloud machine path when they do not already have a machine.
 - [ ] **MACH-04**: Developer can install the runner on the provisioned cloud machine using the same lifecycle path as BYO machines.
 - [ ] **MACH-05**: Developer can see enough machine/provider identity in RunnerKit state to safely manage or remove the runner later.
 
 ### Runner Modes
 
-- [ ] **RUN-01**: Developer can create a persistent runner as the default mode for trusted private solo-development repositories.
+- [x] **RUN-01**: Developer can create a persistent runner as the default mode for trusted private solo-development repositories.
 - [ ] **RUN-02**: Developer can choose an explicit ephemeral runner option/profile when they want stronger isolation.
-- [ ] **RUN-03**: Developer receives clear warnings before using persistent runners with risky public, fork, or otherwise untrusted workloads.
+- [x] **RUN-03**: Developer receives clear warnings before using persistent runners with risky public, fork, or otherwise untrusted workloads.
 - [ ] **RUN-04**: Developer can understand the tradeoff between persistent and ephemeral modes before selecting a mode.
 
 ### Reliability and Operations
@@ -56,7 +56,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Documentation and Safety
 
-- [ ] **DOC-01**: Developer can follow a concise quickstart for the BYO machine path.
+- [x] **DOC-01**: Developer can follow a concise quickstart for the BYO machine path.
 - [ ] **DOC-02**: Developer can follow a concise quickstart for the recommended cloud path.
 - [ ] **DOC-03**: Developer can read safety guidance explaining when persistent self-hosted runners are unsafe and when ephemeral mode is recommended.
 - [ ] **DOC-04**: Developer can read cleanup and troubleshooting guidance for common failure modes.
@@ -97,21 +97,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ----------- | ------- | -------- |
 | CLI-01      | Phase 1 | Complete |
 | CLI-02      | Phase 1 | Complete |
-| CLI-03      | Phase 2 | Pending  |
-| CLI-04      | Phase 2 | Pending  |
+| CLI-03      | Phase 2 | Complete |
+| CLI-04      | Phase 2 | Complete |
 | GH-01       | Phase 1 | Complete |
-| GH-02       | Phase 2 | Pending  |
+| GH-02       | Phase 2 | Complete |
 | GH-03       | Phase 3 | Pending  |
-| GH-04       | Phase 2 | Pending  |
-| GH-05       | Phase 2 | Pending  |
-| MACH-01     | Phase 2 | Pending  |
-| MACH-02     | Phase 2 | Pending  |
+| GH-04       | Phase 2 | Complete |
+| GH-05       | Phase 2 | Complete |
+| MACH-01     | Phase 2 | Complete |
+| MACH-02     | Phase 2 | Complete |
 | MACH-03     | Phase 4 | Pending  |
 | MACH-04     | Phase 4 | Pending  |
 | MACH-05     | Phase 4 | Pending  |
-| RUN-01      | Phase 2 | Pending  |
+| RUN-01      | Phase 2 | Complete |
 | RUN-02      | Phase 5 | Pending  |
-| RUN-03      | Phase 2 | Pending  |
+| RUN-03      | Phase 2 | Complete |
 | RUN-04      | Phase 5 | Pending  |
 | REL-01      | Phase 3 | Pending  |
 | REL-02      | Phase 3 | Pending  |
@@ -124,7 +124,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLEAN-04    | Phase 4 | Pending  |
 | STATE-01    | Phase 1 | Complete |
 | STATE-02    | Phase 1 | Complete |
-| DOC-01      | Phase 2 | Pending  |
+| DOC-01      | Phase 2 | Complete |
 | DOC-02      | Phase 4 | Pending  |
 | DOC-03      | Phase 5 | Pending  |
 | DOC-04      | Phase 6 | Pending  |
