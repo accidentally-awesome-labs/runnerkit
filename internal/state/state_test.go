@@ -94,6 +94,50 @@ func TestMigrateAcceptsSchemaVersionOne(t *testing.T) {
 	}
 }
 
+func TestLoadBackwardsCompatibleStateWithoutHostKeyFields(t *testing.T) {
+	store := NewStore(t.TempDir())
+	json := `{"schema_version":"1","repositories":[{"repo":{"fullName":"owner/repo","full_name":"owner/repo"},"auth":{"source":"gh","reference":"gh"},"runner":{"name":"runnerkit-owner-repo-local","labels":["self-hosted"],"mode":"persistent","os":"linux","arch":"x64"},"machine":{"kind":"phase1-placeholder","host_ref":"alice@example.com"},"provider":{"kind":"none"},"cleanup":{"managed_paths":[],"provider_resource_ids":[]},"safety":{"code":"ok","allowed":true},"runnerkit_version":"test","created_at":"2026-04-29T00:00:00Z","updated_at":"2026-04-29T00:00:00Z"}]}`
+	if err := os.MkdirAll(filepath.Dir(store.Path()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.Path(), []byte(json), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(loaded.Repositories) != 1 || loaded.Repositories[0].Machine.HostKeyFingerprint != "" {
+		t.Fatalf("unexpected migrated state: %#v", loaded)
+	}
+}
+
+func TestMachineRefRoundTripsBYOFields(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 4, 29, 3, 0, 0, 0, time.UTC)
+	state := NewState()
+	state.Repositories = []RepositoryState{{
+		Repo:     gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
+		Auth:     AuthReference{Source: "gh", Reference: "gh"},
+		Runner:   RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted"}, Mode: "persistent", OS: "linux", Arch: "x64"},
+		Machine:  MachineRef{Kind: "byo-ssh", HostRef: "alice@example.com:22", User: "alice", Port: 22, HostKeyFingerprint: "SHA256:fakehostfingerprint", InstallPath: "/opt/actions-runner/runnerkit-owner-repo-local", WorkDir: "/var/lib/runnerkit/work/runnerkit-owner-repo-local", ServiceName: "actions.runner.runnerkit-owner-repo-local.service", HostKeyAcceptedAt: &now},
+		Provider: ProviderRef{Kind: "byo"},
+		Cleanup:  CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
+		Safety:   SafetyMetadata{Code: "ok", Allowed: true},
+	}}
+	if err := store.Save(state); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	machine := loaded.Repositories[0].Machine
+	if machine.Port != 22 || machine.HostKeyFingerprint != "SHA256:fakehostfingerprint" || machine.InstallPath == "" || machine.WorkDir == "" || machine.ServiceName == "" {
+		t.Fatalf("MachineRef did not round-trip BYO fields: %#v", machine)
+	}
+}
+
 func TestProjectConfigPathUsesRunnerKitConfigYAML(t *testing.T) {
 	path := ProjectConfigPath("/work/project")
 	if !strings.HasSuffix(path, filepath.Join(".runnerkit", "config.yaml")) {

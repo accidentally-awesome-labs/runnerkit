@@ -28,6 +28,18 @@ func TestFoundationUpPlanHasStableStepIDsAndChecklist(t *testing.T) {
 	}
 }
 
+func TestBootstrapPlanHasStableStepIDs(t *testing.T) {
+	plan := BootstrapPlan()
+	var ids []string
+	for _, step := range plan.Steps {
+		ids = append(ids, step.ID)
+	}
+	want := []string{"fix_dependencies", "create_runner_user", "download_runner", "configure_runner", "install_service", "verify_service"}
+	if !reflect.DeepEqual(ids, want) {
+		t.Fatalf("bootstrap step IDs = %#v, want %#v", ids, want)
+	}
+}
+
 func TestApplyRunsPendingStepsAndRecordsStatuses(t *testing.T) {
 	plan := FoundationUpPlan()
 	var ran []string

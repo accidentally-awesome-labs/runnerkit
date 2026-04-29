@@ -4,15 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/salar/runnerkit/internal/bootstrap"
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/labels"
+	"github.com/salar/runnerkit/internal/preflight"
+	"github.com/salar/runnerkit/internal/redact"
+	"github.com/salar/runnerkit/internal/remote"
 	rkstate "github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/ui"
 	"github.com/salar/runnerkit/internal/workflow"
 	"github.com/spf13/cobra"
+)
+
+const (
+	defaultRunnerPollInterval = 2 * time.Second
+	defaultRunnerPollTimeout  = 60 * time.Second
 )
 
 type upOptions struct {
@@ -22,18 +32,26 @@ type upOptions struct {
 	dryRun              bool
 	allowPublicRepoRisk bool
 	replace             bool
+	host                string
+	sshPort             int
+	sshKey              string
+	allowUnknownLinux   bool
 }
 
 type GitHubService interface {
 	Repository(ctx context.Context, repo gh.Repo) (gh.Repo, error)
 	VerifyAuth(ctx context.Context, repo gh.Repo) (gh.PermissionStatus, error)
+	CreateRegistrationToken(ctx context.Context, repo gh.Repo) (gh.RunnerToken, error)
+	CreateRemovalToken(ctx context.Context, repo gh.Repo) (gh.RunnerToken, error)
+	ListRunners(ctx context.Context, repo gh.Repo) ([]gh.Runner, error)
+	DeleteRunner(ctx context.Context, repo gh.Repo, runnerID int64) error
 }
 
 func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
-	opts := &upOptions{}
+	opts := &upOptions{sshPort: 22}
 	cmd := &cobra.Command{Use: "up"}
-	cmd.Short = "Prepare foundation"
-	cmd.Long = "Prepare RunnerKit CLI, auth, safety, and state foundations. Phase 1 does not install a runner yet."
+	cmd.Short = "Set up a BYO GitHub Actions runner"
+	cmd.Long = "Connect a BYO Linux host, preflight it over SSH, bootstrap a non-root persistent runner service, and print RunnerKit label guidance."
 	cmd.RunE = func(_ *cobra.Command, _ []string) error {
 		return runUp(deps, *jsonOutput, *noColor, opts)
 	}
@@ -41,9 +59,13 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().StringVar(&opts.repo, "repo", "", "target GitHub repository as owner/name")
 	cmd.Flags().BoolVar(&opts.yes, "yes", false, "accept safe defaults without interactive confirmation")
 	cmd.Flags().BoolVar(&opts.nonInteractive, "non-interactive", false, "fail instead of prompting for missing input")
-	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "preview the foundation plan without saving state")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "preview the BYO preflight and bootstrap plan without installing")
 	cmd.Flags().BoolVar(&opts.allowPublicRepoRisk, "allow-public-repo-risk", false, "explicitly acknowledge public repository persistent-runner risk")
 	cmd.Flags().BoolVar(&opts.replace, "replace", false, "replace existing saved foundation state for --repo when used with --yes")
+	cmd.Flags().StringVar(&opts.host, "host", "", "BYO SSH target as user@host or user@host:port")
+	cmd.Flags().IntVar(&opts.sshPort, "ssh-port", 22, "SSH port for the target host")
+	cmd.Flags().StringVar(&opts.sshKey, "ssh-key", "", "SSH private key path reference for the target host")
+	cmd.Flags().BoolVar(&opts.allowUnknownLinux, "allow-unknown-linux", false, "try best-effort install on unverified Linux distributions")
 
 	return cmd
 }
@@ -55,24 +77,12 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err != nil {
 		return err
 	}
+	store := rkstate.NewStore(deps.StateBaseDir)
 
-	status, err := deps.GitHub.VerifyAuth(ctx, resolution.Repo)
-	if err != nil || !status.OK {
-		message := fmt.Sprintf("RunnerKit can't create a repository runner registration token for %s.", resolution.Repo.FullName)
-		remediation := status.Remediation
-		if len(remediation) == 0 {
-			remediation = []string{"Create a fine-grained token scoped only to " + resolution.Repo.FullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."}
-		}
-		_ = renderer.Error("github_permission_denied", message, remediation)
-		if err == nil {
-			err = errors.New(message)
-		}
-		return NewExitError(ExitGitHubAuth, err)
-	}
 	repo, err := deps.GitHub.Repository(ctx, resolution.Repo)
 	if err != nil {
 		message := fmt.Sprintf("RunnerKit can't read repository metadata for %s.", resolution.Repo.FullName)
-		_ = renderer.Error("github_permission_denied", message, []string{"Verify GitHub credentials can read repository metadata for " + resolution.Repo.FullName + "."})
+		_ = renderer.Error("github_permission_denied", message, []string{gh.FineGrainedTokenRemediation(resolution.Repo), "Verify GitHub credentials can read repository metadata for " + resolution.Repo.FullName + "."})
 		return NewExitError(ExitGitHubAuth, err)
 	}
 	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
@@ -80,44 +90,426 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return err
 	}
 
-	labelSet := labels.Build(repo, labels.Options{})
-	foundationPlan := workflow.FoundationUpPlan()
-	store := rkstate.NewStore(deps.StateBaseDir)
-
-	if opts.dryRun {
-		if jsonOutput {
-			return renderer.JSON(upJSONPayload(repo.FullName, status.Source, decision.Warnings, store.Path(), labelSet, foundationPlan, false))
+	status, err := deps.GitHub.VerifyAuth(ctx, repo)
+	if err != nil || !status.OK {
+		message := fmt.Sprintf("RunnerKit can't create a repository runner registration token for %s.", repo.FullName)
+		remediation := status.Remediation
+		if len(remediation) == 0 {
+			remediation = []string{"Create a fine-grained token scoped only to " + repo.FullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."}
 		}
-		return renderUpHuman(renderer, opts, repo, status.Source, decision.Warnings, store.Path(), labelSet, foundationPlan, false)
+		_ = renderer.Error("github_permission_denied", message, remediation)
+		if err == nil {
+			err = errors.New(message)
+		}
+		return NewExitError(ExitGitHubAuth, err)
 	}
 
-	if err := confirmStateSave(ctx, deps, renderer, opts, jsonOutput); err != nil {
+	target, err := resolveBYOTarget(ctx, deps, renderer, opts, jsonOutput)
+	if err != nil {
 		return err
 	}
+	existing, exists, err := store.GetRepository(repo.FullName)
+	if err != nil {
+		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
+		return NewExitError(ExitStateIO, err)
+	}
+	hostKey, acceptedAt, err := verifyTargetHostKey(ctx, deps, renderer, opts, jsonOutput, target, existing, exists)
+	if err != nil {
+		return err
+	}
+
+	report, err := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{AllowUnknownLinux: opts.allowUnknownLinux})
+	if err != nil {
+		_ = renderer.Error("ssh_preflight_failed", "RunnerKit could not complete SSH preflight.", []string{err.Error()})
+		return NewExitError(ExitSafetyGate, err)
+	}
+	if !report.Passed() {
+		return renderPreflightFailure(renderer, jsonOutput, report)
+	}
+
+	arch := defaultString(report.Arch, labels.DefaultArch)
+	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.DefaultMode})
+	runnerPkg, err := bootstrap.PackageFor("linux", arch)
+	if err != nil {
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the Phase 2 BYO persistent runner path."})
+		return NewExitError(ExitSafetyGate, err)
+	}
+	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report)
+	bootstrapPlan := bootstrap.Plan(bootstrapOpts)
+
+	if opts.dryRun {
+		return renderDryRun(renderer, jsonOutput, repo, status.Source, decision.Warnings, store.Path(), target, report, labelSet, bootstrapPlan)
+	}
+
+	runners, err := deps.GitHub.ListRunners(ctx, repo)
+	if err != nil {
+		_ = renderer.Error("github_runner_list_failed", "RunnerKit can't list repository self-hosted runners.", []string{"Verify GitHub credentials can list repository runners for " + repo.FullName + "."})
+		return NewExitError(ExitGitHubAuth, err)
+	}
+	if existingRunner, found := gh.FindRunnerByName(runners, labelSet.RunnerName); found {
+		return runnerNameConflict(renderer, labelSet.RunnerName, existingRunner)
+	}
+
+	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target); err != nil {
+		return err
+	}
+	token, err := deps.GitHub.CreateRegistrationToken(ctx, repo)
+	if err != nil {
+		_ = renderer.Error("github_permission_denied", "RunnerKit can't create a fresh runner registration token.", []string{gh.FineGrainedTokenRemediation(repo)})
+		return NewExitError(ExitGitHubAuth, err)
+	}
+	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
+	bootstrapOpts.RunnerToken = token.Token
+	if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
+		var serviceErr bootstrap.ServiceNotActiveError
+		if errors.As(err, &serviceErr) {
+			_ = renderer.Error("runner_service_not_active", "RunnerKit installed the runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service."})
+			return NewExitError(ExitSafetyGate, err)
+		}
+		_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the BYO runner install plan.", []string{"Review the remote host output, fix the issue, and re-run runnerkit up."})
+		return NewExitError(ExitSafetyGate, err)
+	}
+
+	onlineRunner, ok, err := waitForRunnerOnline(ctx, deps, repo, labelSet.RunnerName, labelSet.Labels)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		_ = renderer.Error("runner_online_timeout", "RunnerKit could not verify the GitHub runner came online with the expected labels.", []string{"Check the remote service status and GitHub repository Actions runner settings, then re-run runnerkit up."})
+		return NewExitError(ExitSafetyGate, errors.New("runner_online_timeout"))
+	}
+
+	repoState := buildBYORepositoryState(deps, repo, status.Source, decision, labelSet, target, hostKey, acceptedAt, bootstrapOpts, onlineRunner)
+	if err := saveRepositoryState(ctx, deps, renderer, opts, jsonOutput, store, repo.FullName, repoState); err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		return renderer.JSON(upCompletionJSON(repo.FullName, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner))
+	}
+	return renderCompletionHuman(renderer, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner)
+}
+
+func resolveBYOTarget(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool) (remote.Target, error) {
+	raw := strings.TrimSpace(opts.host)
+	if raw == "" {
+		if jsonOutput || opts.nonInteractive || !deps.TTY.StdinTTY {
+			message := "RunnerKit can't continue because a BYO SSH host is required."
+			_ = renderer.Error("input_required", message, []string{"Pass --host user@host for BYO setup."})
+			return remote.Target{}, NewExitError(ExitInputRequired, errors.New(message+" Pass --host user@host for BYO setup."))
+		}
+		inputPrompter, ok := deps.Prompts.(interface {
+			Input(context.Context, ui.Prompt) (string, error)
+		})
+		if !ok {
+			message := "RunnerKit can't continue because SSH host input requires an interactive prompt."
+			_ = renderer.Error("input_required", message, []string{"Pass --host user@host for BYO setup."})
+			return remote.Target{}, NewExitError(ExitInputRequired, errors.New(message))
+		}
+		var err error
+		raw, err = inputPrompter.Input(ctx, ui.Prompt{Message: "SSH target (user@host):"})
+		if err != nil {
+			return remote.Target{}, err
+		}
+	}
+	target, err := remote.ParseTarget(raw, opts.sshPort)
+	if err != nil {
+		_ = renderer.Error("invalid_ssh_target", "RunnerKit can't parse the BYO SSH target.", []string{err.Error(), "Pass --host user@host or --host user@host:port."})
+		return remote.Target{}, NewExitError(ExitInvalidInput, err)
+	}
+	target.KeyPath = opts.sshKey
+	return target, nil
+}
+
+func verifyTargetHostKey(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, target remote.Target, existing rkstate.RepositoryState, exists bool) (remote.HostKey, *time.Time, error) {
+	probe, err := deps.RemoteExecutor.Probe(ctx, target)
+	if err != nil {
+		_ = renderer.Error("ssh_probe_failed", "RunnerKit could not inspect the SSH host key.", []string{"Verify SSH access to " + target.Display() + " and re-run runnerkit up."})
+		return remote.HostKey{}, nil, NewExitError(ExitSafetyGate, err)
+	}
+	observed := remote.NormalizeHostKey(probe.HostKey)
+	if observed.Fingerprint == "" {
+		observed.Fingerprint = remote.FingerprintSHA256([]byte(target.Display()))
+	}
+	storedFingerprint := ""
+	if exists {
+		storedFingerprint = existing.Machine.HostKeyFingerprint
+	}
+	decision, decisionErr := remote.DecideHostKey(storedFingerprint, observed)
+	if decision == remote.HostKeyMismatch {
+		_ = renderer.Error(remote.HostKeyMismatchCode, "RunnerKit stopped because the SSH host key fingerprint changed.", []string{"Expected " + storedFingerprint + " but observed " + observed.Fingerprint + ". Verify the host before continuing."})
+		return remote.HostKey{}, nil, NewExitError(ExitSafetyGate, decisionErr)
+	}
+	if decision == remote.HostKeyAccepted {
+		return observed, existing.Machine.HostKeyAcceptedAt, nil
+	}
+	if opts.yes {
+		now := deps.Clock()
+		return observed, &now, nil
+	}
+	if jsonOutput || opts.nonInteractive || !deps.TTY.StdinTTY || deps.Prompts == nil {
+		message := "RunnerKit can't continue until you accept the SSH host key."
+		_ = renderer.Error("input_required", message, []string{"Re-run interactively or pass --yes after verifying " + observed.Fingerprint + " for " + target.Display() + "."})
+		return remote.HostKey{}, nil, NewExitError(ExitInputRequired, errors.New(message))
+	}
+	confirmed, err := deps.Prompts.Confirm(ctx, ui.Prompt{Message: "Accept SSH host key " + observed.Fingerprint + " for " + target.Display() + "?", Default: false})
+	if err != nil {
+		return remote.HostKey{}, nil, err
+	}
+	if !confirmed {
+		message := "Canceled; no changes made."
+		_ = renderer.Error("canceled", message, nil)
+		return remote.HostKey{}, nil, NewExitError(ExitCanceled, errors.New(message))
+	}
+	now := deps.Clock()
+	return observed, &now, nil
+}
+
+func renderPreflightFailure(renderer *ui.Renderer, jsonOutput bool, report preflight.Report) error {
+	if jsonOutput {
+		_ = renderer.JSON(map[string]any{"ok": false, "error": map[string]any{"code": "ssh_preflight_failed", "message": "SSH preflight failed before runner installation."}, "ssh-preflight": report.Results})
+	} else {
+		_ = renderPreflightHuman(renderer, report)
+		_ = renderer.Error("ssh_preflight_failed", "SSH preflight failed before runner installation.", []string{"Fix failed checks or pass --allow-unknown-linux only for unverified Linux distributions you trust."})
+	}
+	return NewExitError(ExitSafetyGate, errors.New("ssh_preflight_failed"))
+}
+
+func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source gh.AuthSource, warnings []string, statePath string, target remote.Target, report preflight.Report, labelSet labels.LabelSet, plan workflow.Plan) error {
+	if jsonOutput {
+		return renderer.JSON(map[string]any{
+			"ok":               true,
+			"command":          "up",
+			"repo":             repo.FullName,
+			"auth_source":      defaultString(source.Kind, "gh"),
+			"runner_installed": false,
+			"state_saved":      false,
+			"state_path":       statePath,
+			"runner_name":      labelSet.RunnerName,
+			"labels":           labelSet.Labels,
+			"machine_target":   target.Display(),
+			"workflow_snippet": labelSet.RunsOnYAML,
+			"warnings":         warnings,
+			"ssh-preflight":    report.Results,
+			"bootstrap-plan":   plan,
+		})
+	}
+	if err := renderPreflightHuman(renderer, report); err != nil {
+		return err
+	}
+	return renderer.Step(2, 2, "bootstrap-plan", ui.Bullet("Runner name: "+labelSet.RunnerName), ui.Bullet("Target: "+target.Display()), ui.Bullet("Labels: ["+strings.Join(labelSet.Labels, ", ")+"]"), ui.Bullet(labelSet.RunsOnYAML), ui.WarningLine(labelSet.Warning), ui.Bullet("Dry run: no state file was written and no runner was installed."))
+}
+
+func renderPreflightHuman(renderer *ui.Renderer, report preflight.Report) error {
+	lines := []ui.Line{ui.Bullet("Target: " + report.Target.Display())}
+	for _, result := range report.Results {
+		line := ui.Bullet(result.ID + ": " + string(result.Severity))
+		if result.Severity == preflight.SeverityFailure {
+			line = ui.ErrorLine(result.ID + ": " + result.Message)
+		} else if result.Severity == preflight.SeverityWarning {
+			line = ui.WarningLine(result.ID + ": " + result.Message)
+		}
+		lines = append(lines, line)
+	}
+	return renderer.Step(1, 2, "ssh-preflight", lines...)
+}
+
+func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap.RunnerPackage, report preflight.Report) bootstrap.Options {
+	installPath := filepath.Join("/opt/actions-runner", labelSet.RunnerName)
+	workDir := filepath.Join("/var/lib/runnerkit/work", labelSet.RunnerName)
+	return bootstrap.Options{
+		RunnerName:   labelSet.RunnerName,
+		RepoURL:      "https://github.com/" + repo.FullName,
+		Labels:       labelSet.Labels,
+		InstallPath:  installPath,
+		WorkDir:      workDir,
+		ServiceUser:  bootstrap.DefaultServiceUser,
+		Package:      pkg,
+		MissingTools: report.FixableTools,
+	}
+}
+
+func confirmBootstrapPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, target remote.Target) error {
+	if opts.yes {
+		return nil
+	}
+	if jsonOutput || opts.nonInteractive || !deps.TTY.StdinTTY || deps.Prompts == nil {
+		message := "RunnerKit can't continue because applying the BYO runner install plan requires confirmation."
+		_ = renderer.Error("input_required", message, []string{"Pass --yes to apply the install plan non-interactively, or use --dry-run to preview without changing the host."})
+		return NewExitError(ExitInputRequired, errors.New(message))
+	}
+	confirmed, err := deps.Prompts.Confirm(ctx, ui.Prompt{Message: "Apply BYO runner install plan to " + target.Display() + "?", Default: false})
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		message := "Canceled; no changes made."
+		_ = renderer.Error("canceled", message, nil)
+		return NewExitError(ExitCanceled, errors.New(message))
+	}
+	return nil
+}
+
+func runnerNameConflict(renderer *ui.Renderer, runnerName string, existing gh.Runner) error {
+	message := "RunnerKit can't continue because a GitHub runner named " + runnerName + " already exists."
+	_ = renderer.Error("runner_name_conflict", message, []string{"Remove or rename the existing GitHub runner " + runnerName + ", then re-run runnerkit up."})
+	return NewExitError(ExitSafetyGate, fmt.Errorf("runner_name_conflict: %s is %s", existing.Name, existing.Status))
+}
+
+func waitForRunnerOnline(ctx context.Context, deps Dependencies, repo gh.Repo, name string, expectedLabels []string) (gh.Runner, bool, error) {
+	deadline := time.Now().Add(deps.PollTimeout)
+	for {
+		runners, err := deps.GitHub.ListRunners(ctx, repo)
+		if err != nil {
+			_ = newRenderer(deps, false, true).Error("github_runner_list_failed", "RunnerKit can't list repository self-hosted runners.", []string{"Verify GitHub credentials can list repository runners for " + repo.FullName + "."})
+			return gh.Runner{}, false, NewExitError(ExitGitHubAuth, err)
+		}
+		if runner, ok := runnerOnlineWithLabels(runners, name, expectedLabels); ok {
+			return runner, true, nil
+		}
+		if !time.Now().Before(deadline) {
+			return gh.Runner{}, false, nil
+		}
+		if err := deps.Sleep(ctx, deps.PollInterval); err != nil {
+			return gh.Runner{}, false, err
+		}
+	}
+}
+
+func runnerOnlineWithLabels(runners []gh.Runner, name string, expectedLabels []string) (gh.Runner, bool) {
+	for _, runner := range runners {
+		if runner.Name != name || runner.Status != "online" {
+			continue
+		}
+		actual := map[string]bool{}
+		for _, label := range runner.Labels {
+			actual[label] = true
+		}
+		allPresent := true
+		for _, label := range expectedLabels {
+			if !actual[label] {
+				allPresent = false
+				break
+			}
+		}
+		if allPresent {
+			return runner, true
+		}
+	}
+	return gh.Runner{}, false
+}
+
+func saveRepositoryState(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, store rkstate.Store, fullName string, repoState rkstate.RepositoryState) error {
 	replace := opts.replace
-	if _, exists, err := store.GetRepository(repo.FullName); err != nil {
-		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved foundation state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
+	if _, exists, err := store.GetRepository(fullName); err != nil {
+		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
 		return NewExitError(ExitStateIO, err)
 	} else if exists && !replace {
-		confirmedReplace, err := confirmStateReplace(ctx, deps, renderer, opts, repo.FullName, jsonOutput)
+		confirmedReplace, err := confirmStateReplace(ctx, deps, renderer, opts, fullName, jsonOutput)
 		if err != nil {
 			return err
 		}
 		replace = confirmedReplace
 	}
-	repoState := buildFoundationRepositoryState(deps, repo, status.Source, decision, labelSet)
 	if err := store.SaveRepository(repoState, replace); err != nil {
 		if errors.Is(err, rkstate.ErrRepositoryExists) {
-			return replacementRequired(renderer, repo.FullName)
+			return replacementRequired(renderer, fullName)
 		}
-		_ = renderer.Error("state_io_failed", "RunnerKit can't save foundation state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
+		_ = renderer.Error("state_io_failed", "RunnerKit can't save runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
 		return NewExitError(ExitStateIO, err)
 	}
+	return nil
+}
 
-	if jsonOutput {
-		return renderer.JSON(upJSONPayload(repo.FullName, status.Source, decision.Warnings, store.Path(), labelSet, foundationPlan, true))
+func buildBYORepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, labelSet labels.LabelSet, target remote.Target, hostKey remote.HostKey, acceptedAt *time.Time, opts bootstrap.Options, onlineRunner gh.Runner) rkstate.RepositoryState {
+	now := deps.Clock()
+	if now.IsZero() {
+		now = time.Now()
 	}
-	return renderUpHuman(renderer, opts, repo, status.Source, decision.Warnings, store.Path(), labelSet, foundationPlan, true)
+	if acceptedAt == nil {
+		acceptedAt = &now
+	}
+	safety := rkstate.SafetyMetadata{Code: decision.Code, Allowed: decision.Allowed, Warnings: decision.Warnings}
+	if decision.Code == gh.SafetyCodePublicRisk && decision.Allowed && len(decision.Warnings) > 0 {
+		safety.AcceptedOverride = gh.AllowPublicRepoRiskFlag
+		safety.AcceptedAt = &now
+	}
+	return rkstate.RepositoryState{
+		Repo: repo,
+		Auth: rkstate.AuthReference{Source: defaultString(source.Kind, "gh"), Reference: defaultString(source.Reference, source.Kind)},
+		Runner: rkstate.RunnerIdentity{
+			Name:            labelSet.RunnerName,
+			Labels:          labelSet.Labels,
+			WorkflowSnippet: labelSet.RunsOnYAML,
+			Mode:            labels.DefaultMode,
+			OS:              labels.DefaultOS,
+			Arch:            opts.Package.Arch,
+		},
+		Machine: rkstate.MachineRef{
+			Kind:               "byo-ssh",
+			HostRef:            target.Display(),
+			User:               target.User,
+			Port:               target.Port,
+			KeyPathRef:         target.KeyPath,
+			HostKeyAlgorithm:   hostKey.Algorithm,
+			HostKeyFingerprint: hostKey.Fingerprint,
+			HostKeyAcceptedAt:  acceptedAt,
+			InstallPath:        opts.InstallPath,
+			WorkDir:            opts.WorkDir,
+			ServiceName:        runnerServiceName(labelSet.RunnerName),
+		},
+		Provider:         rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
+		Cleanup:          rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
+		Safety:           safety,
+		RunnerKitVersion: deps.Version,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+}
+
+func renderCompletionHuman(renderer *ui.Renderer, warnings []string, statePath string, target remote.Target, labelSet labels.LabelSet, opts bootstrap.Options, onlineRunner gh.Runner) error {
+	lines := []ui.Line{
+		ui.Success("Runner name: " + labelSet.RunnerName),
+		ui.Bullet("Machine target: " + target.Display()),
+		ui.Bullet("Service name: " + runnerServiceName(labelSet.RunnerName)),
+		ui.Bullet("Labels: [" + strings.Join(labelSet.Labels, ", ") + "]"),
+		ui.Bullet(labelSet.RunsOnYAML),
+		ui.WarningLine("Do not use runs-on: self-hosted alone for RunnerKit-managed runners."),
+		ui.Bullet("GitHub runner ID: " + fmt.Sprintf("%d", onlineRunner.ID)),
+		ui.Bullet("State path: " + statePath),
+		ui.Next("Add the runs-on snippet above to the workflow job you want to run on this runner."),
+		ui.Bullet("Later cleanup will be handled by a future runnerkit down flow; do not delete the BYO host manually if you want RunnerKit state to stay accurate."),
+		ui.Bullet("Install path: " + opts.InstallPath),
+	}
+	for _, warning := range warnings {
+		lines = append(lines, ui.WarningLine(warning))
+	}
+	return renderer.Step(1, 1, "BYO runner ready", lines...)
+}
+
+func upCompletionJSON(repo string, warnings []string, statePath string, target remote.Target, labelSet labels.LabelSet, opts bootstrap.Options, onlineRunner gh.Runner) map[string]any {
+	if warnings == nil {
+		warnings = []string{}
+	}
+	return map[string]any{
+		"ok":               true,
+		"command":          "up",
+		"repo":             repo,
+		"runner_installed": true,
+		"runner_name":      labelSet.RunnerName,
+		"labels":           labelSet.Labels,
+		"machine_target":   target.Display(),
+		"service_name":     runnerServiceName(labelSet.RunnerName),
+		"workflow_snippet": labelSet.RunsOnYAML,
+		"github_runner_id": onlineRunner.ID,
+		"state_path":       statePath,
+		"warnings":         warnings,
+		"next_steps": []string{
+			"Add the runs-on snippet above to the workflow job you want to run on this runner.",
+			"Do not use runs-on: self-hosted alone for RunnerKit-managed runners.",
+		},
+		"install_path": opts.InstallPath,
+	}
 }
 
 func enforceSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, opts *upOptions, jsonOutput bool) error {
@@ -147,7 +539,6 @@ func enforceSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.
 	if jsonOutput {
 		_ = renderer.Error(decision.Code, gh.PublicRepoRiskTitle, append(decision.Warnings, gh.PublicRepoRiskNextAction))
 	} else if decision.Code == gh.SafetyCodePublicRisk {
-		// WARNING: Public repository risk
 		_ = renderer.Warning(gh.PublicRepoRiskTitle, []string{gh.PublicRepoRiskBody}, gh.PublicRepoRiskNextAction)
 	} else {
 		_ = renderer.Warning("WARNING: Fork repository risk", decision.Warnings, "Use a trusted private repository before persistent setup.")
@@ -195,32 +586,6 @@ func resolveUpRepo(ctx context.Context, deps Dependencies, renderer *ui.Renderer
 	return resolution, nil
 }
 
-func confirmStateSave(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool) error {
-	if opts.yes {
-		return nil
-	}
-	if jsonOutput || opts.nonInteractive || !deps.TTY.StdinTTY {
-		message := "RunnerKit can't continue because saving foundation state requires confirmation."
-		_ = renderer.Error("input_required", message, []string{"Pass --yes to save state non-interactively, or use --dry-run to preview without writing."})
-		return NewExitError(ExitInputRequired, errors.New(message))
-	}
-	if deps.Prompts == nil {
-		message := "RunnerKit can't continue because saving foundation state requires an interactive prompt."
-		_ = renderer.Error("input_required", message, []string{"Pass --yes to save state non-interactively, or use --dry-run to preview without writing."})
-		return NewExitError(ExitInputRequired, errors.New(message))
-	}
-	confirmed, err := deps.Prompts.Confirm(ctx, ui.Prompt{Message: "Save this foundation state?", Default: false})
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		message := "Canceled; no changes made."
-		_ = renderer.Error("canceled", message, nil)
-		return NewExitError(ExitCanceled, errors.New(message))
-	}
-	return nil
-}
-
 func confirmStateReplace(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, fullName string, jsonOutput bool) (bool, error) {
 	if jsonOutput || opts.yes || opts.nonInteractive || !deps.TTY.StdinTTY {
 		return false, replacementRequired(renderer, fullName)
@@ -250,168 +615,6 @@ func replacementRequired(renderer *ui.Renderer, fullName string) error {
 	return NewExitError(ExitInputRequired, errors.New(message))
 }
 
-func renderUpHuman(renderer *ui.Renderer, opts *upOptions, repo gh.Repo, source gh.AuthSource, warnings []string, statePath string, labelSet labels.LabelSet, plan workflow.Plan, saved bool) error {
-	if source.Kind == "" {
-		source.Kind = "gh"
-	}
-	steps := []struct {
-		title string
-		lines []ui.Line
-	}{
-		{
-			title: "Welcome",
-			lines: []ui.Line{
-				ui.Bullet("Prepare RunnerKit CLI, auth, safety, and state foundations for " + repo.FullName + "."),
-				ui.Bullet("Phase 1 does not install a runner yet."),
-			},
-		},
-		{
-			title: "Prerequisites",
-			lines: []ui.Line{
-				ui.Bullet("Git repository or --repo owner/name."),
-				ui.Bullet("GitHub auth through gh or a fine-grained token path."),
-				ui.Bullet("Writable user-local state directory for later phases."),
-			},
-		},
-		{
-			title: "Repo/auth - Verify GitHub auth",
-			lines: []ui.Line{
-				ui.Success("Choose repository: " + repo.FullName),
-				ui.Success("Verify GitHub auth: " + source.Kind),
-			},
-		},
-		{
-			title: "Safety checks",
-			lines: safetyLines(opts, warnings),
-		},
-		{
-			title: "State preview",
-			lines: statePreviewLines(repo, source, statePath, labelSet, plan, saved),
-		},
-		{
-			title: "Next steps",
-			lines: nextStepLines(repo.FullName, statePath, saved),
-		},
-	}
-	for i, step := range steps {
-		if err := renderer.Step(i+1, len(steps), step.title, step.lines...); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func statePreviewLines(repo gh.Repo, source gh.AuthSource, statePath string, labelSet labels.LabelSet, plan workflow.Plan, saved bool) []ui.Line {
-	lines := []ui.Line{
-		ui.Bullet("Repository scope: " + repo.FullName),
-		ui.Bullet("Auth source reference: " + defaultString(source.Kind, "gh") + "; no token material is saved."),
-		ui.Bullet("State path: " + statePath),
-		ui.Bullet("Project config path: " + rkstate.ProjectConfigRelativePath),
-		ui.Bullet("Planned runner name: " + labelSet.RunnerName),
-		ui.Bullet("Planned labels: [" + strings.Join(labelSet.Labels, ", ") + "]"),
-		ui.Bullet(labelSet.RunsOnYAML),
-		ui.WarningLine(labelSet.Warning),
-		ui.Bullet("Safety status: " + defaultString(repoSafetyStatus(repo), "ok")),
-		ui.Bullet("Will not install a runner in Phase 1"),
-	}
-	for _, item := range plan.Checklist() {
-		lines = append(lines, ui.Bullet("Plan: "+item))
-	}
-	if saved {
-		lines = append(lines, ui.Success("Foundation state saved."))
-	} else {
-		lines = append(lines, ui.Bullet("Dry run: no state file was written."))
-	}
-	return lines
-}
-
-func nextStepLines(fullName string, statePath string, saved bool) []ui.Line {
-	if saved {
-		return []ui.Line{
-			ui.Next("Review saved state: runnerkit state show --repo " + fullName),
-			ui.Bullet("State path: " + statePath),
-			ui.Bullet("Will not install a runner in Phase 1"),
-		}
-	}
-	return []ui.Line{
-		ui.Next("Re-run without --dry-run and with --yes to save foundation state."),
-		ui.Bullet("Will not install a runner in Phase 1"),
-	}
-}
-
-func safetyLines(opts *upOptions, warnings []string) []ui.Line {
-	if len(warnings) == 0 {
-		return []ui.Line{ui.Success("Private/trusted repository safety gate passed."), ui.Bullet("allow-public-repo-risk override: " + boolWord(opts.allowPublicRepoRisk))}
-	}
-	lines := make([]ui.Line, 0, len(warnings)+1)
-	for _, warning := range warnings {
-		lines = append(lines, ui.WarningLine(warning))
-	}
-	lines = append(lines, ui.Bullet("allow-public-repo-risk override: "+boolWord(opts.allowPublicRepoRisk)))
-	return lines
-}
-
-func upJSONPayload(repo string, source gh.AuthSource, warnings []string, statePath string, labelSet labels.LabelSet, plan workflow.Plan, saved bool) map[string]any {
-	if source.Kind == "" {
-		source.Kind = "gh"
-	}
-	if warnings == nil {
-		warnings = []string{}
-	}
-	return map[string]any{
-		"ok":                  true,
-		"command":             "up",
-		"repo":                repo,
-		"auth_source":         source.Kind,
-		"state_path":          statePath,
-		"project_config_path": rkstate.ProjectConfigRelativePath,
-		"runner_installed":    false,
-		"state_saved":         saved,
-		"runner_name":         labelSet.RunnerName,
-		"labels":              labelSet.Labels,
-		"workflow_snippet":    labelSet.RunsOnYAML,
-		"warnings":            warnings,
-		"plan":                plan,
-		"next_steps": []map[string]string{
-			{
-				"label":   "Review saved state",
-				"command": "runnerkit state show --repo " + repo,
-			},
-		},
-	}
-}
-
-func buildFoundationRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, labelSet labels.LabelSet) rkstate.RepositoryState {
-	now := deps.Clock()
-	if now.IsZero() {
-		now = time.Now()
-	}
-	safety := rkstate.SafetyMetadata{Code: decision.Code, Allowed: decision.Allowed, Warnings: decision.Warnings}
-	if decision.Code == gh.SafetyCodePublicRisk && decision.Allowed && len(decision.Warnings) > 0 {
-		safety.AcceptedOverride = gh.AllowPublicRepoRiskFlag
-		safety.AcceptedAt = &now
-	}
-	return rkstate.RepositoryState{
-		Repo: repo,
-		Auth: rkstate.AuthReference{Source: defaultString(source.Kind, "gh"), Reference: defaultString(source.Reference, source.Kind)},
-		Runner: rkstate.RunnerIdentity{
-			Name:            labelSet.RunnerName,
-			Labels:          labelSet.Labels,
-			WorkflowSnippet: labelSet.RunsOnYAML,
-			Mode:            labels.DefaultMode,
-			OS:              labels.DefaultOS,
-			Arch:            labels.DefaultArch,
-		},
-		Machine:          rkstate.MachineRef{Kind: "phase1-placeholder"},
-		Provider:         rkstate.ProviderRef{Kind: "none", IDs: map[string]string{}},
-		Cleanup:          rkstate.CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
-		Safety:           safety,
-		RunnerKitVersion: deps.Version,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
-}
-
 func repoSafetyStatus(repo gh.Repo) string {
 	if !repo.Private {
 		return gh.SafetyCodePublicRisk
@@ -434,4 +637,8 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func runnerServiceName(runnerName string) string {
+	return "actions.runner." + runnerName + ".service"
 }

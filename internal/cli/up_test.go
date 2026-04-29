@@ -16,17 +16,17 @@ import (
 	"github.com/salar/runnerkit/internal/ui"
 )
 
-func TestUpDryRunDisplaysPhaseOneWizard(t *testing.T) {
-	out, errOut, err := executeForTest(t, "up", "--dry-run", "--repo", "owner/name", "--yes", "--no-color")
+func TestUpDryRunDisplaysBYOPreflightAndPlan(t *testing.T) {
+	out, errOut, err := executeForTest(t, "up", "--dry-run", "--repo", "owner/name", "--host", "alice@example.com", "--yes", "--no-color")
 	if err != nil {
 		t.Fatalf("up dry-run returned error: %v\nstderr: %s", err, errOut)
 	}
-	for _, step := range []string{"Welcome", "Prerequisites", "Repo/auth", "Safety checks", "State preview", "Next steps"} {
+	for _, step := range []string{"ssh-preflight", "bootstrap-plan"} {
 		if !strings.Contains(out, step) {
 			t.Fatalf("dry-run output missing step %q:\n%s", step, out)
 		}
 	}
-	for _, copy := range []string{"Phase 1 does not install a runner yet", "Will not install a runner in Phase 1"} {
+	for _, copy := range []string{"alice@example.com:22", "runs-on: [self-hosted, runnerkit, runnerkit-owner-name, linux, x64, persistent]"} {
 		if !strings.Contains(out, copy) {
 			t.Fatalf("dry-run output missing copy %q:\n%s", copy, out)
 		}
@@ -47,7 +47,7 @@ func TestUpNonInteractiveRequiresRepo(t *testing.T) {
 }
 
 func TestUpJSONDryRunContract(t *testing.T) {
-	out, errOut, err := executeForTest(t, "--json", "up", "--dry-run", "--repo", "owner/name", "--yes", "--no-color")
+	out, errOut, err := executeForTest(t, "--json", "up", "--dry-run", "--repo", "owner/name", "--host", "alice@example.com", "--yes", "--no-color")
 	if err != nil {
 		t.Fatalf("up json dry-run returned error: %v\nstderr: %s", err, errOut)
 	}
@@ -90,6 +90,16 @@ func (s *recordingGitHubService) VerifyAuth(_ context.Context, repo github.Repo)
 	s.authCalls++
 	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
 }
+func (s *recordingGitHubService) CreateRegistrationToken(context.Context, github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{}, nil
+}
+func (s *recordingGitHubService) CreateRemovalToken(context.Context, github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{}, nil
+}
+func (s *recordingGitHubService) ListRunners(context.Context, github.Repo) ([]github.Runner, error) {
+	return nil, nil
+}
+func (s *recordingGitHubService) DeleteRunner(context.Context, github.Repo, int64) error { return nil }
 
 func TestUpConfirmsDetectedRepoBeforeAuth(t *testing.T) {
 	service := &recordingGitHubService{}
@@ -122,6 +132,7 @@ func TestUpConfirmsDetectedRepoBeforeAuth(t *testing.T) {
 type permissionDeniedGitHubService struct{}
 
 func (permissionDeniedGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
+	repo.Private = true
 	return repo, nil
 }
 func (permissionDeniedGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
@@ -131,6 +142,18 @@ func (permissionDeniedGitHubService) VerifyAuth(_ context.Context, repo github.R
 		Required:    []string{"Administration read/write", "Metadata read"},
 		Remediation: []string{github.FineGrainedTokenRemediation(repo)},
 	}, nil
+}
+func (permissionDeniedGitHubService) CreateRegistrationToken(context.Context, github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{}, nil
+}
+func (permissionDeniedGitHubService) CreateRemovalToken(context.Context, github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{}, nil
+}
+func (permissionDeniedGitHubService) ListRunners(context.Context, github.Repo) ([]github.Runner, error) {
+	return nil, nil
+}
+func (permissionDeniedGitHubService) DeleteRunner(context.Context, github.Repo, int64) error {
+	return nil
 }
 
 func TestUpPermissionDeniedReturnsExitCodeThreeAndJSONError(t *testing.T) {
@@ -174,6 +197,16 @@ func (s publicRepoGitHubService) Repository(_ context.Context, repo github.Repo)
 func (s publicRepoGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
 	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
 }
+func (s publicRepoGitHubService) CreateRegistrationToken(context.Context, github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{}, nil
+}
+func (s publicRepoGitHubService) CreateRemovalToken(context.Context, github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{}, nil
+}
+func (s publicRepoGitHubService) ListRunners(context.Context, github.Repo) ([]github.Runner, error) {
+	return nil, nil
+}
+func (s publicRepoGitHubService) DeleteRunner(context.Context, github.Repo, int64) error { return nil }
 
 func TestUpPublicRepoWithoutOverrideReturnsExitCodeFour(t *testing.T) {
 	var out, errOut bytes.Buffer
@@ -198,17 +231,33 @@ func TestUpPublicRepoWithoutOverrideReturnsExitCodeFour(t *testing.T) {
 	}
 }
 
+func TestUpPublicRepoBlocksBeforeRemoteOrTokenSideEffects(t *testing.T) {
+	service := publicRepoGitHubService{repo: github.Repo{Host: "github.com", Owner: "owner", Name: "name", FullName: "owner/name", Private: false}}
+	remoteExec := newFakeRemoteExecutor()
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: service, RemoteExecutor: remoteExec})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--host", "alice@example.com", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("expected public repo safety gate, err=%v", err)
+	}
+	if remoteExec.probeCalls != 0 || len(remoteExec.runs) != 0 {
+		t.Fatalf("public repo block should leave host-key/preflight/bootstrap call counts at 0; probe=%d runs=%d", remoteExec.probeCalls, len(remoteExec.runs))
+	}
+}
+
 func TestUpPublicRepoOverrideJSONIncludesWarning(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
-		Version: "test-version",
-		Out:     &out,
-		Err:     &errOut,
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		RemoteExecutor: newFakeRemoteExecutor(),
 		GitHub: publicRepoGitHubService{repo: github.Repo{
 			Host: "github.com", Owner: "owner", Name: "name", FullName: "owner/name", Private: false,
 		}},
 	})
-	cmd.SetArgs([]string{"--json", "up", "--dry-run", "--repo", "owner/name", "--yes", "--allow-public-repo-risk", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--dry-run", "--repo", "owner/name", "--host", "alice@example.com", "--yes", "--allow-public-repo-risk", "--no-color"})
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("override should allow dry run: %v\nstderr=%s", err, errOut.String())
@@ -311,8 +360,8 @@ func TestDefaultGitHubServiceUsesRealMetadataAndBlocksPublicRepo(t *testing.T) {
 	if !strings.Contains(errOut.String(), "WARNING: Public repository risk") {
 		t.Fatalf("missing public repo warning in stderr: %q", errOut.String())
 	}
-	if !sawRegistration || !sawRepository {
-		t.Fatalf("expected registration and repository endpoints, registration=%t repository=%t", sawRegistration, sawRepository)
+	if sawRegistration || !sawRepository {
+		t.Fatalf("expected repository endpoint before safety block and no registration token request, registration=%t repository=%t", sawRegistration, sawRepository)
 	}
 	combinedOutput := out.String() + errOut.String()
 	for _, raw := range []string{"ghp_cli_fixturetoken12345", "registration-token-cli-fixture-12345"} {

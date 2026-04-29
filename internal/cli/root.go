@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/redact"
+	"github.com/salar/runnerkit/internal/remote"
 	"github.com/salar/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -28,6 +30,10 @@ type Dependencies struct {
 	GitHubBaseURL    string
 	GitHubHTTPClient *http.Client
 	StateBaseDir     string
+	RemoteExecutor   remote.Executor
+	PollInterval     time.Duration
+	PollTimeout      time.Duration
+	Sleep            func(context.Context, time.Duration) error
 }
 
 func normalizeDependencies(deps Dependencies) Dependencies {
@@ -54,6 +60,27 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 	}
 	if deps.GitHub == nil {
 		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient})
+	}
+	if deps.RemoteExecutor == nil {
+		deps.RemoteExecutor = remote.UnavailableExecutor{}
+	}
+	if deps.PollInterval == 0 {
+		deps.PollInterval = defaultRunnerPollInterval
+	}
+	if deps.PollTimeout == 0 {
+		deps.PollTimeout = defaultRunnerPollTimeout
+	}
+	if deps.Sleep == nil {
+		deps.Sleep = func(ctx context.Context, d time.Duration) error {
+			timer := time.NewTimer(d)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return nil
+			}
+		}
 	}
 	return deps
 }

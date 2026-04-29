@@ -48,12 +48,17 @@ type RunnerIdentity struct {
 }
 
 type MachineRef struct {
-	Kind        string `json:"kind"`
-	HostRef     string `json:"host_ref,omitempty"`
-	User        string `json:"user,omitempty"`
-	InstallPath string `json:"install_path,omitempty"`
-	WorkDir     string `json:"work_dir,omitempty"`
-	ServiceName string `json:"service_name,omitempty"`
+	Kind               string     `json:"kind"`
+	HostRef            string     `json:"host_ref,omitempty"`
+	User               string     `json:"user,omitempty"`
+	Port               int        `json:"port,omitempty"`
+	KeyPathRef         string     `json:"key_path_ref,omitempty"`
+	HostKeyAlgorithm   string     `json:"host_key_algorithm,omitempty"`
+	HostKeyFingerprint string     `json:"host_key_fingerprint,omitempty"`
+	HostKeyAcceptedAt  *time.Time `json:"host_key_accepted_at,omitempty"`
+	InstallPath        string     `json:"install_path,omitempty"`
+	WorkDir            string     `json:"work_dir,omitempty"`
+	ServiceName        string     `json:"service_name,omitempty"`
 }
 
 type ProviderRef struct {

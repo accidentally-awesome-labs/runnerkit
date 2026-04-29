@@ -20,6 +20,13 @@ const (
 	StepCheckSafety  = "check_safety"
 	StepPreviewState = "preview_state"
 	StepSaveState    = "save_state"
+
+	StepFixDependencies  = "fix_dependencies"
+	StepCreateRunnerUser = "create_runner_user"
+	StepDownloadRunner   = "download_runner"
+	StepConfigureRunner  = "configure_runner"
+	StepInstallService   = "install_service"
+	StepVerifyService    = "verify_service"
 )
 
 type Checkpoint struct {
@@ -65,6 +72,21 @@ func FoundationUpPlan() Plan {
 			{ID: StepCheckSafety, Name: "Check safety", Status: StepPending},
 			{ID: StepPreviewState, Name: "Preview state", Status: StepPending},
 			{ID: StepSaveState, Name: "Save state", Status: StepPending, Checkpoint: &Checkpoint{ID: "confirm_save_state", Type: "confirm", Prompt: "Save this foundation state? [y/N]", Required: true}},
+		},
+	}
+}
+
+func BootstrapPlan() Plan {
+	return Plan{
+		ID:    "bootstrap-plan",
+		Title: "Apply BYO runner install plan",
+		Steps: []Step{
+			{ID: StepFixDependencies, Name: "Fix dependencies", Status: StepPending},
+			{ID: StepCreateRunnerUser, Name: "Create runner user", Status: StepPending},
+			{ID: StepDownloadRunner, Name: "Download runner", Status: StepPending},
+			{ID: StepConfigureRunner, Name: "Configure runner", Status: StepPending},
+			{ID: StepInstallService, Name: "Install service", Status: StepPending},
+			{ID: StepVerifyService, Name: "Verify service", Status: StepPending},
 		},
 	}
 }

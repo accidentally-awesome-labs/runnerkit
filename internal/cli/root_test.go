@@ -6,27 +6,39 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/salar/runnerkit/internal/github"
+	"github.com/salar/runnerkit/internal/remote"
 )
 
 func executeForTest(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var out, err bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
-		Version: "test-version",
-		Out:     &out,
-		Err:     &err,
-		GitHub:  fakePermittedGitHubService{},
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &err,
+		GitHub:         newFakePermittedGitHubService(),
+		RemoteExecutor: newFakeRemoteExecutor(),
+		Sleep:          noSleep,
 	})
 	cmd.SetArgs(args)
 	runErr := cmd.Execute()
 	return out.String(), err.String(), runErr
 }
 
-type fakePermittedGitHubService struct{}
+type fakePermittedGitHubService struct {
+	listCalls  int
+	tokenCalls int
+	runners    []github.Runner
+}
 
-func (fakePermittedGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
+func newFakePermittedGitHubService() *fakePermittedGitHubService {
+	return &fakePermittedGitHubService{}
+}
+
+func (s *fakePermittedGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
 	if repo.Host == "" {
 		repo.Host = "github.com"
 	}
@@ -34,9 +46,71 @@ func (fakePermittedGitHubService) Repository(_ context.Context, repo github.Repo
 	return repo, nil
 }
 
-func (fakePermittedGitHubService) VerifyAuth(_ context.Context, _ github.Repo) (github.PermissionStatus, error) {
+func (s *fakePermittedGitHubService) VerifyAuth(_ context.Context, _ github.Repo) (github.PermissionStatus, error) {
 	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
 }
+
+func (s *fakePermittedGitHubService) CreateRegistrationToken(_ context.Context, _ github.Repo) (github.RunnerToken, error) {
+	s.tokenCalls++
+	return github.RunnerToken{Token: fakeRegistrationToken(), ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+func (s *fakePermittedGitHubService) CreateRemovalToken(_ context.Context, _ github.Repo) (github.RunnerToken, error) {
+	return github.RunnerToken{Token: strings.Join([]string{"remove-token", "secret-12345"}, "-"), ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+func (s *fakePermittedGitHubService) ListRunners(_ context.Context, _ github.Repo) ([]github.Runner, error) {
+	s.listCalls++
+	if s.runners != nil {
+		return s.runners, nil
+	}
+	if s.listCalls == 1 {
+		return nil, nil
+	}
+	return []github.Runner{{ID: 123, Name: "runnerkit-owner-repo-local", OS: "linux", Status: "online", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"}}}, nil
+}
+
+func (s *fakePermittedGitHubService) DeleteRunner(context.Context, github.Repo, int64) error {
+	return nil
+}
+
+func fakeRegistrationToken() string {
+	return strings.Join([]string{"registration-token", "secret-12345"}, "-")
+}
+
+type fakeRemoteExecutor struct {
+	probe      remote.ProbeResult
+	probeCalls int
+	runs       []remote.Command
+	runResults map[string]remote.Result
+	runErrs    map[string]error
+}
+
+func newFakeRemoteExecutor() *fakeRemoteExecutor {
+	return &fakeRemoteExecutor{probe: passingProbe(), runResults: map[string]remote.Result{}, runErrs: map[string]error{}}
+}
+
+func passingProbe() remote.ProbeResult {
+	commands := map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}
+	return remote.ProbeResult{HostKey: remote.HostKey{Algorithm: "ssh-ed25519", Fingerprint: "SHA256:fakehostfingerprint"}, OSRelease: map[string]string{"ID": "ubuntu"}, Kernel: "linux", Arch: "x86_64", Systemd: true, Commands: commands, DiskAvailableBytes: 2147483648, TimeSynchronized: true}
+}
+
+func (f *fakeRemoteExecutor) Probe(context.Context, remote.Target) (remote.ProbeResult, error) {
+	f.probeCalls++
+	return f.probe, nil
+}
+
+func (f *fakeRemoteExecutor) Run(_ context.Context, _ remote.Target, command remote.Command) (remote.Result, error) {
+	f.runs = append(f.runs, command)
+	if f.runResults != nil {
+		if result, ok := f.runResults[command.ID]; ok {
+			return result, f.runErrs[command.ID]
+		}
+	}
+	return remote.Result{Stdout: "ok", ExitCode: 0}, nil
+}
+
+func noSleep(context.Context, time.Duration) error { return nil }
 
 func TestRootHelpListsRunnerKitAndUp(t *testing.T) {
 	out, _, err := executeForTest(t, "--help")

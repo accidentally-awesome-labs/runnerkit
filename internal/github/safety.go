@@ -9,7 +9,7 @@ const (
 )
 
 const PublicRepoRiskTitle = "WARNING: Public repository risk"
-const PublicRepoRiskBody = "Persistent self-hosted runners can execute untrusted workflow code from forks or public contributors."
+const PublicRepoRiskBody = "Persistent self-hosted runners are intended for trusted private repositories; public, fork-based, or otherwise untrusted workflows can execute code on your machine."
 const PublicRepoRiskNextAction = "Use GitHub-hosted runners, wait for RunnerKit ephemeral mode, or pass --allow-public-repo-risk after reviewing the risk."
 
 type SafetyOptions struct {

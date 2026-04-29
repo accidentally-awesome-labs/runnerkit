@@ -1,0 +1,76 @@
+# BYO Persistent Runner Quickstart
+
+This guide covers the Phase 2 happy path: connect RunnerKit to an existing trusted Linux systemd host over SSH, install a repository-scoped persistent GitHub Actions runner, and copy the labels into your workflow job.
+
+## Prerequisites
+
+- A RunnerKit binary or local checkout you can run.
+- GitHub authentication through `gh auth login` or `RUNNERKIT_GITHUB_TOKEN` with repository Administration read/write and Metadata read for the target repo.
+- A trusted private GitHub repository such as `owner/name`.
+- SSH access to a Linux systemd host as `user@host`.
+- Sudo ability on that host for package install, creating the runner user, and installing the systemd service.
+
+## Safety warning
+
+Persistent self-hosted runners are intended for trusted private repositories; public, fork-based, or otherwise untrusted workflows can execute code on your machine.
+
+Do not use this persistent BYO path for public pull requests or untrusted workflow code. Use GitHub-hosted runners or wait for RunnerKit's future ephemeral mode for stronger isolation.
+
+## Run setup
+
+```bash
+runnerkit up --repo owner/name --host user@host
+```
+
+Useful automation flags:
+
+```bash
+runnerkit up --repo owner/name --host user@host --yes
+runnerkit up --repo owner/name --host user@host:2222 --ssh-key ~/.ssh/id_ed25519 --yes
+```
+
+RunnerKit prompts for unknown SSH host keys. Verify the `SHA256:` fingerprint before accepting it.
+
+## What RunnerKit does
+
+- Resolves and checks GitHub repository permissions.
+- Blocks risky public/fork repository defaults unless you explicitly override the safety gate.
+- Verifies the SSH host key and records the accepted fingerprint in local state.
+- Runs SSH preflight checks for Linux, architecture, systemd, sudo, disk, tools, time, network, and runner conflicts.
+- Creates or reuses the non-root `runnerkit-runner` service user.
+- Downloads the official GitHub Actions runner package, verifies its SHA-256 checksum, and configures it with a short-lived registration token.
+- Installs and starts the runner service through systemd.
+- Verifies the GitHub runner is online with RunnerKit labels before saving successful state.
+
+RunnerKit does not edit or commit workflow YAML for you.
+
+## Add the workflow labels
+
+After setup, add the completion snippet to the job you want to run on the BYO runner:
+
+```yaml
+runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]
+```
+
+Do not use `runs-on: self-hosted` alone for RunnerKit-managed runners.
+
+## Completion summary
+
+A successful setup prints and records:
+
+- Runner name.
+- Labels.
+- Machine target.
+- Service name.
+- GitHub runner ID.
+- State path.
+- The copy-paste `runs-on` snippet.
+
+## Troubleshooting
+
+- **SSH connection fails**: Confirm `ssh user@host` works from the same machine and that the host/port are correct.
+- **Host key changed**: Stop and verify the machine identity. RunnerKit fails closed when the stored fingerprint differs from the observed fingerprint.
+- **Unsupported OS or architecture**: Use Linux `x64` or `arm64`; pass `--allow-unknown-linux` only when you understand the best-effort risk.
+- **sudo or systemd missing**: Use a systemd Linux host where your SSH user can run required sudo setup commands.
+- **Runner service is not active**: SSH to the host, enter the runner directory, and run `sudo ./svc.sh status`, then re-run `runnerkit up` after fixing the service.
+- **GitHub runner stays offline**: Check outbound HTTPS to GitHub, the runner service logs, and the repository Actions runner settings.

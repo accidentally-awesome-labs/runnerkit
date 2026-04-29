@@ -68,6 +68,38 @@ func (s *Service) VerifyAuth(ctx context.Context, repo Repo) (PermissionStatus, 
 	return CheckRunnerManagementPermission(ctx, client, repo, credential.Source)
 }
 
+func (s *Service) CreateRegistrationToken(ctx context.Context, repo Repo) (RunnerToken, error) {
+	client, _, err := s.client(ctx)
+	if err != nil {
+		return RunnerToken{}, err
+	}
+	return client.CreateRegistrationToken(ctx, repo)
+}
+
+func (s *Service) CreateRemovalToken(ctx context.Context, repo Repo) (RunnerToken, error) {
+	client, _, err := s.client(ctx)
+	if err != nil {
+		return RunnerToken{}, err
+	}
+	return client.CreateRemovalToken(ctx, repo)
+}
+
+func (s *Service) ListRunners(ctx context.Context, repo Repo) ([]Runner, error) {
+	client, _, err := s.client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.ListRunners(ctx, repo)
+}
+
+func (s *Service) DeleteRunner(ctx context.Context, repo Repo, runnerID int64) error {
+	client, _, err := s.client(ctx)
+	if err != nil {
+		return err
+	}
+	return client.DeleteRunner(ctx, repo, runnerID)
+}
+
 func (s *Service) client(ctx context.Context) (*Client, Credential, error) {
 	credential, err := s.discoverCredential(ctx)
 	if err != nil {
