@@ -16,16 +16,16 @@ func TestStoreSavesVersionedSecretFreeStateAtomically(t *testing.T) {
 	store := NewStore(t.TempDir())
 	now := time.Date(2026, 4, 29, 2, 30, 0, 0, time.UTC)
 	state := State{Repositories: []RepositoryState{{
-		Repo: gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
-		Auth: AuthReference{Source: "gh", Reference: "gh"},
-		Runner: RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"}, Mode: "persistent", OS: "linux", Arch: "x64"},
-		Machine: MachineRef{Kind: "placeholder", InstallPath: ""},
-		Provider: ProviderRef{Kind: "none", IDs: map[string]string{}},
-		Cleanup: CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
-		Safety: SafetyMetadata{Code: "ok", Allowed: true},
+		Repo:             gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
+		Auth:             AuthReference{Source: "gh", Reference: "gh"},
+		Runner:           RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"}, Mode: "persistent", OS: "linux", Arch: "x64"},
+		Machine:          MachineRef{Kind: "placeholder", InstallPath: ""},
+		Provider:         ProviderRef{Kind: "none", IDs: map[string]string{}},
+		Cleanup:          CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
+		Safety:           SafetyMetadata{Code: "ok", Allowed: true},
 		RunnerKitVersion: "test-version",
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}}}
 
 	if err := store.Save(state); err != nil {
@@ -67,8 +67,8 @@ func TestStoreRejectsRawSecretFields(t *testing.T) {
 
 	store := NewStore(t.TempDir())
 	state := State{Repositories: []RepositoryState{{
-		Repo: gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
-		Auth: AuthReference{Source: "env", Reference: "RUNNERKIT_GITHUB_TOKEN"},
+		Repo:   gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
+		Auth:   AuthReference{Source: "env", Reference: "RUNNERKIT_GITHUB_TOKEN"},
 		Runner: RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted"}},
 		Safety: SafetyMetadata{Code: "ok", Allowed: true},
 	}}}
