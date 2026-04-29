@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
@@ -12,13 +13,15 @@ import (
 
 // Dependencies are injectable command dependencies used by tests and main.
 type Dependencies struct {
-	Version string
-	In      io.Reader
-	Out     io.Writer
-	Err     io.Writer
-	TTY     ui.TerminalCapabilities
-	Prompts ui.Prompter
-	Clock   func() time.Time
+	Version       string
+	In            io.Reader
+	Out           io.Writer
+	Err           io.Writer
+	TTY           ui.TerminalCapabilities
+	Prompts       ui.Prompter
+	Clock         func() time.Time
+	CommandRunner gh.CommandRunner
+	GitHub        GitHubService
 }
 
 func normalizeDependencies(deps Dependencies) Dependencies {
@@ -39,6 +42,9 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 	}
 	if deps.TTY.Width == 0 {
 		deps.TTY.Width = 80
+	}
+	if deps.GitHub == nil {
+		deps.GitHub = defaultGitHubService{}
 	}
 	return deps
 }
