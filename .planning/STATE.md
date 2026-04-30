@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Phase 3 complete; ready to plan Phase 4
-last_updated: "2026-04-29T23:32:53.384Z"
-last_activity: 2026-04-29 - Phase 3 complete and verified; transitioned to Phase 4 planning.
+stopped_at: Phase 4 context gathered
+last_updated: "2026-04-30T15:22:53Z"
+last_activity: 2026-04-30 - Phase 4 context gathered; ready to plan Phase 4.
 progress:
   total_phases: 6
   completed_phases: 3
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 
 ## Current Position
 
-Phase: 03 of 3 (operations diagnostics and byo cleanup)
-Plan: 4 of 4
-Status: Milestone complete
-Last activity: 2026-04-29 - Phase 3 complete and verified; transitioned to Phase 4 planning.
+Phase: 04 of 6 (recommended cloud path and billable cleanup)
+Plan: 0 of 4
+Status: Context gathered
+Last activity: 2026-04-30 - Phase 4 context gathered; ready to plan Phase 4.
 
 Milestone Progress: [█████░░░░░] 50%
 
@@ -41,11 +41,11 @@ Milestone Progress: [█████░░░░░] 50%
 
 **By Phase:**
 
-| Phase | Plans | Total  | Avg/Plan |
-| ----- | ----- | ------ | -------- |
-| 01    | 4/4   | 71 min | 18 min   |
-| 02    | 4/4   | 95 min | 24 min   |
-| 03    | 4/4   | 176 min | 44 min  |
+| Phase | Plans | Total   | Avg/Plan |
+| ----- | ----- | ------- | -------- |
+| 01    | 4/4   | 71 min  | 18 min   |
+| 02    | 4/4   | 95 min  | 24 min   |
+| 03    | 4/4   | 176 min | 44 min   |
 
 **Recent Trend:**
 
@@ -86,6 +86,7 @@ Recent decisions affecting current work:
 - Plan 02-04: Persistent BYO is documented and warned as trusted-private-repository only; RunnerKit prints snippets and does not edit workflow YAML.
 - Phase 3 context: `runnerkit status` should default to the current repo, stay read-only, use fast health probes, show derived health plus source facts, include the saved `runs-on` snippet, flag label drift, and expose the same model in JSON.
 - Phase 3 context: BYO cleanup should use `runnerkit down`; interactive cleanup asks artifact-by-artifact, while `down --yes` applies a safe default plan limited to RunnerKit-managed runner-specific artifacts.
+- Phase 4 context: Cloud provider/profile is planner discretion after research, optimized for smooth setup/reliability over absolute lowest cost; cloud auth should reuse provider CLI/env credentials; interactive `runnerkit up` offers cloud vs BYO when no host is provided; non-interactive cloud requires explicit cloud flags; provisioning plans show cost, resources, identity/tags, labels, and exact `runnerkit destroy`; state stores full cloud resource inventory; `runnerkit destroy` verifies GitHub removal plus provider resources absent/non-billable and keeps pending checkpoints on partial failure.
 
 ### Pending Todos
 
@@ -103,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-29
-Stopped at: Phase 3 complete; ready to plan Phase 4
-Resume file: .planning/ROADMAP.md
+Last session: 2026-04-30
+Stopped at: Phase 4 context gathered
+Resume file: .planning/phases/04-recommended-cloud-path-and-billable-cleanup/04-CONTEXT.md
