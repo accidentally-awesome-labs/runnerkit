@@ -16,19 +16,21 @@ type GitHubService struct {
 	RemovalToken      gh.RunnerToken
 	Runners           []gh.Runner
 
-	RepositoryErr              error
-	VerifyAuthErr              error
-	CreateRegistrationTokenErr error
-	CreateRemovalTokenErr      error
-	ListRunnersErr             error
-	DeleteRunnerErr            error
+	RepositoryErr                 error
+	VerifyAuthErr                 error
+	VerifyRunnerManagementReadErr error
+	CreateRegistrationTokenErr    error
+	CreateRemovalTokenErr         error
+	ListRunnersErr                error
+	DeleteRunnerErr               error
 
-	RepositoryCalls              int
-	VerifyAuthCalls              int
-	CreateRegistrationTokenCalls int
-	CreateRemovalTokenCalls      int
-	ListRunnersCalls             int
-	DeleteRunnerCalls            int
+	RepositoryCalls                 int
+	VerifyAuthCalls                 int
+	VerifyRunnerManagementReadCalls int
+	CreateRegistrationTokenCalls    int
+	CreateRemovalTokenCalls         int
+	ListRunnersCalls                int
+	DeleteRunnerCalls               int
 
 	DeletedRunnerIDs []int64
 	LastRepositoryIn gh.Repo
@@ -56,6 +58,21 @@ func (s *GitHubService) VerifyAuth(_ context.Context, repo gh.Repo) (gh.Permissi
 	s.LastAuthIn = repo
 	if s.VerifyAuthErr != nil {
 		return s.Permission, s.VerifyAuthErr
+	}
+	if s.Permission.Source.Kind == "" {
+		s.Permission.Source = gh.AuthSource{Kind: "gh", Reference: "gh"}
+	}
+	if !s.Permission.OK && len(s.Permission.Remediation) == 0 {
+		s.Permission.OK = true
+	}
+	return s.Permission, nil
+}
+
+func (s *GitHubService) VerifyRunnerManagementRead(_ context.Context, repo gh.Repo) (gh.PermissionStatus, error) {
+	s.VerifyRunnerManagementReadCalls++
+	s.LastAuthIn = repo
+	if s.VerifyRunnerManagementReadErr != nil {
+		return s.Permission, s.VerifyRunnerManagementReadErr
 	}
 	if s.Permission.Source.Kind == "" {
 		s.Permission.Source = gh.AuthSource{Kind: "gh", Reference: "gh"}

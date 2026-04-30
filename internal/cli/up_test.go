@@ -81,6 +81,7 @@ func (denyingRepoPrompter) Select(context.Context, ui.Prompt, []ui.Option) (stri
 
 type recordingGitHubService struct {
 	authCalls int
+	readCalls int
 }
 
 func (s *recordingGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
@@ -88,6 +89,11 @@ func (s *recordingGitHubService) Repository(_ context.Context, repo github.Repo)
 }
 func (s *recordingGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
 	s.authCalls++
+	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
+}
+
+func (s *recordingGitHubService) VerifyRunnerManagementRead(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
+	s.readCalls++
 	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
 }
 func (s *recordingGitHubService) CreateRegistrationToken(context.Context, github.Repo) (github.RunnerToken, error) {
@@ -143,6 +149,15 @@ func (permissionDeniedGitHubService) VerifyAuth(_ context.Context, repo github.R
 		Remediation: []string{github.FineGrainedTokenRemediation(repo)},
 	}, nil
 }
+
+func (permissionDeniedGitHubService) VerifyRunnerManagementRead(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
+	return github.PermissionStatus{
+		OK:          false,
+		Source:      github.AuthSource{Kind: "gh", Reference: "gh"},
+		Required:    []string{"Administration read/write", "Metadata read"},
+		Remediation: []string{github.FineGrainedTokenRemediation(repo)},
+	}, nil
+}
 func (permissionDeniedGitHubService) CreateRegistrationToken(context.Context, github.Repo) (github.RunnerToken, error) {
 	return github.RunnerToken{}, nil
 }
@@ -159,7 +174,7 @@ func (permissionDeniedGitHubService) DeleteRunner(context.Context, github.Repo, 
 func TestUpPermissionDeniedReturnsExitCodeThreeAndJSONError(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: permissionDeniedGitHubService{}})
-	cmd.SetArgs([]string{"--json", "up", "--dry-run", "--repo", "owner/name", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--dry-run", "--repo", "owner/name", "--host", "alice@example.com", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected permission denial")
@@ -195,6 +210,10 @@ func (s publicRepoGitHubService) Repository(_ context.Context, repo github.Repo)
 	return s.repo, nil
 }
 func (s publicRepoGitHubService) VerifyAuth(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
+	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
+}
+
+func (s publicRepoGitHubService) VerifyRunnerManagementRead(_ context.Context, repo github.Repo) (github.PermissionStatus, error) {
 	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
 }
 func (s publicRepoGitHubService) CreateRegistrationToken(context.Context, github.Repo) (github.RunnerToken, error) {
@@ -290,7 +309,7 @@ func TestDefaultGitHubServiceMissingCredentialsFailsClosed(t *testing.T) {
 		GitHubEnv:     map[string]string{},
 		StateBaseDir:  stateDir,
 	})
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--dry-run", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected missing credentials to fail closed")

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gh "github.com/salar/runnerkit/internal/github"
+	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/remote"
 	"github.com/salar/runnerkit/internal/ui"
@@ -26,6 +27,7 @@ type Dependencies struct {
 	CommandRunner gh.CommandRunner
 	GitHub        GitHubService
 	GitHubEnv     map[string]string
+	Providers     provider.Registry
 	// GitHubBaseURL string is a test-only GitHub API base URL override.
 	GitHubBaseURL    string
 	GitHubHTTPClient *http.Client
@@ -60,6 +62,9 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 	}
 	if deps.GitHub == nil {
 		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient})
+	}
+	if deps.Providers == nil {
+		deps.Providers = provider.NewRegistry(provider.NewHetznerPlanProvider(nil))
 	}
 	if deps.RemoteExecutor == nil {
 		deps.RemoteExecutor = remote.NewSystemExecutor()

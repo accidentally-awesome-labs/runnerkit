@@ -14,7 +14,7 @@ import (
 	"github.com/salar/runnerkit/internal/state"
 )
 
-func TestUpNonInteractiveRequiresHost(t *testing.T) {
+func TestUpNonInteractiveRequiresExplicitBYOHostOrCloudIntent(t *testing.T) {
 	_, errOut, err := executeForTest(t, "up", "--repo", "owner/name", "--non-interactive", "--yes", "--no-color")
 	if err == nil {
 		t.Fatal("expected missing host error")
@@ -22,8 +22,8 @@ func TestUpNonInteractiveRequiresHost(t *testing.T) {
 	if got := ExitCode(err); got != ExitInputRequired {
 		t.Fatalf("ExitCode() = %d, want %d", got, ExitInputRequired)
 	}
-	if !strings.Contains(errOut, "Pass --host user@host for BYO setup.") {
-		t.Fatalf("missing host remediation: %q", errOut)
+	if !strings.Contains(errOut, "RunnerKit will not create billable cloud resources without an explicit") || !strings.Contains(errOut, "--cloud hetzner flag and --yes.") || !strings.Contains(errOut, "Pass --host user@host for BYO setup") {
+		t.Fatalf("missing setup path remediation: %q", errOut)
 	}
 }
 

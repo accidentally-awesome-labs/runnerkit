@@ -30,6 +30,8 @@ func executeForTest(t *testing.T, args ...string) (string, string, error) {
 
 type fakePermittedGitHubService struct {
 	listCalls  int
+	authCalls  int
+	readCalls  int
 	tokenCalls int
 	runners    []github.Runner
 }
@@ -47,6 +49,12 @@ func (s *fakePermittedGitHubService) Repository(_ context.Context, repo github.R
 }
 
 func (s *fakePermittedGitHubService) VerifyAuth(_ context.Context, _ github.Repo) (github.PermissionStatus, error) {
+	s.authCalls++
+	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
+}
+
+func (s *fakePermittedGitHubService) VerifyRunnerManagementRead(_ context.Context, _ github.Repo) (github.PermissionStatus, error) {
+	s.readCalls++
 	return github.PermissionStatus{OK: true, Source: github.AuthSource{Kind: "gh", Reference: "gh"}}, nil
 }
 

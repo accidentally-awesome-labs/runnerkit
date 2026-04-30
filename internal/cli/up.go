@@ -12,6 +12,7 @@ import (
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/labels"
 	"github.com/salar/runnerkit/internal/preflight"
+	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/remote"
 	rkstate "github.com/salar/runnerkit/internal/state"
@@ -36,11 +37,16 @@ type upOptions struct {
 	sshPort             int
 	sshKey              string
 	allowUnknownLinux   bool
+	cloud               string
+	cloudRegion         string
+	cloudProfile        string
+	sshAllowedCIDR      string
 }
 
 type GitHubService interface {
 	Repository(ctx context.Context, repo gh.Repo) (gh.Repo, error)
 	VerifyAuth(ctx context.Context, repo gh.Repo) (gh.PermissionStatus, error)
+	VerifyRunnerManagementRead(ctx context.Context, repo gh.Repo) (gh.PermissionStatus, error)
 	CreateRegistrationToken(ctx context.Context, repo gh.Repo) (gh.RunnerToken, error)
 	CreateRemovalToken(ctx context.Context, repo gh.Repo) (gh.RunnerToken, error)
 	ListRunners(ctx context.Context, repo gh.Repo) ([]gh.Runner, error)
@@ -48,7 +54,7 @@ type GitHubService interface {
 }
 
 func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
-	opts := &upOptions{sshPort: 22}
+	opts := &upOptions{sshPort: 22, cloudRegion: provider.HetznerDefaultRegion, cloudProfile: provider.HetznerDefaultServerType, sshAllowedCIDR: provider.HetznerDefaultSSHAllowedCIDR}
 	cmd := &cobra.Command{Use: "up"}
 	cmd.Short = "Set up a BYO GitHub Actions runner"
 	cmd.Long = "Connect a BYO Linux host, preflight it over SSH, bootstrap a non-root persistent runner service, and print RunnerKit label guidance."
@@ -66,6 +72,10 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().IntVar(&opts.sshPort, "ssh-port", 22, "SSH port for the target host")
 	cmd.Flags().StringVar(&opts.sshKey, "ssh-key", "", "SSH private key path reference for the target host")
 	cmd.Flags().BoolVar(&opts.allowUnknownLinux, "allow-unknown-linux", false, "try best-effort install on unverified Linux distributions")
+	cmd.Flags().StringVar(&opts.cloud, "cloud", "", "recommended cloud provider; only hetzner is supported in Phase 4")
+	cmd.Flags().StringVar(&opts.cloudRegion, "cloud-region", provider.HetznerDefaultRegion, "provider region/location for cloud runner")
+	cmd.Flags().StringVar(&opts.cloudProfile, "cloud-profile", provider.HetznerDefaultServerType, "provider server profile for cloud runner")
+	cmd.Flags().StringVar(&opts.sshAllowedCIDR, "ssh-allowed-cidr", provider.HetznerDefaultSSHAllowedCIDR, "SSH ingress CIDR for cloud runner")
 
 	return cmd
 }
@@ -88,6 +98,14 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
 	if err := enforceSafetyDecision(ctx, deps, renderer, repo, decision, opts, jsonOutput); err != nil {
 		return err
+	}
+
+	setupPath, err := resolveSetupPath(ctx, deps, renderer, repo, opts, jsonOutput)
+	if err != nil {
+		return err
+	}
+	if setupPath == setupPathCloud {
+		return runCloudUp(ctx, deps, renderer, repo, decision, opts, jsonOutput)
 	}
 
 	status, err := deps.GitHub.VerifyAuth(ctx, repo)
@@ -188,6 +206,178 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return renderer.JSON(upCompletionJSON(repo.FullName, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner))
 	}
 	return renderCompletionHuman(renderer, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner)
+}
+
+type setupPath string
+
+const (
+	setupPathBYO   setupPath = "byo"
+	setupPathCloud setupPath = "cloud"
+
+	cloudNoIntentCopy                = "RunnerKit will not create billable cloud resources without an explicit --cloud hetzner flag and --yes."
+	cloudUnsupportedCopy             = "Supported Phase 4 cloud value: --cloud hetzner."
+	cloudPrimaryCTA                  = "Provision cloud runner"
+	cloudEmptyStateHeadingExample    = "No RunnerKit-managed cloud runner is saved for `owner/name`."
+	cloudEmptyStateBodyExample       = "Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."
+	cloudFutureCleanupExample        = "Future cleanup: runnerkit destroy --repo owner/name"
+	cloudProvisioningPlanTitle       = "Cloud runner provisioning plan"
+	cloudProvisionConfirmationRemedy = "Pass --yes to create billable Hetzner resources after reviewing the cloud provisioning plan, or pass --dry-run to preview only."
+)
+
+func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, opts *upOptions, jsonOutput bool) (setupPath, error) {
+	if strings.TrimSpace(opts.host) != "" {
+		return setupPathBYO, nil
+	}
+	cloud := strings.ToLower(strings.TrimSpace(opts.cloud))
+	if cloud != "" {
+		if cloud == provider.HetznerProvider {
+			return setupPathCloud, nil
+		}
+		_ = renderer.Error("invalid_cloud_provider", "RunnerKit does not support cloud provider "+opts.cloud+" in Phase 4.", []string{cloudUnsupportedCopy})
+		return "", NewExitError(ExitInvalidInput, errors.New("unsupported cloud provider"))
+	}
+	if !jsonOutput && !opts.nonInteractive && !opts.yes && deps.TTY.StdinTTY && deps.Prompts != nil {
+		choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: "Choose setup path for `" + repo.FullName + "`:"}, []ui.Option{
+			{Value: string(setupPathBYO), Label: "Use existing SSH host (BYO)"},
+			{Value: string(setupPathCloud), Label: "Provision recommended cloud runner (Hetzner)"},
+		})
+		if err != nil {
+			return "", err
+		}
+		if choice == string(setupPathCloud) {
+			opts.cloud = provider.HetznerProvider
+			return setupPathCloud, nil
+		}
+		return setupPathBYO, nil
+	}
+	_ = renderer.Error("input_required", cloudNoIntentCopy, []string{"Pass --host user@host for BYO setup or pass --cloud hetzner --yes to provision the recommended cloud runner."})
+	return "", NewExitError(ExitInputRequired, errors.New(cloudNoIntentCopy))
+}
+
+func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, opts *upOptions, jsonOutput bool) error {
+	cloudProvider, ok := deps.Providers.Get(provider.HetznerProvider)
+	if !ok || cloudProvider == nil {
+		_ = renderer.Error("invalid_cloud_provider", "RunnerKit does not support cloud provider hetzner in Phase 4.", []string{cloudUnsupportedCopy})
+		return NewExitError(ExitInvalidInput, errors.New("cloud provider hetzner not registered"))
+	}
+	status, err := deps.GitHub.VerifyRunnerManagementRead(ctx, repo)
+	if err != nil || !status.OK {
+		message := fmt.Sprintf("RunnerKit can't verify repository runner management read access for %s without minting a registration token.", repo.FullName)
+		remediation := status.Remediation
+		if len(remediation) == 0 {
+			remediation = []string{gh.FineGrainedTokenRemediation(repo)}
+		}
+		_ = renderer.Error("github_permission_denied", message, remediation)
+		if err == nil {
+			err = errors.New(message)
+		}
+		return NewExitError(ExitGitHubAuth, err)
+	}
+	input := buildCloudProvisionInput(deps, repo, opts)
+	validation, err := cloudProvider.Validate(ctx, input)
+	if err != nil || !validation.OK {
+		message := "Hetzner credentials are missing. Export HCLOUD_TOKEN or HETZNER_CLOUD_TOKEN, then rerun runnerkit up --repo " + repo.FullName + " --cloud hetzner."
+		remediation := validation.Remediation
+		if len(remediation) == 0 {
+			remediation = []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run runnerkit up --repo " + repo.FullName + " --cloud hetzner"}
+		}
+		_ = renderer.Error("provider_credentials_missing", message, remediation)
+		if err == nil {
+			err = errors.New(message)
+		}
+		return NewExitError(ExitInputRequired, err)
+	}
+	plan, err := cloudProvider.Plan(ctx, input)
+	if err != nil {
+		_ = renderer.Error("cloud_plan_failed", "RunnerKit could not build the cloud provisioning plan.", []string{err.Error()})
+		return NewExitError(ExitSafetyGate, err)
+	}
+	_ = decision
+	if opts.dryRun {
+		return renderCloudProvisionPlan(renderer, jsonOutput, repo, plan)
+	}
+	if err := confirmCloudProvisionPlan(ctx, deps, renderer, opts, jsonOutput, repo, plan); err != nil {
+		return err
+	}
+	if _, err := cloudProvider.Provision(ctx, input); err != nil {
+		_ = renderer.Error("cloud_provisioning_unavailable", "Cloud resource creation is not implemented in this plan yet.", []string{"Re-run with --dry-run to preview the cloud provisioning plan, or wait for Phase 4 Plan 02 to create resources."})
+		return NewExitError(ExitSafetyGate, err)
+	}
+	return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": false, "cloud_plan": plan})
+}
+
+func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions) provider.ProvisionInput {
+	profile := provider.DefaultHetznerProfile()
+	profile.Region = defaultString(opts.cloudRegion, provider.HetznerDefaultRegion)
+	profile.ServerType = defaultString(opts.cloudProfile, provider.HetznerDefaultServerType)
+	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: labels.DefaultArch, Mode: labels.DefaultMode})
+	createdAt := deps.Clock()
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	return provider.ProvisionInput{
+		RepoFullName:    repo.FullName,
+		RunnerName:      labelSet.RunnerName,
+		Labels:          labelSet.Labels,
+		WorkflowSnippet: labelSet.RunsOnYAML,
+		Profile:         profile,
+		SSHAllowedCIDR:  defaultString(opts.sshAllowedCIDR, provider.HetznerDefaultSSHAllowedCIDR),
+		StateID:         labelSet.RunnerName,
+		CreatedAt:       createdAt,
+	}
+}
+
+func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {
+	if jsonOutput {
+		return renderer.JSON(map[string]any{
+			"ok":               true,
+			"command":          "up",
+			"repo":             repo.FullName,
+			"cloud_plan":       plan,
+			"runner_installed": false,
+			"state_saved":      false,
+			"workflow_snippet": plan.WorkflowSnippet,
+			"labels":           plan.Labels,
+		})
+	}
+	return renderer.Step(1, 1, cloudProvisioningPlanTitle,
+		ui.WarningLine(plan.CostEstimateCaveat),
+		ui.Bullet("Provider: "+plan.Provider),
+		ui.Bullet("Region: "+plan.Region),
+		ui.Bullet("Server type: "+plan.ServerType),
+		ui.Bullet("Image: "+plan.Image),
+		ui.Bullet("Resources: server, SSH key, firewall, public IPv4/IPv6"),
+		ui.Bullet("Not created: backups, snapshots, volumes, floating IPs"),
+		ui.Bullet("Tags: runnerkit=true, managed=true"),
+		ui.Bullet("SSH allowed CIDR: "+plan.SSHAllowedCIDR),
+		ui.Bullet("Labels: ["+strings.Join(plan.Labels, ", ")+"]"),
+		ui.Bullet(plan.WorkflowSnippet),
+		ui.Next("Future cleanup: "+plan.FutureDestroyCommand),
+	)
+}
+
+func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {
+	if err := renderCloudProvisionPlan(renderer, jsonOutput, repo, plan); err != nil {
+		return err
+	}
+	if opts.yes {
+		return nil
+	}
+	if jsonOutput || opts.nonInteractive || !deps.TTY.StdinTTY || deps.Prompts == nil {
+		message := "RunnerKit can't continue because creating billable Hetzner resources requires confirmation."
+		_ = renderer.Error("input_required", message, []string{cloudProvisionConfirmationRemedy})
+		return NewExitError(ExitInputRequired, errors.New(message))
+	}
+	confirmed, err := deps.Prompts.Confirm(ctx, ui.Prompt{Message: "Create billable Hetzner resources for `" + repo.FullName + "`?", Default: false})
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		message := "Canceled; no changes made."
+		_ = renderer.Error("canceled", message, nil)
+		return NewExitError(ExitCanceled, errors.New(message))
+	}
+	return nil
 }
 
 func resolveBYOTarget(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool) (remote.Target, error) {

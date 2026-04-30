@@ -68,6 +68,30 @@ func (s *Service) VerifyAuth(ctx context.Context, repo Repo) (PermissionStatus, 
 	return CheckRunnerManagementPermission(ctx, client, repo, credential.Source)
 }
 
+func (s *Service) VerifyRunnerManagementRead(ctx context.Context, repo Repo) (PermissionStatus, error) {
+	client, credential, err := s.client(ctx)
+	if err != nil {
+		return PermissionStatus{
+			OK:          false,
+			Required:    []string{"Administration read/write", "Metadata read"},
+			Remediation: []string{FineGrainedTokenRemediation(repo)},
+		}, err
+	}
+	if _, err := client.ListRunners(ctx, repo); err != nil {
+		return PermissionStatus{
+			OK:          false,
+			Source:      credential.Source,
+			Required:    []string{"Administration read/write", "Metadata read"},
+			Remediation: []string{FineGrainedTokenRemediation(repo)},
+		}, err
+	}
+	return PermissionStatus{
+		OK:       true,
+		Source:   credential.Source,
+		Required: []string{"Administration read/write", "Metadata read"},
+	}, nil
+}
+
 func (s *Service) CreateRegistrationToken(ctx context.Context, repo Repo) (RunnerToken, error) {
 	client, _, err := s.client(ctx)
 	if err != nil {
