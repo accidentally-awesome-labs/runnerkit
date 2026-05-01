@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/salar/runnerkit/internal/github"
+	"github.com/salar/runnerkit/internal/labels"
 	"github.com/salar/runnerkit/internal/remote"
 )
 
@@ -67,7 +68,7 @@ func (s *fakePermittedGitHubService) CreateRemovalToken(_ context.Context, _ git
 	return github.RunnerToken{Token: strings.Join([]string{"remove-token", "secret-12345"}, "-"), ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
-func (s *fakePermittedGitHubService) ListRunners(_ context.Context, _ github.Repo) ([]github.Runner, error) {
+func (s *fakePermittedGitHubService) ListRunners(_ context.Context, repo github.Repo) ([]github.Runner, error) {
 	s.listCalls++
 	if s.runners != nil {
 		return s.runners, nil
@@ -75,7 +76,8 @@ func (s *fakePermittedGitHubService) ListRunners(_ context.Context, _ github.Rep
 	if s.listCalls == 1 {
 		return nil, nil
 	}
-	return []github.Runner{{ID: 123, Name: "runnerkit-owner-repo-local", OS: "linux", Status: "online", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"}}}, nil
+	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: labels.DefaultArch, Mode: labels.DefaultMode})
+	return []github.Runner{{ID: 123, Name: labelSet.RunnerName, OS: "linux", Status: "online", Labels: append([]string(nil), labelSet.Labels...)}}, nil
 }
 
 func (s *fakePermittedGitHubService) DeleteRunner(context.Context, github.Repo, int64) error {

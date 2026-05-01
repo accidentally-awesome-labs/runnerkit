@@ -227,6 +227,7 @@ const (
 	cloudProvisionPending            = "cloud_provision_pending"
 	cloudReadinessPending            = "cloud_readiness_pending"
 	cloudReadinessFailedMessage      = "Cloud machine is not ready for runner registration yet. Fix the provider or SSH readiness issue, then rerun runnerkit up --repo owner/name --cloud hetzner."
+	cloudProviderSuccessExample      = "Provider: Hetzner fsn1 cpx22 ubuntu-24.04"
 	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
 	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
 	cloudJSONKeyEstimatedMonthlyCost = "estimated_monthly_cost"
@@ -337,14 +338,22 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		_ = saveCloudPendingRepository(ctx, deps, renderer, opts, jsonOutput, store, repo, status.Source, decision, input, plan, readinessResult, cloudReadinessPending, "readiness", true)
 		return renderCloudReadinessFailure(renderer, repo, err)
 	}
-	report, _, readyMachine, err := waitCloudTargetReady(ctx, deps, readyMachine)
+	report, hostKey, readyMachine, err := waitCloudTargetReady(ctx, deps, readyMachine)
 	if err != nil {
 		readinessResult := result
 		readinessResult.Machine = readyMachine
 		_ = saveCloudPendingRepository(ctx, deps, renderer, opts, jsonOutput, store, repo, status.Source, decision, input, plan, readinessResult, cloudReadinessPending, "readiness", true)
 		return renderCloudReadinessFailure(renderer, repo, err)
 	}
-	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: defaultString(report.Arch, labels.DefaultArch), Mode: labels.DefaultMode})
+	arch := defaultString(report.Arch, labels.DefaultArch)
+	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.DefaultMode})
+	runnerPkg, err := bootstrap.PackageFor("linux", arch)
+	if err != nil {
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the recommended cloud runner path."})
+		return NewExitError(ExitSafetyGate, err)
+	}
+	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report)
+
 	runners, err := deps.GitHub.ListRunners(ctx, repo)
 	if err != nil {
 		_ = renderer.Error("github_runner_list_failed", "RunnerKit can't list repository self-hosted runners.", []string{"Verify GitHub credentials can list repository runners for " + repo.FullName + "."})
@@ -359,10 +368,36 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		return NewExitError(ExitGitHubAuth, err)
 	}
 	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
-	if jsonOutput {
-		return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": true, "cloud_ready": true, "cloud_plan": plan})
+	bootstrapOpts.RunnerToken = token.Token
+	if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, readyMachine.Target, bootstrapOpts); err != nil {
+		var serviceErr bootstrap.ServiceNotActiveError
+		if errors.As(err, &serviceErr) {
+			_ = renderer.Error("runner_service_not_active", "RunnerKit installed the cloud runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or run runnerkit logs --repo " + repo.FullName + " --since 30m after fixing the service."})
+			return NewExitError(ExitSafetyGate, err)
+		}
+		_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the cloud runner install plan.", []string{"Review the remote host output, fix the issue, and run runnerkit destroy --repo " + repo.FullName + " if you need to stop billing."})
+		return NewExitError(ExitSafetyGate, err)
 	}
-	return renderer.Step(1, 1, "Cloud machine ready", ui.Success("Cloud machine is ready for runner registration."), ui.Bullet("Target: "+readyMachine.Target.Display()), ui.Bullet("Labels: ["+strings.Join(labelSet.Labels, ", ")+"]"), ui.Next("runnerkit destroy --repo "+repo.FullName))
+	onlineRunner, ok, err := waitForRunnerOnline(ctx, deps, repo, labelSet.RunnerName, labelSet.Labels)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		_ = renderer.Error("runner_online_timeout", "RunnerKit could not verify the cloud GitHub runner came online with the expected labels.", []string{"Check runnerkit logs --repo " + repo.FullName + " --since 30m, then run runnerkit destroy --repo " + repo.FullName + " if you need to stop billing."})
+		return NewExitError(ExitSafetyGate, errors.New("runner_online_timeout"))
+	}
+
+	finalResult := result
+	finalResult.Machine = readyMachine
+	repoState := buildCloudRepositoryState(deps, repo, status.Source, decision, labelSet, readyMachine.Target, hostKey, input, plan, finalResult, bootstrapOpts, onlineRunner, opts.sshKey)
+	if err := store.SaveRepository(repoState, true); err != nil {
+		_ = renderer.Error("state_io_failed", "RunnerKit can't save final cloud runner state.", []string{"Check permissions for " + store.Path() + " and run runnerkit destroy --repo " + repo.FullName + " if billable resources were created."})
+		return NewExitError(ExitStateIO, err)
+	}
+	if jsonOutput {
+		return renderer.JSON(cloudCompletionJSON(repo.FullName, store.Path(), plan, finalResult, labelSet, bootstrapOpts, onlineRunner))
+	}
+	return renderCloudCompletionHuman(renderer, decision.Warnings, store.Path(), plan, finalResult, labelSet, bootstrapOpts, onlineRunner)
 }
 
 func registerKnownCloudProviderSecrets(renderer *ui.Renderer) {
@@ -575,7 +610,7 @@ func confirmCloudStateReplaceBeforeProvision(ctx context.Context, deps Dependenc
 }
 
 func saveCloudPendingRepository(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, store rkstate.Store, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, checkpointMessage string, artifact string, replace bool) error {
-	repoState := buildCloudRepositoryState(deps, repo, source, decision, input, plan, result, checkpointMessage, artifact, opts.sshKey)
+	repoState := buildCloudPendingRepositoryState(deps, repo, source, decision, input, plan, result, checkpointMessage, artifact, opts.sshKey)
 	if err := store.SaveRepository(repoState, replace); err != nil {
 		if errors.Is(err, rkstate.ErrRepositoryExists) {
 			return replacementRequired(renderer, repo.FullName)
@@ -586,7 +621,7 @@ func saveCloudPendingRepository(ctx context.Context, deps Dependencies, renderer
 	return nil
 }
 
-func buildCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, checkpointMessage string, artifact string, keyPathRef string) rkstate.RepositoryState {
+func buildCloudPendingRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, checkpointMessage string, artifact string, keyPathRef string) rkstate.RepositoryState {
 	now := deps.Clock()
 	if now.IsZero() {
 		now = time.Now()
@@ -639,6 +674,85 @@ func buildCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSo
 		},
 		Safety:           cloudSafetyMetadata(decision, now),
 		Operations:       []rkstate.OperationCheckpoint{{Command: "up", Artifact: artifact, Status: "pending", Message: checkpointMessage, UpdatedAt: now}},
+		RunnerKitVersion: deps.Version,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+}
+
+func buildCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, labelSet labels.LabelSet, target remote.Target, hostKey remote.HostKey, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, opts bootstrap.Options, onlineRunner gh.Runner, keyPathRef string) rkstate.RepositoryState {
+	now := deps.Clock()
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if labelSet.RunnerName == "" {
+		labelSet = labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: opts.Package.Arch, Mode: labels.DefaultMode})
+	}
+	if len(input.Labels) > 0 {
+		labelSet.Labels = append([]string(nil), input.Labels...)
+	}
+	if input.WorkflowSnippet != "" {
+		labelSet.RunsOnYAML = input.WorkflowSnippet
+	}
+	if target.User == "" {
+		target.User = provider.HetznerDefaultSSHUser
+	}
+	if target.Port == 0 {
+		target.Port = 22
+	}
+	resourceIDs := mergeCloudResourceIDs(result)
+	providerRef := result.Machine.Provider
+	providerRef.Kind = defaultString(providerRef.Kind, provider.HetznerProvider)
+	providerRef.Name = defaultString(providerRef.Name, provider.HetznerProvider)
+	providerRef.Region = defaultString(providerRef.Region, plan.Region)
+	providerRef.Profile = defaultString(providerRef.Profile, plan.ServerType)
+	if providerRef.IDs == nil {
+		providerRef.IDs = cloneStringMap(resourceIDs)
+	}
+	providerRef.ResourceIDs = cloneStringMap(resourceIDs)
+	providerRef.Tags = cloneStringMap(plan.Tags)
+	providerRef.Cloud = mergeCloudInventory(providerRef.Cloud, result, plan, resourceIDs)
+	if providerRef.Cloud.PublicIPv4 == "" {
+		providerRef.Cloud.PublicIPv4 = result.Machine.PublicIPv4
+	}
+	if providerRef.Cloud.PublicIPv6 == "" {
+		providerRef.Cloud.PublicIPv6 = result.Machine.PublicIPv6
+	}
+	if providerRef.Cloud.ServerStatus == "" || providerRef.Cloud.ServerStatus == "provisioning" {
+		providerRef.Cloud.ServerStatus = "running"
+	}
+
+	return rkstate.RepositoryState{
+		Repo: repo,
+		Auth: rkstate.AuthReference{Source: defaultString(source.Kind, "gh"), Reference: defaultString(source.Reference, source.Kind)},
+		Runner: rkstate.RunnerIdentity{
+			Name:            labelSet.RunnerName,
+			Labels:          append([]string(nil), labelSet.Labels...),
+			WorkflowSnippet: labelSet.RunsOnYAML,
+			Mode:            labels.DefaultMode,
+			OS:              labels.DefaultOS,
+			Arch:            defaultString(opts.Package.Arch, labels.DefaultArch),
+		},
+		Machine: rkstate.MachineRef{
+			Kind:               "cloud-ssh",
+			HostRef:            target.Display(),
+			User:               target.User,
+			Port:               target.Port,
+			KeyPathRef:         keyPathRef,
+			HostKeyAlgorithm:   hostKey.Algorithm,
+			HostKeyFingerprint: hostKey.Fingerprint,
+			InstallPath:        opts.InstallPath,
+			WorkDir:            opts.WorkDir,
+			ServiceName:        runnerServiceName(labelSet.RunnerName),
+		},
+		Provider: providerRef,
+		Cleanup: rkstate.CleanupMetadata{
+			GitHubRunnerID:      onlineRunner.ID,
+			ManagedPaths:        []string{opts.InstallPath, opts.WorkDir},
+			ProviderResourceIDs: cloudProviderResourceIDList(resourceIDs),
+		},
+		Safety:           cloudSafetyMetadata(decision, now),
+		Operations:       []rkstate.OperationCheckpoint{},
 		RunnerKitVersion: deps.Version,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -1030,6 +1144,56 @@ func upCompletionJSON(repo string, warnings []string, statePath string, target r
 			"Do not use runs-on: self-hosted alone for RunnerKit-managed runners.",
 		},
 		"install_path": opts.InstallPath,
+	}
+}
+
+func renderCloudCompletionHuman(renderer *ui.Renderer, warnings []string, statePath string, plan provider.ProvisionPlan, result provider.ProvisionResult, labelSet labels.LabelSet, opts bootstrap.Options, onlineRunner gh.Runner) error {
+	cloud := result.Machine.Provider.Cloud
+	publicHost := defaultString(result.Machine.PublicIPv4, result.Machine.Target.Host)
+	destroyCommand := defaultString(plan.FutureDestroyCommand, "runnerkit destroy --repo "+strings.TrimPrefix(labelSet.RunnerName, "runnerkit-"))
+	lines := []ui.Line{
+		ui.Success("Runner name: " + labelSet.RunnerName),
+		ui.Bullet("Machine target: " + result.Machine.Target.Display()),
+		ui.Bullet("Service name: " + runnerServiceName(labelSet.RunnerName)),
+		ui.Bullet("Labels: [" + strings.Join(labelSet.Labels, ", ") + "]"),
+		ui.Bullet(labelSet.RunsOnYAML),
+		ui.WarningLine("Do not use runs-on: self-hosted alone for RunnerKit-managed runners."),
+		ui.Bullet("GitHub runner ID: " + fmt.Sprintf("%d", onlineRunner.ID)),
+		ui.Bullet("Provider: Hetzner " + defaultString(cloud.Region, plan.Region) + " " + defaultString(cloud.ServerType, plan.ServerType) + " " + defaultString(cloud.Image, plan.Image)),
+		ui.Bullet("Public host: " + publicHost),
+		ui.Bullet("Billable resources: " + strings.Join(cloudProviderResourceIDList(mergeCloudResourceIDs(result)), ", ")),
+		ui.Bullet("Cleanup: " + destroyCommand),
+		ui.Bullet("State path: " + statePath),
+		ui.Next("Add the runs-on snippet above to the workflow job you want to run on this runner."),
+		ui.Bullet("Install path: " + opts.InstallPath),
+	}
+	for _, warning := range warnings {
+		lines = append(lines, ui.WarningLine(warning))
+	}
+	return renderer.Step(1, 1, "Cloud runner ready", lines...)
+}
+
+func cloudCompletionJSON(repo string, statePath string, plan provider.ProvisionPlan, result provider.ProvisionResult, labelSet labels.LabelSet, opts bootstrap.Options, onlineRunner gh.Runner) map[string]any {
+	resourceIDs := cloudProviderResourceIDList(mergeCloudResourceIDs(result))
+	cloud := result.Machine.Provider.Cloud
+	return map[string]any{
+		"ok":                 true,
+		"command":            "up",
+		"repo":               repo,
+		"runner_installed":   true,
+		"state_saved":        true,
+		"runner_name":        labelSet.RunnerName,
+		"labels":             labelSet.Labels,
+		"machine_target":     result.Machine.Target.Display(),
+		"service_name":       runnerServiceName(labelSet.RunnerName),
+		"workflow_snippet":   labelSet.RunsOnYAML,
+		"github_runner_id":   onlineRunner.ID,
+		"state_path":         statePath,
+		"provider":           plan.Provider,
+		"cloud":              cloud,
+		"billable_resources": resourceIDs,
+		"destroy_command":    "runnerkit destroy --repo " + repo,
+		"install_path":       opts.InstallPath,
 	}
 }
 

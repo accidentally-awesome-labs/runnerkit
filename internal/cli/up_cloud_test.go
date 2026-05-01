@@ -458,6 +458,7 @@ func TestUpCloudReadinessFailureBlocksRegistrationTokenAndKeepsPendingState(t *t
 }
 
 func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
+	stateDir := t.TempDir()
 	service := newFakePermittedGitHubService()
 	remoteExec := newFakeRemoteExecutor()
 	machine := cloudReadyMachineForTest()
@@ -473,7 +474,7 @@ func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
 		GitHub:         service,
 		RemoteExecutor: remoteExec,
 		Providers:      provider.NewRegistry(cloud),
-		StateBaseDir:   t.TempDir(),
+		StateBaseDir:   stateDir,
 		Sleep:          noSleep,
 	})
 	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
@@ -488,13 +489,13 @@ func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
 		ids = append(ids, command.ID)
 	}
 	joined := strings.Join(ids, ",")
-	for _, want := range []string{"cloud.cloudinit.wait", "host.network.github.github", "host.network.github.api"} {
+	for _, want := range []string{"cloud.cloudinit.wait", "host.network.github.github", "host.network.github.api", "configure_runner", "install_service", "verify_service"} {
 		if !strings.Contains(joined, want) {
-			t.Fatalf("missing readiness/preflight command %q in %v", want, ids)
+			t.Fatalf("missing readiness/bootstrap command %q in %v", want, ids)
 		}
 	}
-	if indexOf(ids, "cloud.cloudinit.wait") > indexOf(ids, "host.network.github.github") {
-		t.Fatalf("cloud-init wait should precede preflight network checks: %v", ids)
+	if indexOf(ids, "cloud.cloudinit.wait") > indexOf(ids, "host.network.github.github") || indexOf(ids, "configure_runner") > indexOf(ids, "verify_service") {
+		t.Fatalf("cloud readiness/bootstrap order mismatch: %v", ids)
 	}
 	if len(cloud.ProvisionInput) != 1 {
 		t.Fatalf("expected one provision input, got %d", len(cloud.ProvisionInput))
@@ -503,6 +504,25 @@ func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
 	for _, want := range []string{"runnerkit-owner-name", "linux", "x64", "persistent"} {
 		if !strings.Contains(labels, want) {
 			t.Fatalf("cloud labels missing %q: %s", want, labels)
+		}
+	}
+	loaded, found, loadErr := state.NewStore(stateDir).GetRepository("owner/name")
+	if loadErr != nil || !found {
+		t.Fatalf("final cloud state not saved found=%v err=%v", found, loadErr)
+	}
+	stateJSON, _ := json.Marshal(loaded)
+	for _, want := range []string{`"kind":"cloud-ssh"`, `"kind":"hetzner"`, `"provider":"hetzner"`, `"server_id":"srv-123"`, `"ssh_key_id":"key-123"`, `"firewall_id":"fw-123"`, `"provider_resource_ids"`} {
+		if !strings.Contains(string(stateJSON), want) {
+			t.Fatalf("saved cloud state missing %s:\n%s", want, stateJSON)
+		}
+	}
+	if strings.Contains(string(stateJSON), cloudProvisionPending) || strings.Contains(string(stateJSON), cloudReadinessPending) || len(loaded.Operations) != 0 {
+		t.Fatalf("final cloud state retained pending checkpoints: %#v\n%s", loaded.Operations, stateJSON)
+	}
+	combined := out.String() + errOut.String()
+	for _, want := range []string{"Provider: Hetzner fsn1 cpx22 ubuntu-24.04", "Cleanup: runnerkit destroy --repo owner/name", "Billable resources: server:srv-123, ssh_key:key-123, firewall:fw-123"} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("cloud completion output missing %q:\n%s", want, combined)
 		}
 	}
 }
