@@ -44,7 +44,7 @@ func New() *Redactor {
 			{kind: RunnerRegistrationToken, re: regexp.MustCompile(`\bregistration-token-[A-Za-z0-9._-]+\b`)},
 			{kind: RunnerRemovalToken, re: regexp.MustCompile(`\b(?:remove|removal)-token-[A-Za-z0-9._-]+\b`)},
 			{kind: SSHPrivateKey, re: regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----`)},
-			{kind: ProviderCredential, re: regexp.MustCompile(`\bHCLOUD_TOKEN=[^\s]+`)},
+			{kind: ProviderCredential, re: regexp.MustCompile(`\bHCLOUD_TOKEN=[^<\s][^\s]*`)},
 		},
 	}
 }

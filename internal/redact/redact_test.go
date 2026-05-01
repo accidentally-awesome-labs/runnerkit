@@ -28,11 +28,15 @@ func TestStringRedactsRegisteredValuesAndKnownPatterns(t *testing.T) {
 		"HCLOUD_TOKEN=provider-secret",
 		"HCLOUD_TOKEN=supersecret",
 		"registered-provider-secret",
+		"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>",
 		"machine-123.internal",
 		"alice@example.com:22",
 	}, "\n")
 
 	got := r.String(input)
+	if !strings.Contains(got, "Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>") {
+		t.Fatalf("placeholder credential guidance should not be redacted: %s", got)
+	}
 	for _, raw := range []string{
 		"registered-gh-token",
 		"ghp_example",

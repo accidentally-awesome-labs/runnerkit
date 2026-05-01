@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -221,7 +222,11 @@ const (
 	cloudEmptyStateBodyExample       = "Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."
 	cloudFutureCleanupExample        = "Future cleanup: runnerkit destroy --repo owner/name"
 	cloudProvisioningPlanTitle       = "Cloud runner provisioning plan"
+	cloudCostCaveatCopy              = "Estimated cost is approximate. Provider pricing varies by region and time; billing stops only after RunnerKit-created billable resources are deleted or verified non-billable."
 	cloudProvisionConfirmationRemedy = "Pass --yes to create billable Hetzner resources after reviewing the cloud provisioning plan, or pass --dry-run to preview only."
+	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
+	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
+	cloudJSONKeyEstimatedMonthlyCost = "estimated_monthly_cost"
 )
 
 func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, opts *upOptions, jsonOutput bool) (setupPath, error) {
@@ -274,6 +279,7 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		return NewExitError(ExitGitHubAuth, err)
 	}
 	input := buildCloudProvisionInput(deps, repo, opts)
+	registerKnownCloudProviderSecrets(renderer)
 	validation, err := cloudProvider.Validate(ctx, input)
 	if err != nil || !validation.OK {
 		message := "Hetzner credentials are missing. Export HCLOUD_TOKEN or HETZNER_CLOUD_TOKEN, then rerun runnerkit up --repo " + repo.FullName + " --cloud hetzner."
@@ -303,7 +309,16 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		_ = renderer.Error("cloud_provisioning_unavailable", "Cloud resource creation is not implemented in this plan yet.", []string{"Re-run with --dry-run to preview the cloud provisioning plan, or wait for Phase 4 Plan 02 to create resources."})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": false, "cloud_plan": plan})
+	if jsonOutput {
+		return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": false, "cloud_plan": plan})
+	}
+	return renderer.Step(1, 1, "Cloud provisioning accepted", ui.Success("Cloud provisioning request accepted."), ui.Bullet("Runner installation continues in the cloud readiness plan."))
+}
+
+func registerKnownCloudProviderSecrets(renderer *ui.Renderer) {
+	for _, key := range []string{"HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN"} {
+		renderer.Redactor().Register(redact.ProviderCredential, os.Getenv(key))
+	}
 }
 
 func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions) provider.ProvisionInput {
@@ -328,6 +343,7 @@ func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions) 
 }
 
 func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {
+	caveat := defaultString(plan.CostEstimateCaveat, cloudCostCaveatCopy)
 	if jsonOutput {
 		return renderer.JSON(map[string]any{
 			"ok":               true,
@@ -341,19 +357,47 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 		})
 	}
 	return renderer.Step(1, 1, cloudProvisioningPlanTitle,
-		ui.WarningLine(plan.CostEstimateCaveat),
+		ui.WarningLine(caveat),
 		ui.Bullet("Provider: "+plan.Provider),
 		ui.Bullet("Region: "+plan.Region),
 		ui.Bullet("Server type: "+plan.ServerType),
 		ui.Bullet("Image: "+plan.Image),
+		ui.Bullet("Estimated cost: "+plan.EstimatedHourlyCost+", "+plan.EstimatedMonthlyCost),
 		ui.Bullet("Resources: server, SSH key, firewall, public IPv4/IPv6"),
 		ui.Bullet("Not created: backups, snapshots, volumes, floating IPs"),
-		ui.Bullet("Tags: runnerkit=true, managed=true"),
+		ui.Bullet("Resource names: "+formatCloudResourceNames(plan.ResourceNames)),
+		ui.Bullet("Tags: "+formatCloudTags(plan.Tags)),
 		ui.Bullet("SSH allowed CIDR: "+plan.SSHAllowedCIDR),
 		ui.Bullet("Labels: ["+strings.Join(plan.Labels, ", ")+"]"),
 		ui.Bullet(plan.WorkflowSnippet),
 		ui.Next("Future cleanup: "+plan.FutureDestroyCommand),
 	)
+}
+
+func formatCloudResourceNames(names map[string]string) string {
+	if len(names) == 0 {
+		return "server, ssh_key, firewall"
+	}
+	parts := []string{}
+	for _, key := range []string{"server", "ssh_key", "firewall"} {
+		if value := names[key]; value != "" {
+			parts = append(parts, key+"="+value)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatCloudTags(tags map[string]string) string {
+	if len(tags) == 0 {
+		return "runnerkit=true, managed=true"
+	}
+	parts := []string{}
+	for _, key := range []string{"runnerkit", "managed", "repo", "runner", "state_id", "mode", "created_at"} {
+		if value := tags[key]; value != "" {
+			parts = append(parts, key+"="+value)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {

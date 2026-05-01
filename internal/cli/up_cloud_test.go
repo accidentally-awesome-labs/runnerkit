@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -171,6 +172,178 @@ func TestUpInteractiveNoHostOffersBYOAndCloudChoices(t *testing.T) {
 	for _, want := range []string{"Use existing SSH host (BYO)", "Provision recommended cloud runner (Hetzner)"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing option %q in %#v", want, prompter.optionLabels)
+		}
+	}
+}
+
+func TestUpCloudDryRunHumanRendersProvisionPlanContract(t *testing.T) {
+	service := newFakePermittedGitHubService()
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: service, RemoteExecutor: newFakeRemoteExecutor(), Providers: provider.NewRegistry(cloud), Sleep: noSleep})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	stdout := out.String()
+	for _, want := range []string{
+		"Cloud runner provisioning plan",
+		"Estimated cost is approximate",
+		"Provider pricing varies by region",
+		"time; billing stops",
+		"Provider: hetzner",
+		"Region: fsn1",
+		"Server type: cpx22",
+		"Image: ubuntu-24.04",
+		"Resources: server, SSH key, firewall, public IPv4/IPv6",
+		"Not created: backups, snapshots, volumes, floating IPs",
+		"Tags: runnerkit=true, managed=true",
+		"runs-on: [self-hosted, runnerkit, runnerkit-owner-name, linux, x64, persistent]",
+		"Future cleanup: runnerkit destroy --repo owner/name",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("cloud plan output missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestUpCloudDryRunJSONRendersProvisionPlanWithoutTokenLeak(t *testing.T) {
+	const fakeToken = "hcloud-secret"
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:   "test-version",
+		Out:       &out,
+		Err:       &errOut,
+		GitHub:    newFakePermittedGitHubService(),
+		Providers: provider.NewRegistry(provider.NewHetznerPlanProvider(map[string]string{"HCLOUD_TOKEN": fakeToken})),
+		Sleep:     noSleep,
+	})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud json dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if strings.Contains(combined, fakeToken) {
+		t.Fatalf("cloud output leaked fake token %q:\n%s", fakeToken, combined)
+	}
+	for _, want := range []string{`"cloud_plan"`, `"provider":"hetzner"`, `"runner_installed":false`, `"state_saved":false`, `"redactions_applied":true`, `"future_destroy_command":"runnerkit destroy --repo owner/name"`, `"estimated_hourly_cost"`, `"estimated_monthly_cost"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("json output missing %q:\n%s", want, out.String())
+		}
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out.String())
+	}
+	plan := payload["cloud_plan"].(map[string]any)
+	if plan["provider"] != "hetzner" || plan["region"] != "fsn1" || plan["server_type"] != "cpx22" || plan["image"] != "ubuntu-24.04" {
+		t.Fatalf("unexpected cloud_plan: %#v", plan)
+	}
+}
+
+type cloudConfirmationPrompter struct {
+	confirmPrompt string
+	confirmResult bool
+}
+
+func (p *cloudConfirmationPrompter) Confirm(_ context.Context, prompt ui.Prompt) (bool, error) {
+	p.confirmPrompt = prompt.Message
+	return p.confirmResult, nil
+}
+
+func (p *cloudConfirmationPrompter) Select(context.Context, ui.Prompt, []ui.Option) (string, error) {
+	return "cloud", nil
+}
+
+func TestUpCloudInteractiveConfirmationPrecedesProvision(t *testing.T) {
+	prompter := &cloudConfirmationPrompter{confirmResult: true}
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:   "test-version",
+		Out:       &out,
+		Err:       &errOut,
+		TTY:       ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:   prompter,
+		GitHub:    newFakePermittedGitHubService(),
+		Providers: provider.NewRegistry(cloud),
+		Sleep:     noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("confirmed cloud plan returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	if prompter.confirmPrompt != "Create billable Hetzner resources for `owner/name`?" {
+		t.Fatalf("confirm prompt = %q", prompter.confirmPrompt)
+	}
+	if cloud.ProvisionCalls != 1 {
+		t.Fatalf("confirmed cloud setup should call Provision once after prompt, got %d", cloud.ProvisionCalls)
+	}
+}
+
+func TestUpCloudDeclinedConfirmationSkipsProvision(t *testing.T) {
+	prompter := &cloudConfirmationPrompter{confirmResult: false}
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:   "test-version",
+		Out:       &out,
+		Err:       &errOut,
+		TTY:       ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:   prompter,
+		GitHub:    newFakePermittedGitHubService(),
+		Providers: provider.NewRegistry(cloud),
+		Sleep:     noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitCanceled {
+		t.Fatalf("expected canceled confirmation, err=%v", err)
+	}
+	if prompter.confirmPrompt != "Create billable Hetzner resources for `owner/name`?" {
+		t.Fatalf("confirm prompt = %q", prompter.confirmPrompt)
+	}
+	if cloud.ProvisionCalls != 0 {
+		t.Fatalf("declined confirmation should not call Provision, got %d", cloud.ProvisionCalls)
+	}
+}
+
+func TestUpCloudNoTTYWithoutYesSkipsProvision(t *testing.T) {
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: newFakePermittedGitHubService(), Providers: provider.NewRegistry(cloud), Sleep: noSleep})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitInputRequired {
+		t.Fatalf("expected input-required confirmation, err=%v", err)
+	}
+	if !strings.Contains(out.String(), "Cloud runner provisioning plan") || !strings.Contains(errOut.String(), "Pass --yes to create billable Hetzner resources") {
+		t.Fatalf("expected plan then confirmation remediation; stdout=%s stderr=%s", out.String(), errOut.String())
+	}
+	if cloud.ProvisionCalls != 0 {
+		t.Fatalf("no-TTY missing --yes should not call Provision, got %d", cloud.ProvisionCalls)
+	}
+}
+
+func TestUpCloudMissingCredentialsUsesUISpecCopy(t *testing.T) {
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:   "test-version",
+		Out:       &out,
+		Err:       &errOut,
+		GitHub:    newFakePermittedGitHubService(),
+		Providers: provider.NewRegistry(provider.NewHetznerPlanProvider(map[string]string{})),
+		Sleep:     noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitInputRequired {
+		t.Fatalf("expected missing credentials input-required, err=%v", err)
+	}
+	combined := out.String() + errOut.String()
+	for _, want := range []string{"Hetzner credentials are missing. Export HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN", "runnerkit up --repo owner/name --cloud", "hetzner.", "Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>"} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("missing credential copy %q:\n%s", want, combined)
 		}
 	}
 }
