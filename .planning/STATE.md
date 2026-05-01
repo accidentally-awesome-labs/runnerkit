@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-05-01T00:42:48.907Z"
-last_activity: 2026-05-01 - Plan 04-03 completed; ready for Plan 04-04.
+status: planning
+stopped_at: Phase 04 complete; ready to plan Phase 05
+last_updated: "2026-05-01T18:00:09.702Z"
+last_activity: 2026-05-01 - Phase 04 verified complete; next is Phase 05 planning.
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -20,24 +20,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-29)
 
 **Core value:** A solo developer can get a reliable, cost-effective GitHub Actions self-hosted runner online and usable in a project in about 10 minutes, without manual GitHub runner setup headaches.
-**Current focus:** Phase 4: Recommended Cloud Path and Billable Cleanup
+**Current focus:** Phase 5: Scoped Ephemeral Mode and Safety Profiles
 
 ## Current Position
 
-Phase: 04 of 6 (recommended cloud path and billable cleanup)
-Plan: 4 of 4
-Status: Ready to execute Plan 04-04
-Last activity: 2026-05-01 - Plan 04-03 completed; ready for Plan 04-04.
+Phase: 5 of 6 (scoped ephemeral mode and safety profiles)
+Plan: Not planned
+Status: Ready to plan Phase 05
+Last activity: 2026-05-01 - Phase 04 verified complete; next is Phase 05 planning.
 
-Milestone Progress: [█████████░] 88%
+Milestone Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
-- Average duration: 26 min
-- Total execution time: 6.7 hours
+- Total plans completed: 16
+- Average duration: 27 min
+- Total execution time: 7.2 hours
 
 **By Phase:**
 
@@ -46,12 +46,12 @@ Milestone Progress: [█████████░] 88%
 | 01    | 4/4   | 71 min  | 18 min   |
 | 02    | 4/4   | 95 min  | 24 min   |
 | 03    | 4/4   | 176 min | 44 min   |
-| 04    | 3/4   | 51 min  | 17 min   |
+| 04    | 4/4   | 90 min  | 23 min   |
 
 **Recent Trend:**
 
-- Last 5 plans: 03-03 (44 min), 03-04 (52 min), 04-01 (9 min), 04-02 (15 min), 04-03 (27 min)
-- Trend: Phase 4 now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, and provider-aware status/logs/doctor; next work is billable destroy and cloud quickstart documentation.
+- Last 5 plans: 03-04 (52 min), 04-01 (9 min), 04-02 (15 min), 04-03 (27 min), 04-04 (39 min)
+- Trend: Phase 4 is complete: RunnerKit now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, provider-aware status/logs/doctor, billable destroy verification, and cloud quickstart documentation. Next work is Phase 5 ephemeral mode and safety profiles.
 
 _Updated after each plan completion_
 
@@ -98,6 +98,7 @@ Recent decisions affecting current work:
 - Plan 04-03: Cloud runner installation reuses the BYO bootstrap.Apply/service/online-verification path after provider and SSH readiness pass.
 - Plan 04-03: Successful cloud setup replaces pending checkpoints with final cloud-ssh state, GitHub runner ID, provider inventory, and deterministic cleanup IDs.
 - Plan 04-03: Status and doctor use provider Describe for cloud facts while logs use saved provider metadata; operations never call provider mutation methods.
+- Plan 04-04: Cloud cleanup uses `runnerkit destroy`; it plans GitHub, remote, provider, and local-state cleanup before mutation, verifies Hetzner resources absent/non-billable before state removal, and keeps pending checkpoints for partial cleanup.
 
 ### Pending Todos
 
@@ -110,11 +111,11 @@ None yet.
 [Issues that affect future work]
 
 - Plan 01-02/01-04 validation note: automated fixtures cover GitHub success/denial/redaction/default-path behavior; a controlled live GitHub permission smoke remains recommended before public release.
-- Phase 4: Default cloud provider should be validated for cost, availability, quota friction, and SSH readiness before locking the user-facing recommendation.
+- Phase 4 validation note: a controlled live Hetzner smoke remains recommended before public release because it creates billable resources and needs real credentials.
 - Plan 01-01 validation note: `go run` wraps non-zero binary exits as process exit 1 while printing `exit status 6`; the direct built binary exits 6 for input-required paths.
 
 ## Session Continuity
 
 Last session: 2026-05-01
-Stopped at: Completed 04-03-PLAN.md
-Resume file: .planning/phases/04-recommended-cloud-path-and-billable-cleanup/04-04-PLAN.md
+Stopped at: Phase 04 complete; ready to plan Phase 05
+Resume file: .planning/ROADMAP.md#phase-5-scoped-ephemeral-mode-and-safety-profiles
