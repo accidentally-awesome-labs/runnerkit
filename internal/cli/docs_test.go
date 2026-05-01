@@ -58,7 +58,48 @@ func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
 		t.Fatal("docs must only mention rerunning up for recovery as a warning")
 	}
 	forbiddenDestroy := "runnerkit" + " destroy" + " --repo owner/name"
-	if strings.Contains(combined, forbiddenDestroy) {
-		t.Fatal("docs must not use destroy for BYO cleanup")
+	if strings.Contains(string(quickstart), forbiddenDestroy) {
+		t.Fatal("BYO quickstart must not use destroy for BYO cleanup")
+	}
+}
+
+func TestCloudQuickstartDocsContainRequiredCopy(t *testing.T) {
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	quickstart, err := os.ReadFile("../../docs/cloud-quickstart.md")
+	if err != nil {
+		t.Fatalf("read docs/cloud-quickstart.md: %v", err)
+	}
+	for name, content := range map[string]string{"README.md": string(readme), "docs/cloud-quickstart.md": string(quickstart)} {
+		for _, want := range []string{
+			"Provision cloud runner",
+			"export HCLOUD_TOKEN=...",
+			"runnerkit up --repo owner/name --cloud hetzner",
+			"runnerkit up --repo owner/name --cloud hetzner --yes",
+			"runnerkit status --repo owner/name",
+			"runnerkit logs --repo owner/name --since 30m --lines 200",
+			"runnerkit doctor --repo owner/name",
+			"runnerkit destroy --repo owner/name --dry-run",
+			"runnerkit destroy --repo owner/name",
+			"runnerkit destroy --repo owner/name --yes",
+			"runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]",
+			"RunnerKit supports one recommended cloud path in Phase 4.",
+			"The default cloud runner is persistent and intended for trusted private repositories.",
+			"Ephemeral mode is deferred to Phase 5.",
+			"RunnerKit prints labels/snippets and does not edit workflow YAML.",
+			"Cost estimates are approximate and billing stops only after relevant provider resources are destroyed or verified non-billable.",
+		} {
+			if !strings.Contains(content, want) {
+				t.Fatalf("%s missing %q", name, want)
+			}
+		}
+	}
+	if !strings.Contains(string(readme), "docs/cloud-quickstart.md") || !strings.Contains(string(readme), "docs/byo-quickstart.md") {
+		t.Fatal("README must link both cloud and BYO quickstarts")
+	}
+	if !strings.Contains(string(quickstart), "# Recommended Cloud Runner Quickstart") || !strings.Contains(string(quickstart), "HETZNER_CLOUD_TOKEN") || !strings.Contains(string(quickstart), "does not persist provider API tokens") {
+		t.Fatal("cloud quickstart missing heading or provider auth notes")
 	}
 }

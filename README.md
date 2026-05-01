@@ -12,6 +12,36 @@ runnerkit up --repo owner/name --host user@host
 
 See [docs/byo-quickstart.md](docs/byo-quickstart.md) for prerequisites, safety notes, the workflow label snippet, and troubleshooting.
 
+## Recommended cloud runner quickstart
+
+Use the recommended cloud runner quickstart when you do not already have a Linux machine and want RunnerKit to provision the Phase 4 Hetzner path:
+
+```bash
+export HCLOUD_TOKEN=...
+runnerkit up --repo owner/name --cloud hetzner
+runnerkit up --repo owner/name --cloud hetzner --yes
+runnerkit status --repo owner/name
+runnerkit logs --repo owner/name --since 30m --lines 200
+runnerkit doctor --repo owner/name
+runnerkit destroy --repo owner/name --dry-run
+runnerkit destroy --repo owner/name
+runnerkit destroy --repo owner/name --yes
+```
+
+Provision cloud runner
+
+```yaml
+runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]
+```
+
+See [docs/cloud-quickstart.md](docs/cloud-quickstart.md) for provider authentication, cost caveats, labels, status/logs/doctor, destroy verification, and live smoke-test guidance.
+
+RunnerKit supports one recommended cloud path in Phase 4.
+The default cloud runner is persistent and intended for trusted private repositories.
+Ephemeral mode is deferred to Phase 5.
+RunnerKit prints labels/snippets and does not edit workflow YAML.
+Cost estimates are approximate and billing stops only after relevant provider resources are destroyed or verified non-billable.
+
 ## BYO operations
 
 Start with read-only operations before manual SSH troubleshooting:
