@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/provider/hetzner"
+	"github.com/salar/runnerkit/internal/remote"
 	"github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/ui"
 )
@@ -347,5 +349,60 @@ func TestUpCloudMissingCredentialsUsesUISpecCopy(t *testing.T) {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("missing credential copy %q:\n%s", want, combined)
 		}
+	}
+}
+
+func TestUpCloudProvisionErrorPersistsPendingStateAndDestroyNextAction(t *testing.T) {
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	ids := map[string]string{"server": "srv-123", "ssh_key": "key-123", "firewall": "fw-123", "primary_ipv4": "ip-123"}
+	partial := provider.ProvisionResult{
+		Machine: provider.Machine{
+			Target:      remote.Target{User: "runnerkit-admin", Host: "203.0.113.10", Port: 22, Raw: "runnerkit-admin@203.0.113.10:22"},
+			PublicIPv4:  "203.0.113.10",
+			ResourceIDs: ids,
+			Provider:    state.ProviderRef{Kind: "hetzner", Region: "fsn1", IDs: ids},
+		},
+		CreatedResourceIDs: ids,
+		CheckpointRequired: true,
+	}
+	cloud := &provider.FakeProvider{ProvisionErr: &provider.ProvisionError{Stage: "server", Result: partial, Err: errors.New("server action failed")}}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:      "test-version",
+		Out:          &out,
+		Err:          &errOut,
+		GitHub:       service,
+		Providers:    provider.NewRegistry(cloud),
+		StateBaseDir: stateDir,
+		Sleep:        noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("expected safety gate provision error, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if !strings.Contains(combined, "Hetzner provisioning failed after billable resources were created.") || !strings.Contains(combined, "runnerkit destroy --repo owner/name") {
+		t.Fatalf("missing provision failure and destroy next action:\n%s", combined)
+	}
+	if service.authCalls != 0 || service.tokenCalls != 0 {
+		t.Fatalf("provision failure should not mint registration tokens; auth=%d token=%d", service.authCalls, service.tokenCalls)
+	}
+	loaded, found, loadErr := state.NewStore(stateDir).GetRepository("owner/name")
+	if loadErr != nil || !found {
+		t.Fatalf("pending cloud state not saved found=%v err=%v", found, loadErr)
+	}
+	if len(loaded.Operations) != 1 || loaded.Operations[0].Message != "cloud_provision_pending" || loaded.Operations[0].Artifact != "provider" {
+		t.Fatalf("missing cloud_provision_pending operation: %#v", loaded.Operations)
+	}
+	joinedIDs := strings.Join(loaded.Cleanup.ProviderResourceIDs, ",")
+	for _, want := range []string{"server:srv-123", "ssh_key:key-123", "firewall:fw-123", "primary_ipv4:ip-123"} {
+		if !strings.Contains(joinedIDs, want) {
+			t.Fatalf("provider resource ids missing %q: %#v", want, loaded.Cleanup.ProviderResourceIDs)
+		}
+	}
+	if loaded.Provider.Cloud.ServerID != "srv-123" || loaded.Provider.Cloud.SSHKeyID != "key-123" || loaded.Provider.Cloud.FirewallID != "fw-123" || loaded.Provider.Cloud.PrimaryIPv4ID != "ip-123" || loaded.Provider.Cloud.CostProfile.Provider != "hetzner" {
+		t.Fatalf("cloud inventory not persisted: %#v", loaded.Provider.Cloud)
 	}
 }

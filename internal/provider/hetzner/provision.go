@@ -314,14 +314,67 @@ func machineFromServer(input provider.ProvisionInput, plan provider.ProvisionPla
 	if host == "" {
 		host = publicIPv6
 	}
-	providerRef := state.ProviderRef{Kind: provider.HetznerProvider, IDs: cloneIDs(ids), Region: plan.Region}
+	resourceIDs := cloneIDs(ids)
+	cloud := state.CloudInventory{
+		Provider:          provider.HetznerProvider,
+		ServerID:          resourceIDs["server"],
+		ServerName:        plan.ResourceNames["server"],
+		ServerStatus:      serverStatus(server),
+		Region:            plan.Region,
+		Datacenter:        datacenterName(server),
+		ServerType:        plan.ServerType,
+		Image:             plan.Image,
+		PublicIPv4:        publicIPv4,
+		PublicIPv6:        publicIPv6,
+		PrimaryIPv4ID:     resourceIDs["primary_ipv4"],
+		PrimaryIPv6ID:     resourceIDs["primary_ipv6"],
+		SSHKeyID:          resourceIDs["ssh_key"],
+		SSHKeyName:        plan.ResourceNames["ssh_key"],
+		SSHKeyFingerprint: "",
+		FirewallID:        resourceIDs["firewall"],
+		FirewallName:      plan.ResourceNames["firewall"],
+		Tags:              cloneTags(plan.Tags),
+		CostProfile: state.CostProfileRef{
+			Provider:             plan.Provider,
+			Region:               plan.Region,
+			ServerType:           plan.ServerType,
+			Image:                plan.Image,
+			EstimatedHourlyCost:  plan.EstimatedHourlyCost,
+			EstimatedMonthlyCost: plan.EstimatedMonthlyCost,
+			Caveat:               plan.CostEstimateCaveat,
+		},
+		CloudInitVersion: cloudInitVersion,
+	}
+	providerRef := state.ProviderRef{Kind: provider.HetznerProvider, Name: provider.HetznerProvider, IDs: resourceIDs, Region: plan.Region, Profile: plan.ServerType, ResourceIDs: cloneIDs(resourceIDs), Tags: cloneTags(plan.Tags), Cloud: cloud}
 	return provider.Machine{
-		Target:      remote.Target{User: provider.HetznerDefaultSSHUser, Host: host, Port: 22, Raw: provider.HetznerDefaultSSHUser + "@" + host + ":22"},
+		Target:      remote.Target{User: defaultSSHUser, Host: host, Port: 22, Raw: defaultSSHUser + "@" + host + ":22"},
 		Provider:    providerRef,
 		PublicIPv4:  publicIPv4,
 		PublicIPv6:  publicIPv6,
-		ResourceIDs: cloneIDs(ids),
+		ResourceIDs: cloneIDs(resourceIDs),
 	}
+}
+
+func serverStatus(server *hcloud.Server) string {
+	if server == nil || server.Status == "" {
+		return "provisioning"
+	}
+	return string(server.Status)
+}
+
+func datacenterName(server *hcloud.Server) string {
+	if server == nil || server.Datacenter == nil {
+		return ""
+	}
+	return server.Datacenter.Name
+}
+
+func cloneTags(tags map[string]string) map[string]string {
+	out := make(map[string]string, len(tags))
+	for k, v := range tags {
+		out[k] = v
+	}
+	return out
 }
 
 func publicIPs(server *hcloud.Server) (string, string) {

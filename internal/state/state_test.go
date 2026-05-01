@@ -188,3 +188,67 @@ func TestRepositoryStateListUpdateRemoveAndOperationCheckpointPersistence(t *tes
 		t.Fatalf("ListRepositories after remove = %d, %v", len(repos), err)
 	}
 }
+
+func TestCloudInventorySerializesProviderIdentityAndNoSecrets(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 5, 1, 0, 30, 0, 0, time.UTC)
+	cloud := CloudInventory{
+		Provider:          "hetzner",
+		ServerID:          "srv-123",
+		ServerName:        "runnerkit-owner-repo-local",
+		ServerStatus:      "provisioning",
+		Region:            "fsn1",
+		ServerType:        "cpx22",
+		Image:             "ubuntu-24.04",
+		PublicIPv4:        "203.0.113.10",
+		PublicIPv6:        "2001:db8::10",
+		PrimaryIPv4ID:     "ipv4-123",
+		PrimaryIPv6ID:     "ipv6-123",
+		SSHKeyID:          "key-123",
+		SSHKeyName:        "runnerkit-owner-repo-local-ssh-key",
+		SSHKeyFingerprint: "SHA256:sshkeyfingerprint",
+		FirewallID:        "fw-123",
+		FirewallName:      "runnerkit-owner-repo-local-firewall",
+		Tags:              map[string]string{"runnerkit": "true", "managed": "true", "mode": "persistent"},
+		CostProfile: CostProfileRef{
+			Provider:             "hetzner",
+			Region:               "fsn1",
+			ServerType:           "cpx22",
+			Image:                "ubuntu-24.04",
+			EstimatedHourlyCost:  "approx €0.0081/hour",
+			EstimatedMonthlyCost: "approx €4.90/month",
+			Caveat:               "Estimated cost is approximate.",
+		},
+		CloudInitVersion: "runnerkit-cloud-init-v1",
+	}
+	state := State{Repositories: []RepositoryState{{
+		Repo:       gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
+		Auth:       AuthReference{Source: "gh", Reference: "gh"},
+		Runner:     RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted", "runnerkit"}, Mode: "persistent", OS: "linux", Arch: "x64"},
+		Machine:    MachineRef{Kind: "cloud-ssh", HostRef: "runnerkit-admin@203.0.113.10:22", User: "runnerkit-admin", Port: 22},
+		Provider:   ProviderRef{Kind: "hetzner", Name: "hetzner", Region: "fsn1", Profile: "cpx22", IDs: map[string]string{"server": "srv-123"}, ResourceIDs: map[string]string{"server": "srv-123", "ssh_key": "key-123", "firewall": "fw-123", "primary_ipv4": "ipv4-123"}, Tags: cloud.Tags, Cloud: cloud},
+		Cleanup:    CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{"server:srv-123", "ssh_key:key-123", "firewall:fw-123", "primary_ipv4:ipv4-123"}, Notes: []string{"cloud_provision_pending"}},
+		Safety:     SafetyMetadata{Code: "ok", Allowed: true},
+		Operations: []OperationCheckpoint{{Command: "up", Artifact: "provider", Status: "pending", Message: "cloud_provision_pending", UpdatedAt: now}},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}}}
+	if err := store.Save(state); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	data, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{`"provider": "hetzner"`, `"server_id": "srv-123"`, `"ssh_key_id": "key-123"`, `"firewall_id": "fw-123"`, `"primary_ipv4_id": "ipv4-123"`, `"cost_profile"`, `"provider_resource_ids"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("serialized cloud state missing %s:\n%s", want, text)
+		}
+	}
+	for _, forbidden := range []string{"HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN", "fake-provider-token", "BEGIN OPENSSH PRIVATE KEY"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("serialized cloud state leaked %q:\n%s", forbidden, text)
+		}
+	}
+}

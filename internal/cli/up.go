@@ -224,6 +224,8 @@ const (
 	cloudProvisioningPlanTitle       = "Cloud runner provisioning plan"
 	cloudCostCaveatCopy              = "Estimated cost is approximate. Provider pricing varies by region and time; billing stops only after RunnerKit-created billable resources are deleted or verified non-billable."
 	cloudProvisionConfirmationRemedy = "Pass --yes to create billable Hetzner resources after reviewing the cloud provisioning plan, or pass --dry-run to preview only."
+	cloudProvisionPending            = "cloud_provision_pending"
+	cloudReadinessPending            = "cloud_readiness_pending"
 	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
 	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
 	cloudJSONKeyEstimatedMonthlyCost = "estimated_monthly_cost"
@@ -298,21 +300,39 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		_ = renderer.Error("cloud_plan_failed", "RunnerKit could not build the cloud provisioning plan.", []string{err.Error()})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	_ = decision
 	if opts.dryRun {
 		return renderCloudProvisionPlan(renderer, jsonOutput, repo, plan)
+	}
+	store := rkstate.NewStore(deps.StateBaseDir)
+	replaceExisting, err := confirmCloudStateReplaceBeforeProvision(ctx, deps, renderer, opts, jsonOutput, store, repo.FullName)
+	if err != nil {
+		return err
 	}
 	if err := confirmCloudProvisionPlan(ctx, deps, renderer, opts, jsonOutput, repo, plan); err != nil {
 		return err
 	}
-	if _, err := cloudProvider.Provision(ctx, input); err != nil {
-		_ = renderer.Error("cloud_provisioning_unavailable", "Cloud resource creation is not implemented in this plan yet.", []string{"Re-run with --dry-run to preview the cloud provisioning plan, or wait for Phase 4 Plan 02 to create resources."})
+	result, err := cloudProvider.Provision(ctx, input)
+	if err != nil {
+		var provisionErr *provider.ProvisionError
+		if errors.As(err, &provisionErr) && len(provisionErr.Result.CreatedResourceIDs) > 0 {
+			if saveErr := saveCloudPendingRepository(ctx, deps, renderer, opts, jsonOutput, store, repo, status.Source, decision, input, plan, provisionErr.Result, cloudProvisionPending, "provider", replaceExisting); saveErr != nil {
+				return saveErr
+			}
+			_ = renderer.Error("cloud_provision_failed", "Hetzner provisioning failed after billable resources were created.", []string{err.Error(), "Next action: runnerkit destroy --repo " + repo.FullName})
+			return NewExitError(ExitSafetyGate, err)
+		}
+		_ = renderer.Error("cloud_provision_failed", "Hetzner provisioning failed before a complete cloud machine was ready.", []string{err.Error(), "Re-run with --dry-run to preview the cloud provisioning plan.", "If billable resources were created, run runnerkit destroy --repo " + repo.FullName + "."})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	if jsonOutput {
-		return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": false, "cloud_plan": plan})
+	if result.CheckpointRequired {
+		if err := saveCloudPendingRepository(ctx, deps, renderer, opts, jsonOutput, store, repo, status.Source, decision, input, plan, result, cloudProvisionPending, "provider", replaceExisting); err != nil {
+			return err
+		}
 	}
-	return renderer.Step(1, 1, "Cloud provisioning accepted", ui.Success("Cloud provisioning request accepted."), ui.Bullet("Runner installation continues in the cloud readiness plan."))
+	if jsonOutput {
+		return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": result.CheckpointRequired, "cloud_plan": plan})
+	}
+	return renderer.Step(1, 1, "Cloud provisioning accepted", ui.Success("Cloud provisioning request accepted."), ui.Bullet("Runner installation continues after cloud readiness checks."), ui.Next("runnerkit destroy --repo "+repo.FullName))
 }
 
 func registerKnownCloudProviderSecrets(renderer *ui.Renderer) {
@@ -422,6 +442,156 @@ func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer 
 		return NewExitError(ExitCanceled, errors.New(message))
 	}
 	return nil
+}
+
+func confirmCloudStateReplaceBeforeProvision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, store rkstate.Store, fullName string) (bool, error) {
+	if _, exists, err := store.GetRepository(fullName); err != nil {
+		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
+		return false, NewExitError(ExitStateIO, err)
+	} else if exists {
+		if opts.replace {
+			return true, nil
+		}
+		return confirmStateReplace(ctx, deps, renderer, opts, fullName, jsonOutput)
+	}
+	return false, nil
+}
+
+func saveCloudPendingRepository(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, store rkstate.Store, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, checkpointMessage string, artifact string, replace bool) error {
+	repoState := buildCloudRepositoryState(deps, repo, source, decision, input, plan, result, checkpointMessage, artifact, opts.sshKey)
+	if err := store.SaveRepository(repoState, replace); err != nil {
+		if errors.Is(err, rkstate.ErrRepositoryExists) {
+			return replacementRequired(renderer, repo.FullName)
+		}
+		_ = renderer.Error("state_io_failed", "RunnerKit can't save cloud provisioning state.", []string{"Check permissions for " + store.Path() + " and run runnerkit destroy --repo " + repo.FullName + " if billable resources were created."})
+		return NewExitError(ExitStateIO, err)
+	}
+	return nil
+}
+
+func buildCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, checkpointMessage string, artifact string, keyPathRef string) rkstate.RepositoryState {
+	now := deps.Clock()
+	if now.IsZero() {
+		now = time.Now()
+	}
+	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: labels.DefaultArch, Mode: labels.DefaultMode})
+	if input.RunnerName != "" {
+		labelSet.RunnerName = input.RunnerName
+	}
+	if len(input.Labels) > 0 {
+		labelSet.Labels = append([]string(nil), input.Labels...)
+	}
+	if input.WorkflowSnippet != "" {
+		labelSet.RunsOnYAML = input.WorkflowSnippet
+	}
+	resourceIDs := mergeCloudResourceIDs(result)
+	providerRef := result.Machine.Provider
+	providerRef.Kind = defaultString(providerRef.Kind, provider.HetznerProvider)
+	providerRef.Name = defaultString(providerRef.Name, provider.HetznerProvider)
+	providerRef.Region = defaultString(providerRef.Region, plan.Region)
+	providerRef.Profile = defaultString(providerRef.Profile, plan.ServerType)
+	if providerRef.IDs == nil {
+		providerRef.IDs = cloneStringMap(resourceIDs)
+	}
+	providerRef.ResourceIDs = cloneStringMap(resourceIDs)
+	providerRef.Tags = cloneStringMap(plan.Tags)
+	providerRef.Cloud = mergeCloudInventory(providerRef.Cloud, result, plan, resourceIDs)
+	return rkstate.RepositoryState{
+		Repo: repo,
+		Auth: rkstate.AuthReference{Source: defaultString(source.Kind, "gh"), Reference: defaultString(source.Reference, source.Kind)},
+		Runner: rkstate.RunnerIdentity{
+			Name:            labelSet.RunnerName,
+			Labels:          labelSet.Labels,
+			WorkflowSnippet: labelSet.RunsOnYAML,
+			Mode:            labels.DefaultMode,
+			OS:              labels.DefaultOS,
+			Arch:            labels.DefaultArch,
+		},
+		Machine: rkstate.MachineRef{
+			Kind:       "cloud-ssh",
+			HostRef:    result.Machine.Target.Display(),
+			User:       result.Machine.Target.User,
+			Port:       result.Machine.Target.Port,
+			KeyPathRef: keyPathRef,
+		},
+		Provider: providerRef,
+		Cleanup: rkstate.CleanupMetadata{
+			ManagedPaths:        []string{},
+			ProviderResourceIDs: cloudProviderResourceIDList(resourceIDs),
+			Notes:               []string{checkpointMessage},
+		},
+		Safety:           cloudSafetyMetadata(decision, now),
+		Operations:       []rkstate.OperationCheckpoint{{Command: "up", Artifact: artifact, Status: "pending", Message: checkpointMessage, UpdatedAt: now}},
+		RunnerKitVersion: deps.Version,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+}
+
+func mergeCloudResourceIDs(result provider.ProvisionResult) map[string]string {
+	out := map[string]string{}
+	for _, source := range []map[string]string{result.Machine.Provider.IDs, result.Machine.Provider.ResourceIDs, result.Machine.ResourceIDs, result.CreatedResourceIDs} {
+		for k, v := range source {
+			if strings.TrimSpace(v) != "" {
+				out[k] = v
+			}
+		}
+	}
+	return out
+}
+
+func mergeCloudInventory(existing rkstate.CloudInventory, result provider.ProvisionResult, plan provider.ProvisionPlan, resourceIDs map[string]string) rkstate.CloudInventory {
+	cloud := existing
+	cloud.Provider = defaultString(cloud.Provider, provider.HetznerProvider)
+	cloud.ServerID = defaultString(cloud.ServerID, resourceIDs["server"])
+	cloud.ServerName = defaultString(cloud.ServerName, plan.ResourceNames["server"])
+	cloud.ServerStatus = defaultString(cloud.ServerStatus, "provisioning")
+	cloud.Region = defaultString(cloud.Region, plan.Region)
+	cloud.ServerType = defaultString(cloud.ServerType, plan.ServerType)
+	cloud.Image = defaultString(cloud.Image, plan.Image)
+	cloud.PublicIPv4 = defaultString(cloud.PublicIPv4, result.Machine.PublicIPv4)
+	cloud.PublicIPv6 = defaultString(cloud.PublicIPv6, result.Machine.PublicIPv6)
+	cloud.PrimaryIPv4ID = defaultString(cloud.PrimaryIPv4ID, resourceIDs["primary_ipv4"])
+	cloud.PrimaryIPv6ID = defaultString(cloud.PrimaryIPv6ID, resourceIDs["primary_ipv6"])
+	cloud.SSHKeyID = defaultString(cloud.SSHKeyID, resourceIDs["ssh_key"])
+	cloud.SSHKeyName = defaultString(cloud.SSHKeyName, plan.ResourceNames["ssh_key"])
+	cloud.FirewallID = defaultString(cloud.FirewallID, resourceIDs["firewall"])
+	cloud.FirewallName = defaultString(cloud.FirewallName, plan.ResourceNames["firewall"])
+	if cloud.Tags == nil {
+		cloud.Tags = cloneStringMap(plan.Tags)
+	}
+	if cloud.CostProfile.Provider == "" {
+		cloud.CostProfile = rkstate.CostProfileRef{Provider: plan.Provider, Region: plan.Region, ServerType: plan.ServerType, Image: plan.Image, EstimatedHourlyCost: plan.EstimatedHourlyCost, EstimatedMonthlyCost: plan.EstimatedMonthlyCost, Caveat: plan.CostEstimateCaveat}
+	}
+	cloud.CloudInitVersion = defaultString(cloud.CloudInitVersion, "runnerkit-cloud-init-v1")
+	return cloud
+}
+
+func cloudProviderResourceIDList(resourceIDs map[string]string) []string {
+	out := []string{}
+	for _, key := range []string{"server", "ssh_key", "firewall", "primary_ipv4", "primary_ipv6"} {
+		if value := resourceIDs[key]; strings.TrimSpace(value) != "" {
+			out = append(out, key+":"+value)
+		}
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloudSafetyMetadata(decision gh.SafetyDecision, now time.Time) rkstate.SafetyMetadata {
+	safety := rkstate.SafetyMetadata{Code: decision.Code, Allowed: decision.Allowed, Warnings: decision.Warnings}
+	if decision.Code == gh.SafetyCodePublicRisk && decision.Allowed && len(decision.Warnings) > 0 {
+		safety.AcceptedOverride = gh.AllowPublicRepoRiskFlag
+		safety.AcceptedAt = &now
+	}
+	return safety
 }
 
 func resolveBYOTarget(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool) (remote.Target, error) {

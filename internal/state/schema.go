@@ -63,9 +63,47 @@ type MachineRef struct {
 }
 
 type ProviderRef struct {
-	Kind   string            `json:"kind"`
-	IDs    map[string]string `json:"ids,omitempty"`
-	Region string            `json:"region,omitempty"`
+	Kind        string            `json:"kind"`
+	Name        string            `json:"name,omitempty"`
+	IDs         map[string]string `json:"ids,omitempty"`
+	Region      string            `json:"region,omitempty"`
+	Profile     string            `json:"profile,omitempty"`
+	ResourceIDs map[string]string `json:"resource_ids,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
+	Cloud       CloudInventory    `json:"cloud,omitempty"`
+}
+
+type CloudInventory struct {
+	Provider          string            `json:"provider"`
+	ServerID          string            `json:"server_id,omitempty"`
+	ServerName        string            `json:"server_name,omitempty"`
+	ServerStatus      string            `json:"server_status,omitempty"`
+	Region            string            `json:"region,omitempty"`
+	Datacenter        string            `json:"datacenter,omitempty"`
+	ServerType        string            `json:"server_type,omitempty"`
+	Image             string            `json:"image,omitempty"`
+	PublicIPv4        string            `json:"public_ipv4,omitempty"`
+	PublicIPv6        string            `json:"public_ipv6,omitempty"`
+	PrimaryIPv4ID     string            `json:"primary_ipv4_id,omitempty"`
+	PrimaryIPv6ID     string            `json:"primary_ipv6_id,omitempty"`
+	SSHKeyID          string            `json:"ssh_key_id,omitempty"`
+	SSHKeyName        string            `json:"ssh_key_name,omitempty"`
+	SSHKeyFingerprint string            `json:"ssh_key_fingerprint,omitempty"`
+	FirewallID        string            `json:"firewall_id,omitempty"`
+	FirewallName      string            `json:"firewall_name,omitempty"`
+	Tags              map[string]string `json:"tags,omitempty"`
+	CostProfile       CostProfileRef    `json:"cost_profile,omitempty"`
+	CloudInitVersion  string            `json:"cloud_init_version,omitempty"`
+}
+
+type CostProfileRef struct {
+	Provider             string `json:"provider"`
+	Region               string `json:"region"`
+	ServerType           string `json:"server_type"`
+	Image                string `json:"image"`
+	EstimatedHourlyCost  string `json:"estimated_hourly_cost,omitempty"`
+	EstimatedMonthlyCost string `json:"estimated_monthly_cost,omitempty"`
+	Caveat               string `json:"caveat,omitempty"`
 }
 
 type CleanupMetadata struct {
