@@ -6,6 +6,7 @@ import (
 
 	"github.com/salar/runnerkit/internal/ops"
 	"github.com/salar/runnerkit/internal/remote"
+	"github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/testsupport"
 )
 
@@ -60,6 +61,23 @@ func TestLogsJSONRedactionsApplied(t *testing.T) {
 	for _, raw := range []string{"registration-token-secret-logs", "removal-token-secret-logs", "github_pat_secretlogs", "HCLOUD_TOKEN=supersecret", "alice@example.com:22"} {
 		if strings.Contains(out, raw) {
 			t.Fatalf("json logs leaked %q:\n%s", raw, out)
+		}
+	}
+}
+
+func TestLogsCloudProviderMetadata(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.CloudRepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	out, _, err := executeStatusForTest(t, stateDir, &testsupport.GitHubService{}, logsRemoteWithSecrets(), "logs", "--repo", repo.Repo.FullName, "--no-color")
+	if err != nil {
+		t.Fatalf("cloud logs returned error: %v", err)
+	}
+	for _, want := range []string{"Provider: Hetzner fsn1 cpx22 ubuntu-24.04", "Billable resources: server:srv-123", "systemd journal"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("cloud logs missing %q:\n%s", want, out)
 		}
 	}
 }

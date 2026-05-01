@@ -71,6 +71,18 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	if !observed.Labels.Match {
 		add("label_drift", SeverityWarning, "labels", labelEvidence(observed.Labels), recoverReregister)
 	}
+	if observed.Provider.Kind != "" && observed.Provider.Kind != "byo" {
+		providerCleanup := "Run runnerkit destroy --repo " + repo + " --dry-run to review billable resources before cleanup."
+		if observed.Provider.Error != "" {
+			add("provider_error", SeverityWarning, "provider", observed.Provider.Error, providerCleanup)
+		} else if !observed.Provider.Found {
+			add("provider_resource_missing", SeverityWarning, "provider", "provider resource is missing", providerCleanup)
+		} else if len(observed.Provider.Drift) > 0 {
+			add("provider_drift", SeverityWarning, "provider", strings.Join(observed.Provider.Drift, ", "), providerCleanup)
+		} else {
+			add("provider_found", SeverityPass, "provider", observed.Provider.Kind+" resources are present", "runnerkit status --repo "+repo)
+		}
+	}
 	if !checks.InstallPathOK {
 		evidence := defaultEvidence(checks.InstallPathError, "install path check failed")
 		add("install_path_missing", SeverityError, "remote", evidence, recoverReregister)

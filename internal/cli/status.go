@@ -9,6 +9,7 @@ import (
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/labels"
 	"github.com/salar/runnerkit/internal/ops"
+	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/remote"
 	rkstate "github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/ui"
@@ -25,6 +26,8 @@ type statusResult struct {
 	Observed ops.ObservedRunner      `json:"observed"`
 	Health   ops.Health              `json:"health"`
 }
+
+const statusProviderJSONPath = "sources.provider"
 
 func newStatusCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
 	opts := &statusOptions{}
@@ -60,7 +63,7 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 			return renderer.JSON(map[string]any{"ok": true, "command": "status", "scope": "all", "runners": items})
 		}
 		if len(results) == 0 {
-			return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."))
+			return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."), ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."), ui.Bullet("Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."))
 		}
 		lines := []ui.Line{}
 		for _, result := range results {
@@ -84,7 +87,7 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 		if jsonOutput {
 			return renderer.JSON(statusJSONPayload("repo", store.Path(), observed, health))
 		}
-		return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."))
+		return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."), ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."), ui.Bullet("Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."))
 	}
 	result := collectStatus(ctx, deps, store.Path(), repoState, true)
 	if jsonOutput {
@@ -116,6 +119,7 @@ func collectStatus(ctx context.Context, deps Dependencies, statePath string, rep
 		observed.GitHub = githubFactFor(repoState, runners)
 	}
 	observed.Labels = ops.CompareLabels(repoState.Runner.Labels, observed.GitHub.Labels)
+	observed.Provider = collectProviderFact(ctx, deps, repoState)
 	if probeRemote {
 		if target, err := targetFromState(repoState); err == nil {
 			observed.SSH, observed.Service = ops.ProbeRemoteStatus(ctx, deps.RemoteExecutor, target, repoState.Machine.HostKeyFingerprint, repoState.Machine.ServiceName)
@@ -126,6 +130,74 @@ func collectStatus(ctx context.Context, deps Dependencies, statePath string, rep
 	}
 	health := ops.Classify(observed)
 	return statusResult{Repo: repoState, Observed: observed, Health: health}
+}
+
+func collectProviderFact(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState) ops.ProviderFact {
+	if !isCloudProvider(repoState.Provider) {
+		return ops.ProviderFact{Kind: defaultString(repoState.Provider.Kind, "byo"), Found: true, BillableResources: []string{}, Drift: []string{}}
+	}
+	fact := providerFactFromState(repoState.Provider)
+	cloudProvider, ok := deps.Providers.Get(provider.HetznerProvider)
+	if !ok || cloudProvider == nil {
+		fact.Error = "provider dependency unavailable"
+		return fact
+	}
+	status, err := cloudProvider.Describe(ctx, repoState.Provider)
+	if err != nil {
+		fact.Error = err.Error()
+	}
+	return mergeProviderStatus(fact, status)
+}
+
+func isCloudProvider(ref rkstate.ProviderRef) bool {
+	return ref.Kind == provider.HetznerProvider || ref.Name == provider.HetznerProvider
+}
+
+func providerFactFromState(ref rkstate.ProviderRef) ops.ProviderFact {
+	cloud := ref.Cloud
+	return ops.ProviderFact{
+		Kind:              defaultString(ref.Kind, defaultString(ref.Name, provider.HetznerProvider)),
+		Found:             true,
+		Status:            cloud.ServerStatus,
+		Region:            defaultString(ref.Region, cloud.Region),
+		ServerType:        defaultString(ref.Profile, cloud.ServerType),
+		Image:             cloud.Image,
+		PublicHost:        defaultString(cloud.PublicIPv4, cloud.PublicIPv6),
+		BillableResources: cloudProviderResourceIDList(ref.ResourceIDs),
+		Drift:             []string{},
+	}
+}
+
+func mergeProviderStatus(base ops.ProviderFact, status provider.ProviderStatus) ops.ProviderFact {
+	if status.Kind != "" {
+		base.Kind = status.Kind
+	}
+	base.Found = status.Found
+	if status.Status != "" {
+		base.Status = status.Status
+	}
+	if status.Region != "" {
+		base.Region = status.Region
+	}
+	if status.ServerType != "" {
+		base.ServerType = status.ServerType
+	}
+	if status.Image != "" {
+		base.Image = status.Image
+	}
+	if status.PublicHost != "" {
+		base.PublicHost = status.PublicHost
+	}
+	if status.BillableResources != nil {
+		base.BillableResources = append([]string(nil), status.BillableResources...)
+	}
+	if status.Drift != nil {
+		base.Drift = append([]string(nil), status.Drift...)
+	}
+	if status.Error != "" {
+		base.Error = status.Error
+	}
+	return base
 }
 
 func githubFactFor(repoState rkstate.RepositoryState, runners []gh.Runner) ops.GitHubFact {
@@ -194,6 +266,7 @@ func renderStatusHuman(renderer *ui.Renderer, statePath string, result statusRes
 		ui.Bullet("State path: " + statePath),
 		ui.Bullet("Sources:"),
 		ui.Bullet("    State       OK       saved runner metadata found"),
+		ui.Bullet("    Provider   " + providerSourceText(observed.Provider)),
 		ui.Bullet("    GitHub     " + githubSourceText(observed.GitHub)),
 		ui.Bullet("    SSH        " + sshSourceText(observed.SSH)),
 		ui.Bullet("    Service    " + serviceSourceText(observed.Service)),
@@ -221,6 +294,41 @@ func healthLine(health ops.Health) ui.Line {
 
 func statusSummaryLine(result statusResult) ui.Line {
 	return ui.Bullet(fmt.Sprintf("%s: %s — %s", result.Repo.Repo.FullName, result.Health.State, result.Health.Summary))
+}
+
+func providerSourceText(fact ops.ProviderFact) string {
+	if fact.Kind == "" || fact.Kind == "byo" {
+		return "OK       byo, no billable provider resources"
+	}
+	if fact.Error != "" {
+		return "WARNING  " + fact.Error
+	}
+	if !fact.Found {
+		return "WARNING  " + displayProviderKind(fact.Kind) + " resource missing"
+	}
+	if len(fact.Drift) > 0 {
+		return "WARNING  " + displayProviderKind(fact.Kind) + " drift: " + strings.Join(fact.Drift, ", ")
+	}
+	return "OK       " + displayProviderKind(fact.Kind) + " " + fact.Region + " " + fact.ServerType + " " + fact.Image + ", server " + providerServerID(fact.BillableResources) + ", state " + defaultString(fact.Status, "unknown") + ", public host " + fact.PublicHost
+}
+
+func displayProviderKind(kind string) string {
+	if kind == provider.HetznerProvider {
+		return "Hetzner"
+	}
+	if kind == "" {
+		return "Provider"
+	}
+	return strings.ToUpper(kind[:1]) + kind[1:]
+}
+
+func providerServerID(resources []string) string {
+	for _, resource := range resources {
+		if strings.HasPrefix(resource, "server:") {
+			return strings.TrimPrefix(resource, "server:")
+		}
+	}
+	return "unknown"
 }
 
 func githubSourceText(fact ops.GitHubFact) string {
@@ -267,6 +375,21 @@ func labelsSourceText(fact ops.LabelFact) string {
 	return "WARNING  missing [" + strings.Join(fact.Missing, ", ") + "] extra [" + strings.Join(fact.Extra, ", ") + "]"
 }
 
+func providerJSONSource(fact ops.ProviderFact) map[string]any {
+	return map[string]any{
+		"kind":               fact.Kind,
+		"found":              fact.Found,
+		"status":             fact.Status,
+		"region":             fact.Region,
+		"server_type":        fact.ServerType,
+		"image":              fact.Image,
+		"public_host":        fact.PublicHost,
+		"billable_resources": fact.BillableResources,
+		"drift":              fact.Drift,
+		"error":              fact.Error,
+	}
+}
+
 func statusJSONPayload(scope string, statePath string, observed ops.ObservedRunner, health ops.Health) map[string]any {
 	runner := map[string]any{}
 	if observed.State != nil {
@@ -281,11 +404,12 @@ func statusJSONPayload(scope string, statePath string, observed ops.ObservedRunn
 		"health":     health,
 		"runner":     runner,
 		"sources": map[string]any{
-			"state":   map[string]any{"present": observed.StatePresent},
-			"github":  map[string]any{"found": observed.GitHub.Found, "id": observed.GitHub.ID, "status": observed.GitHub.Status, "busy": observed.GitHub.Busy, "labels": observed.GitHub.Labels},
-			"ssh":     map[string]any{"reachable": observed.SSH.Reachable, "host_key": observed.SSH.HostKey},
-			"systemd": map[string]any{"service": observed.Service.Service, "active_state": observed.Service.ActiveState, "sub_state": observed.Service.SubState},
-			"labels":  map[string]any{"match": observed.Labels.Match, "missing": observed.Labels.Missing, "extra": observed.Labels.Extra},
+			"state":    map[string]any{"present": observed.StatePresent},
+			"provider": providerJSONSource(observed.Provider),
+			"github":   map[string]any{"found": observed.GitHub.Found, "id": observed.GitHub.ID, "status": observed.GitHub.Status, "busy": observed.GitHub.Busy, "labels": observed.GitHub.Labels},
+			"ssh":      map[string]any{"reachable": observed.SSH.Reachable, "host_key": observed.SSH.HostKey},
+			"systemd":  map[string]any{"service": observed.Service.Service, "active_state": observed.Service.ActiveState, "sub_state": observed.Service.SubState},
+			"labels":   map[string]any{"match": observed.Labels.Match, "missing": observed.Labels.Missing, "extra": observed.Labels.Extra},
 		},
 	}
 }

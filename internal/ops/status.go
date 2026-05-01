@@ -38,6 +38,8 @@ const (
 	ReasonServiceInactive           = "service_inactive"
 	ReasonServiceMissing            = "service_missing"
 	ReasonLabelDrift                = "label_drift"
+	ReasonProviderResourceMissing   = "provider_resource_missing"
+	ReasonProviderDrift             = "provider_drift"
 	ReasonCollectionError           = "collection_error"
 )
 
@@ -101,6 +103,19 @@ type LabelFact struct {
 	Extra    []string `json:"extra"`
 }
 
+type ProviderFact struct {
+	Kind              string   `json:"kind"`
+	Found             bool     `json:"found"`
+	Status            string   `json:"status"`
+	Region            string   `json:"region"`
+	ServerType        string   `json:"server_type"`
+	Image             string   `json:"image"`
+	PublicHost        string   `json:"public_host"`
+	BillableResources []string `json:"billable_resources"`
+	Drift             []string `json:"drift"`
+	Error             string   `json:"error"`
+}
+
 type ObservedRunner struct {
 	Repo             string                 `json:"repo"`
 	StatePath        string                 `json:"state_path"`
@@ -110,6 +125,7 @@ type ObservedRunner struct {
 	SSH              SSHFact                `json:"ssh"`
 	Service          ServiceFact            `json:"service"`
 	Labels           LabelFact              `json:"labels"`
+	Provider         ProviderFact           `json:"provider"`
 	CollectionErrors []CollectionError      `json:"collection_errors,omitempty"`
 }
 
@@ -166,6 +182,14 @@ func Classify(observed ObservedRunner) Health {
 	if !observed.Labels.Match {
 		return health(HealthNeedsAttention, "Saved labels do not match the GitHub runner labels.", reason(ReasonLabelDrift, SeverityWarning, "labels", labelEvidence(observed.Labels)), next("runnerkit recover --repo "+repo+" --dry-run", "Preview label repair by re-registration."))
 	}
+	if providerNeedsAttention(observed.Provider) {
+		id := ReasonProviderResourceMissing
+		evidence := providerEvidence(observed.Provider)
+		if len(observed.Provider.Drift) > 0 {
+			id = ReasonProviderDrift
+		}
+		return health(HealthNeedsAttention, "Cloud provider resources need attention before this runner can be considered healthy.", reason(id, SeverityWarning, "provider", evidence), next("runnerkit destroy --repo "+repo+" --dry-run", "Review billable cloud resources before cleanup."))
+	}
 	if strings.EqualFold(observed.GitHub.Status, "offline") && observed.SSH.Reachable && serviceFailed(observed.Service) {
 		return health(HealthNeedsAttention, "GitHub reports the runner offline while SSH is reachable and the service is failed.", reason(ReasonGitHubRunnerOffline, SeverityWarning, "github", "GitHub status is offline"), next("runnerkit doctor --repo "+repo, "Inspect service logs before recovery."))
 	}
@@ -189,6 +213,26 @@ func Classify(observed ObservedRunner) Health {
 
 func serviceFailed(service ServiceFact) bool {
 	return service.ActiveState == "failed" || service.SubState == "failed" || service.ExecMainStatus != "" && service.ExecMainStatus != "0"
+}
+
+func providerNeedsAttention(provider ProviderFact) bool {
+	if provider.Kind == "" || provider.Kind == "byo" {
+		return false
+	}
+	return provider.Error != "" || !provider.Found || len(provider.Drift) > 0
+}
+
+func providerEvidence(provider ProviderFact) string {
+	if provider.Error != "" {
+		return provider.Error
+	}
+	if len(provider.Drift) > 0 {
+		return "drift=" + strings.Join(provider.Drift, ",")
+	}
+	if !provider.Found {
+		return "provider resource not found"
+	}
+	return "provider status=" + provider.Status
 }
 
 func labelEvidence(labels LabelFact) string {

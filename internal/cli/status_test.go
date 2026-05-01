@@ -9,6 +9,7 @@ import (
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/ops"
+	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/remote"
 	"github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/testsupport"
@@ -109,7 +110,33 @@ func TestStatusMissingStateEmptyCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing state should render empty status, got %v", err)
 	}
-	if !strings.Contains(out, "No RunnerKit-managed runner found") || !strings.Contains(out, "Run runnerkit up --repo owner/name --host user@host") || !strings.Contains(out, "pass --all to list saved runners") {
-		t.Fatalf("missing state copy not rendered:\n%s", out)
+	for _, want := range []string{"No RunnerKit-managed runner found", "Run runnerkit up --repo owner/name --host user@host", "pass --all to list saved runners", "No RunnerKit-managed cloud runner is saved for `owner/name`.", "Run `runnerkit up --repo owner/name --cloud hetzner` to create one", "`--host user@host` to use an existing machine."} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing state copy missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestStatusCloudProviderJSONAndReadOnly(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.CloudRepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	cloud := &provider.FakeProvider{DescribeOut: provider.ProviderStatus{Kind: "hetzner", Found: true, Status: "running", Region: "fsn1", ServerType: "cpx22", Image: "ubuntu-24.04", PublicHost: "203.0.113.10", BillableResources: []string{"server:srv-123", "ssh_key:key-123", "firewall:fw-123"}}}
+	var out, errOut bytes.Buffer
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: github, RemoteExecutor: healthyStatusRemote(), Providers: provider.NewRegistry(cloud), CommandRunner: staticCommandRunner{remote: "git@github.com:owner/repo.git"}, Sleep: noSleep})
+	cmd.SetArgs([]string{"--json", "status", "--repo", repo.Repo.FullName, "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud json status returned error: %v\nstderr=%s", err, errOut.String())
+	}
+	for _, want := range []string{`"sources"`, `"provider"`, `"kind":"hetzner"`, `"found":true`, `"status":"running"`, `"region":"fsn1"`, `"server_type":"cpx22"`, `"image":"ubuntu-24.04"`, `"public_host":"203.0.113.10"`, `"billable_resources"`, `"drift"`, `"error"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("cloud status json missing %q:\n%s", want, out.String())
+		}
+	}
+	if cloud.DescribeCalls != 1 || cloud.ProvisionCalls != 0 || cloud.DestroyCalls != 0 || cloud.VerifyDestroyedCalls != 0 || github.CreateRegistrationTokenCalls != 0 || github.CreateRemovalTokenCalls != 0 {
+		t.Fatalf("status mutated dependencies: cloud=%#v github=%#v", cloud, github)
 	}
 }

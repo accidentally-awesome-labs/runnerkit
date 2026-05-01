@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/ops"
+	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/remote"
+	"github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/testsupport"
 )
 
@@ -71,5 +74,27 @@ func TestDoctorRedactsMachineRefAndJSONIncludesFindings(t *testing.T) {
 	}
 	if !strings.Contains(out, `"redactions_applied":true`) || !strings.Contains(out, `"findings"`) || !strings.Contains(out, "service_active") {
 		t.Fatalf("json doctor missing contract fields:\n%s", out)
+	}
+}
+
+func TestDoctorCloudProviderDriftRemediationAndReadOnly(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.CloudRepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	cloud := &provider.FakeProvider{DescribeOut: provider.ProviderStatus{Kind: "hetzner", Found: true, Status: "running", Region: "fsn1", ServerType: "cpx22", Image: "ubuntu-24.04", PublicHost: "203.0.113.10", BillableResources: []string{"server:srv-123"}, Drift: []string{"firewall missing"}}}
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: github, RemoteExecutor: doctorRemote(true), Providers: provider.NewRegistry(cloud), CommandRunner: staticCommandRunner{remote: "git@github.com:owner/repo.git"}, Sleep: noSleep})
+	cmd.SetArgs([]string{"doctor", "--repo", repo.Repo.FullName, "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud doctor returned error: %v\nstderr=%s", err, errOut.String())
+	}
+	if !strings.Contains(out.String(), "provider_drift") || !strings.Contains(out.String(), "runnerkit destroy --repo owner/repo --dry-run") {
+		t.Fatalf("doctor missing provider drift remediation:\n%s", out.String())
+	}
+	if cloud.DescribeCalls != 1 || cloud.ProvisionCalls != 0 || cloud.DestroyCalls != 0 || github.CreateRegistrationTokenCalls != 0 || github.CreateRemovalTokenCalls != 0 {
+		t.Fatalf("doctor mutated dependencies: cloud=%#v github=%#v", cloud, github)
 	}
 }

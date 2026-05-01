@@ -69,7 +69,7 @@ func runLogs(deps Dependencies, jsonOutput bool, noColor bool, opts *logsOptions
 	bundle := ops.CollectLogs(ctx, deps.RemoteExecutor, target, repoState, opts.since, opts.lines)
 	bundle.StatePath = store.Path()
 	if jsonOutput {
-		return renderer.JSON(map[string]any{"ok": true, "command": "logs", "repo": repo.FullName, "state_path": store.Path(), "since": bundle.Since, "lines": bundle.Lines, "sections": bundle.Sections, "warnings": bundle.Warnings})
+		return renderer.JSON(map[string]any{"ok": true, "command": "logs", "repo": repo.FullName, "state_path": store.Path(), "since": bundle.Since, "lines": bundle.Lines, "sections": bundle.Sections, "warnings": bundle.Warnings, "provider": providerJSONSource(providerFactFromState(repoState.Provider))})
 	}
 	return renderLogsHuman(renderer, repoState, bundle)
 }
@@ -80,6 +80,13 @@ func renderLogsHuman(renderer *ui.Renderer, repoState rkstate.RepositoryState, b
 		ui.Bullet("Repository: " + repoState.Repo.FullName),
 		ui.Bullet("Since: " + bundle.Since),
 		ui.Bullet("Lines: " + strconv.Itoa(bundle.Lines)),
+	}
+	if isCloudProvider(repoState.Provider) {
+		cloud := repoState.Provider.Cloud
+		lines = append(lines,
+			ui.Bullet("Provider: Hetzner "+defaultString(cloud.Region, repoState.Provider.Region)+" "+defaultString(cloud.ServerType, repoState.Provider.Profile)+" "+cloud.Image),
+			ui.Bullet("Billable resources: "+strings.Join(repoState.Cleanup.ProviderResourceIDs, ", ")),
+		)
 	}
 	for _, section := range bundle.Sections {
 		lines = append(lines, ui.Bullet(section.Title))

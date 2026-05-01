@@ -68,3 +68,32 @@ func StateWithRepository(repo state.RepositoryState) state.State {
 func HealthyRunner() gh.Runner {
 	return gh.Runner{ID: TestGitHubRunnerID, Name: TestRunnerName, OS: "linux", Status: "online", Busy: false, Labels: append([]string(nil), TestLabels...)}
 }
+
+func CloudRepositoryState() state.RepositoryState {
+	repo := HealthyRepositoryState()
+	repo.Machine.Kind = "cloud-ssh"
+	repo.Machine.HostRef = "runnerkit-admin@203.0.113.10:22"
+	repo.Machine.User = "runnerkit-admin"
+	repo.Provider = state.ProviderRef{
+		Kind:        "hetzner",
+		Name:        "hetzner",
+		Region:      "fsn1",
+		Profile:     "cpx22",
+		IDs:         map[string]string{"server": "srv-123", "ssh_key": "key-123", "firewall": "fw-123", "primary_ipv4": "ip-123"},
+		ResourceIDs: map[string]string{"server": "srv-123", "ssh_key": "key-123", "firewall": "fw-123", "primary_ipv4": "ip-123"},
+		Cloud: state.CloudInventory{
+			Provider:      "hetzner",
+			ServerID:      "srv-123",
+			ServerStatus:  "running",
+			Region:        "fsn1",
+			ServerType:    "cpx22",
+			Image:         "ubuntu-24.04",
+			PublicIPv4:    "203.0.113.10",
+			SSHKeyID:      "key-123",
+			FirewallID:    "fw-123",
+			PrimaryIPv4ID: "ip-123",
+		},
+	}
+	repo.Cleanup.ProviderResourceIDs = []string{"server:srv-123", "ssh_key:key-123", "firewall:fw-123", "primary_ipv4:ip-123"}
+	return repo
+}
