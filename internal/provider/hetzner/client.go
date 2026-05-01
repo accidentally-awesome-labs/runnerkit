@@ -17,6 +17,8 @@ type Client interface {
 	CreateServer(ctx context.Context, opts hcloud.ServerCreateOpts) (*hcloud.Server, *hcloud.Action, error)
 	WaitForAction(ctx context.Context, action *hcloud.Action) error
 	GetServer(ctx context.Context, id int) (*hcloud.Server, error)
+	GetSSHKey(ctx context.Context, id int) (*hcloud.SSHKey, error)
+	GetFirewall(ctx context.Context, id int) (*hcloud.Firewall, error)
 	GetPrimaryIP(ctx context.Context, id int) (*hcloud.PrimaryIP, error)
 	DeleteServer(ctx context.Context, id int) error
 	DeleteSSHKey(ctx context.Context, id int) error
@@ -72,6 +74,16 @@ func (c *APIClient) WaitForAction(ctx context.Context, action *hcloud.Action) er
 func (c *APIClient) GetServer(ctx context.Context, id int) (*hcloud.Server, error) {
 	server, _, err := c.client.Server.GetByID(ctx, id)
 	return server, err
+}
+
+func (c *APIClient) GetSSHKey(ctx context.Context, id int) (*hcloud.SSHKey, error) {
+	sshKey, _, err := c.client.SSHKey.GetByID(ctx, id)
+	return sshKey, err
+}
+
+func (c *APIClient) GetFirewall(ctx context.Context, id int) (*hcloud.Firewall, error) {
+	firewall, _, err := c.client.Firewall.GetByID(ctx, id)
+	return firewall, err
 }
 
 func (c *APIClient) GetPrimaryIP(ctx context.Context, id int) (*hcloud.PrimaryIP, error) {

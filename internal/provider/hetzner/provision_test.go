@@ -103,6 +103,10 @@ func (f *fakeClient) GetServer(_ context.Context, id int) (*hcloud.Server, error
 	f.getServerIDs = append(f.getServerIDs, id)
 	return f.server, f.getServerErr
 }
+func (f *fakeClient) GetSSHKey(context.Context, int) (*hcloud.SSHKey, error) { return f.sshKey, nil }
+func (f *fakeClient) GetFirewall(context.Context, int) (*hcloud.Firewall, error) {
+	return f.firewall, nil
+}
 func (f *fakeClient) GetPrimaryIP(context.Context, int) (*hcloud.PrimaryIP, error) { return nil, nil }
 func (f *fakeClient) DeleteServer(context.Context, int) error                      { return nil }
 func (f *fakeClient) DeleteSSHKey(context.Context, int) error                      { return nil }

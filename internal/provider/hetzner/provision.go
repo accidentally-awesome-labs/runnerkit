@@ -140,14 +140,6 @@ func (p *Provider) Describe(_ context.Context, ref state.ProviderRef) (provider.
 	return provider.ProviderStatus{Kind: ref.Kind, Region: ref.Region, Found: false}, nil
 }
 
-func (p *Provider) Destroy(_ context.Context, _ state.ProviderRef) (provider.DestroyResult, error) {
-	return provider.DestroyResult{}, errors.New("hetzner destroy is not implemented in this plan")
-}
-
-func (p *Provider) VerifyDestroyed(_ context.Context, _ state.ProviderRef) (provider.VerificationResult, error) {
-	return provider.VerificationResult{OK: false}, errors.New("hetzner destroy verification is not implemented in this plan")
-}
-
 func (p *Provider) client() (Client, TokenSource, error) {
 	source, err := ResolveToken(p.Env)
 	if err != nil {
