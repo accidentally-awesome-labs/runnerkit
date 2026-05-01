@@ -26,7 +26,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **MACH-01**: Developer can connect RunnerKit to an existing Linux machine over SSH and run preflight checks before installation.
 - [x] **MACH-02**: Developer can bootstrap a BYO Linux machine with a dedicated non-root runner user, required dependencies, and a managed runner service.
-- [ ] **MACH-03**: Developer can provision one recommended low-cost cloud machine path when they do not already have a machine.
+- [x] **MACH-03**: Developer can provision one recommended low-cost cloud machine path when they do not already have a machine.
 - [ ] **MACH-04**: Developer can install the runner on the provisioned cloud machine using the same lifecycle path as BYO machines.
 - [ ] **MACH-05**: Developer can see enough machine/provider identity in RunnerKit state to safely manage or remove the runner later.
 
@@ -47,7 +47,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Cleanup and State
 
-- [ ] **CLEAN-01**: Developer can run a cleanup/destroy flow that shows a plan before removing GitHub, BYO, or cloud resources.
+- [x] **CLEAN-01**: Developer can run a cleanup/destroy flow that shows a plan before removing GitHub, BYO, or cloud resources.
 - [x] **CLEAN-02**: Developer can deregister stale GitHub runner records even when local or remote machine state is partially missing.
 - [x] **CLEAN-03**: Developer can remove BYO runner files/services from a machine without deleting unrelated user data.
 - [ ] **CLEAN-04**: Developer can destroy RunnerKit-created cloud resources and verify they are no longer billable.
@@ -106,7 +106,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GH-05       | Phase 2 | Complete |
 | MACH-01     | Phase 2 | Complete |
 | MACH-02     | Phase 2 | Complete |
-| MACH-03     | Phase 4 | Pending  |
+| MACH-03     | Phase 4 | Complete |
 | MACH-04     | Phase 4 | Pending  |
 | MACH-05     | Phase 4 | Pending  |
 | RUN-01      | Phase 2 | Complete |
@@ -118,7 +118,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REL-03      | Phase 3 | Complete |
 | REL-04      | Phase 3 | Complete |
 | REL-05      | Phase 6 | Pending  |
-| CLEAN-01    | Phase 4 | Pending  |
+| CLEAN-01    | Phase 4 | Complete |
 | CLEAN-02    | Phase 3 | Complete |
 | CLEAN-03    | Phase 3 | Complete |
 | CLEAN-04    | Phase 4 | Pending  |

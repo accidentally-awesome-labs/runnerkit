@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-04-30T15:48:14Z"
-last_activity: 2026-04-30 - Phase 4 UI-SPEC approved; ready to plan Phase 4.
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-05-01T00:03:35Z"
+last_activity: 2026-05-01 - Plan 04-01 completed; ready for Plan 04-02.
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 16
+  completed_plans: 13
 ---
 
 # Project State
@@ -25,19 +25,19 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 04 of 6 (recommended cloud path and billable cleanup)
-Plan: 0 of 4
-Status: UI-SPEC approved
-Last activity: 2026-04-30 - Phase 4 UI-SPEC approved; ready to plan Phase 4.
+Plan: 2 of 4
+Status: Ready to execute Plan 04-02
+Last activity: 2026-05-01 - Plan 04-01 completed; ready for Plan 04-02.
 
-Milestone Progress: [█████░░░░░] 50%
+Milestone Progress: [████████░░] 81%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 12
-- Average duration: 28 min
-- Total execution time: 5.7 hours
+- Total plans completed: 13
+- Average duration: 27 min
+- Total execution time: 5.9 hours
 
 **By Phase:**
 
@@ -46,11 +46,12 @@ Milestone Progress: [█████░░░░░] 50%
 | 01    | 4/4   | 71 min  | 18 min   |
 | 02    | 4/4   | 95 min  | 24 min   |
 | 03    | 4/4   | 176 min | 44 min   |
+| 04    | 1/4   | 9 min   | 9 min    |
 
 **Recent Trend:**
 
-- Last 5 plans: 02-04 (20 min), 03-01 (42 min), 03-02 (38 min), 03-03 (44 min), 03-04 (52 min)
-- Trend: Phase 3 operations are implemented across status, logs, doctor, recover, and down; next work is verification.
+- Last 5 plans: 03-01 (42 min), 03-02 (38 min), 03-03 (44 min), 03-04 (52 min), 04-01 (9 min)
+- Trend: Phase 4 cloud-provider foundation is in place; next work is Hetzner resource creation and readiness.
 
 _Updated after each plan completion_
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - Phase 3 context: `runnerkit status` should default to the current repo, stay read-only, use fast health probes, show derived health plus source facts, include the saved `runs-on` snippet, flag label drift, and expose the same model in JSON.
 - Phase 3 context: BYO cleanup should use `runnerkit down`; interactive cleanup asks artifact-by-artifact, while `down --yes` applies a safe default plan limited to RunnerKit-managed runner-specific artifacts.
 - Phase 4 context: Cloud provider/profile is planner discretion after research, optimized for smooth setup/reliability over absolute lowest cost; cloud auth should reuse provider CLI/env credentials; interactive `runnerkit up` offers cloud vs BYO when no host is provided; non-interactive cloud requires explicit cloud flags; provisioning plans show cost, resources, identity/tags, labels, and exact `runnerkit destroy`; state stores full cloud resource inventory; `runnerkit destroy` verifies GitHub removal plus provider resources absent/non-billable and keeps pending checkpoints on partial failure.
+- Plan 04-01: Hetzner is the first registered cloud provider path, with default `fsn1`/`cpx22`/`ubuntu-24.04`/`runnerkit-admin` planning profile and env-only token discovery.
+- Plan 04-01: Non-interactive cloud setup requires explicit `--cloud hetzner --yes`; missing `--host` plus `--yes` fails before provider, remote, state, or registration-token side effects.
+- Plan 04-01: Cloud pre-provisioning uses non-token runner-management read checks and renders plan-before-mutation output with cost caveat, resource names/tags, labels, and future destroy command.
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-30
-Stopped at: Phase 4 UI-SPEC approved
-Resume file: .planning/phases/04-recommended-cloud-path-and-billable-cleanup/04-UI-SPEC.md
+Last session: 2026-05-01
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None
