@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 5 UI-SPEC approved
-last_updated: "2026-05-01T18:30:00.000Z"
-last_activity: 2026-05-01 - Phase 5 UI-SPEC approved; next is Phase 05 planning.
+stopped_at: Phase 5 planned
+last_updated: "2026-05-01T19:03:28.892Z"
+last_activity: 2026-05-01 - Phase 5 plans created and verified; next is Phase 05 execution.
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 16
+  total_plans: 19
   completed_plans: 16
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 5 of 6 (scoped ephemeral mode and safety profiles)
-Plan: UI-SPEC approved; plans not yet created
-Status: Ready to plan Phase 05
-Last activity: 2026-05-01 - Phase 5 UI-SPEC approved; next is Phase 05 planning.
+Plan: 3 plans created and verified
+Status: Ready to execute Phase 05
+Last activity: 2026-05-01 - Phase 5 plans created and verified; next is Phase 05 execution.
 
 Milestone Progress: [███████░░░] 67%
 
@@ -51,7 +51,7 @@ Milestone Progress: [███████░░░] 67%
 **Recent Trend:**
 
 - Last 5 plans: 03-04 (52 min), 04-01 (9 min), 04-02 (15 min), 04-03 (27 min), 04-04 (39 min)
-- Trend: Phase 4 is complete: RunnerKit now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, provider-aware status/logs/doctor, billable destroy verification, and cloud quickstart documentation. Next work is Phase 5 ephemeral mode and safety profiles.
+- Trend: Phase 4 is complete: RunnerKit now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, provider-aware status/logs/doctor, billable destroy verification, and cloud quickstart documentation. Phase 5 planning is complete with 3 plans for scoped ephemeral mode and safety profiles.
 
 _Updated after each plan completion_
 
@@ -117,5 +117,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-01
-Stopped at: Phase 5 UI-SPEC approved
-Resume file: .planning/phases/05-scoped-ephemeral-mode-and-safety-profiles/05-UI-SPEC.md
+Stopped at: Phase 5 planned
+Resume file: .planning/phases/05-scoped-ephemeral-mode-and-safety-profiles/05-01-PLAN.md
