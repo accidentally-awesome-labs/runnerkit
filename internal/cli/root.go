@@ -9,6 +9,7 @@ import (
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/provider"
+	"github.com/salar/runnerkit/internal/provider/hetzner"
 	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/remote"
 	"github.com/salar/runnerkit/internal/ui"
@@ -64,7 +65,7 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient})
 	}
 	if deps.Providers == nil {
-		deps.Providers = provider.NewRegistry(provider.NewHetznerPlanProvider(nil))
+		deps.Providers = provider.NewRegistry(hetzner.NewProvider(nil))
 	}
 	if deps.RemoteExecutor == nil {
 		deps.RemoteExecutor = remote.NewSystemExecutor()

@@ -1,13 +1,8 @@
 package provider
 
 import (
-	"context"
-	"errors"
 	"strings"
 	"time"
-
-	"github.com/salar/runnerkit/internal/provider/hetzner"
-	"github.com/salar/runnerkit/internal/state"
 )
 
 const (
@@ -160,50 +155,4 @@ func sanitizeName(value string) string {
 		out = "runnerkit-" + out
 	}
 	return out
-}
-
-type HetznerPlanProvider struct {
-	Env map[string]string
-}
-
-func NewHetznerPlanProvider(env map[string]string) *HetznerPlanProvider {
-	return &HetznerPlanProvider{Env: env}
-}
-
-func (p *HetznerPlanProvider) Name() string { return HetznerProvider }
-
-func (p *HetznerPlanProvider) Validate(_ context.Context, _ ProvisionInput) (ValidationResult, error) {
-	token, err := hetzner.ResolveToken(p.Env)
-	if err != nil {
-		var missing *hetzner.MissingTokenError
-		if errors.As(err, &missing) {
-			return ValidationResult{OK: false, Remediation: missing.Remediation}, err
-		}
-		return ValidationResult{OK: false}, err
-	}
-	return ValidationResult{OK: true, Source: token.Source}, nil
-}
-
-func (p *HetznerPlanProvider) Plan(_ context.Context, input ProvisionInput) (ProvisionPlan, error) {
-	return HetznerProvisionPlan(input), nil
-}
-
-func (p *HetznerPlanProvider) Provision(_ context.Context, _ ProvisionInput) (ProvisionResult, error) {
-	return ProvisionResult{}, errors.New("hetzner provisioning is not implemented in this plan")
-}
-
-func (p *HetznerPlanProvider) WaitReady(_ context.Context, machine Machine) (Machine, error) {
-	return machine, errors.New("hetzner readiness is not implemented in this plan")
-}
-
-func (p *HetznerPlanProvider) Describe(_ context.Context, ref state.ProviderRef) (ProviderStatus, error) {
-	return ProviderStatus{Kind: ref.Kind, Region: ref.Region, Found: false}, nil
-}
-
-func (p *HetznerPlanProvider) Destroy(_ context.Context, _ state.ProviderRef) (DestroyResult, error) {
-	return DestroyResult{}, errors.New("hetzner destroy is not implemented in this plan")
-}
-
-func (p *HetznerPlanProvider) VerifyDestroyed(_ context.Context, _ state.ProviderRef) (VerificationResult, error) {
-	return VerificationResult{OK: false}, errors.New("hetzner destroy verification is not implemented in this plan")
 }

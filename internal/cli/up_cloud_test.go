@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/salar/runnerkit/internal/provider"
+	"github.com/salar/runnerkit/internal/provider/hetzner"
 	"github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/ui"
 )
@@ -209,13 +210,14 @@ func TestUpCloudDryRunHumanRendersProvisionPlanContract(t *testing.T) {
 
 func TestUpCloudDryRunJSONRendersProvisionPlanWithoutTokenLeak(t *testing.T) {
 	const fakeToken = "hcloud-secret"
+	t.Setenv("HCLOUD_TOKEN", fakeToken)
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
 		Version:   "test-version",
 		Out:       &out,
 		Err:       &errOut,
 		GitHub:    newFakePermittedGitHubService(),
-		Providers: provider.NewRegistry(provider.NewHetznerPlanProvider(map[string]string{"HCLOUD_TOKEN": fakeToken})),
+		Providers: provider.NewRegistry(&provider.FakeProvider{}),
 		Sleep:     noSleep,
 	})
 	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
@@ -332,7 +334,7 @@ func TestUpCloudMissingCredentialsUsesUISpecCopy(t *testing.T) {
 		Out:       &out,
 		Err:       &errOut,
 		GitHub:    newFakePermittedGitHubService(),
-		Providers: provider.NewRegistry(provider.NewHetznerPlanProvider(map[string]string{})),
+		Providers: provider.NewRegistry(hetzner.NewProvider(map[string]string{})),
 		Sleep:     noSleep,
 	})
 	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
