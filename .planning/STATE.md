@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-05-01T00:03:35Z"
-last_activity: 2026-05-01 - Plan 04-01 completed; ready for Plan 04-02.
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-05-01T00:22:39.222Z"
+last_activity: 2026-05-01 - Plan 04-02 completed; ready for Plan 04-03.
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -25,19 +25,19 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 04 of 6 (recommended cloud path and billable cleanup)
-Plan: 2 of 4
-Status: Ready to execute Plan 04-02
-Last activity: 2026-05-01 - Plan 04-01 completed; ready for Plan 04-02.
+Plan: 3 of 4
+Status: Ready to execute Plan 04-03
+Last activity: 2026-05-01 - Plan 04-02 completed; ready for Plan 04-03.
 
-Milestone Progress: [████████░░] 81%
+Milestone Progress: [█████████░] 88%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 13
-- Average duration: 27 min
-- Total execution time: 5.9 hours
+- Total plans completed: 14
+- Average duration: 26 min
+- Total execution time: 6.2 hours
 
 **By Phase:**
 
@@ -46,12 +46,12 @@ Milestone Progress: [████████░░] 81%
 | 01    | 4/4   | 71 min  | 18 min   |
 | 02    | 4/4   | 95 min  | 24 min   |
 | 03    | 4/4   | 176 min | 44 min   |
-| 04    | 1/4   | 9 min   | 9 min    |
+| 04    | 2/4   | 24 min  | 12 min   |
 
 **Recent Trend:**
 
-- Last 5 plans: 03-01 (42 min), 03-02 (38 min), 03-03 (44 min), 03-04 (52 min), 04-01 (9 min)
-- Trend: Phase 4 cloud-provider foundation is in place; next work is Hetzner resource creation and readiness.
+- Last 5 plans: 03-02 (38 min), 03-03 (44 min), 03-04 (52 min), 04-01 (9 min), 04-02 (15 min)
+- Trend: Phase 4 now has Hetzner provisioning, cloud inventory, and readiness gates; next work is shared runner installation and operations integration.
 
 _Updated after each plan completion_
 
@@ -91,6 +91,10 @@ Recent decisions affecting current work:
 - Plan 04-01: Hetzner is the first registered cloud provider path, with default `fsn1`/`cpx22`/`ubuntu-24.04`/`runnerkit-admin` planning profile and env-only token discovery.
 - Plan 04-01: Non-interactive cloud setup requires explicit `--cloud hetzner --yes`; missing `--host` plus `--yes` fails before provider, remote, state, or registration-token side effects.
 - Plan 04-01: Cloud pre-provisioning uses non-token runner-management read checks and renders plan-before-mutation output with cost caveat, resource names/tags, labels, and future destroy command.
+- Plan 04-02: Use hcloud-go v1.59.2 (not /v2) for the Hetzner adapter while the module targets Go 1.22.
+- Plan 04-02: Store full Hetzner cloud inventory under ProviderRef.Cloud while preserving existing provider kind/ids/region compatibility.
+- Plan 04-02: Persist cloud_provision_pending immediately after billable resources exist and cloud_readiness_pending if provider, SSH, cloud-init, or preflight readiness fails.
+- Plan 04-02: Keep provider-only readiness in internal/provider/hetzner and CLI-owned SSH/cloud-init/BYO preflight readiness before any registration-token creation.
 
 ### Pending Todos
 
@@ -109,5 +113,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-01
-Stopped at: Completed 04-01-PLAN.md
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
