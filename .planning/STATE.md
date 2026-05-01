@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 04 complete; ready to plan Phase 05
-last_updated: "2026-05-01T18:00:09.702Z"
-last_activity: 2026-05-01 - Phase 04 verified complete; next is Phase 05 planning.
+stopped_at: Phase 5 UI-SPEC approved
+last_updated: "2026-05-01T18:30:00.000Z"
+last_activity: 2026-05-01 - Phase 5 UI-SPEC approved; next is Phase 05 planning.
 progress:
   total_phases: 6
   completed_phases: 4
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 5 of 6 (scoped ephemeral mode and safety profiles)
-Plan: Not planned
+Plan: UI-SPEC approved; plans not yet created
 Status: Ready to plan Phase 05
-Last activity: 2026-05-01 - Phase 04 verified complete; next is Phase 05 planning.
+Last activity: 2026-05-01 - Phase 5 UI-SPEC approved; next is Phase 05 planning.
 
 Milestone Progress: [███████░░░] 67%
 
@@ -117,5 +117,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-01
-Stopped at: Phase 04 complete; ready to plan Phase 05
-Resume file: .planning/ROADMAP.md#phase-5-scoped-ephemeral-mode-and-safety-profiles
+Stopped at: Phase 5 UI-SPEC approved
+Resume file: .planning/phases/05-scoped-ephemeral-mode-and-safety-profiles/05-UI-SPEC.md
