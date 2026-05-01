@@ -80,7 +80,7 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 		return provider.ProvisionResult{}, err
 	}
 	if !validation.OK {
-		return provider.ProvisionResult{}, fmt.Errorf(strings.Join(validation.Remediation, "; "))
+		return provider.ProvisionResult{}, errors.New(strings.Join(validation.Remediation, "; "))
 	}
 	if strings.TrimSpace(input.PublicKey) == "" {
 		return provider.ProvisionResult{}, fmt.Errorf("public SSH key is required for Hetzner cloud provisioning")
@@ -134,10 +134,6 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 	}
 	machine := machineFromServer(input, plan, resourceIDs, server)
 	return provider.ProvisionResult{Machine: machine, CreatedResourceIDs: cloneIDs(resourceIDs), CheckpointRequired: true}, nil
-}
-
-func (p *Provider) WaitReady(_ context.Context, machine provider.Machine) (provider.Machine, error) {
-	return machine, errors.New("hetzner readiness is not implemented in this plan")
 }
 
 func (p *Provider) Describe(_ context.Context, ref state.ProviderRef) (provider.ProviderStatus, error) {

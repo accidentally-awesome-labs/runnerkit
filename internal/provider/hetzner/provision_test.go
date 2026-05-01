@@ -26,7 +26,11 @@ type fakeClient struct {
 	server        *hcloud.Server
 	action        *hcloud.Action
 	createSrvErr  error
+	waitErr       error
+	getServerErr  error
 	validationErr map[string]error
+	waitActionIDs []int
+	getServerIDs  []int
 
 	sshKeyOpts   hcloud.SSHKeyCreateOpts
 	firewallOpts hcloud.FirewallCreateOpts
@@ -89,8 +93,16 @@ func (f *fakeClient) CreateServer(_ context.Context, opts hcloud.ServerCreateOpt
 	f.serverOpts = opts
 	return f.server, f.action, f.createSrvErr
 }
-func (f *fakeClient) WaitForAction(context.Context, *hcloud.Action) error          { return nil }
-func (f *fakeClient) GetServer(context.Context, int) (*hcloud.Server, error)       { return f.server, nil }
+func (f *fakeClient) WaitForAction(_ context.Context, action *hcloud.Action) error {
+	if action != nil {
+		f.waitActionIDs = append(f.waitActionIDs, action.ID)
+	}
+	return f.waitErr
+}
+func (f *fakeClient) GetServer(_ context.Context, id int) (*hcloud.Server, error) {
+	f.getServerIDs = append(f.getServerIDs, id)
+	return f.server, f.getServerErr
+}
 func (f *fakeClient) GetPrimaryIP(context.Context, int) (*hcloud.PrimaryIP, error) { return nil, nil }
 func (f *fakeClient) DeleteServer(context.Context, int) error                      { return nil }
 func (f *fakeClient) DeleteSSHKey(context.Context, int) error                      { return nil }

@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/provider/hetzner"
 	"github.com/salar/runnerkit/internal/remote"
@@ -261,17 +264,20 @@ func (p *cloudConfirmationPrompter) Select(context.Context, ui.Prompt, []ui.Opti
 
 func TestUpCloudInteractiveConfirmationPrecedesProvision(t *testing.T) {
 	prompter := &cloudConfirmationPrompter{confirmResult: true}
-	cloud := &provider.FakeProvider{}
+	machine := cloudReadyMachineForTest()
+	cloud := &provider.FakeProvider{ProvisionOut: provider.ProvisionResult{Machine: machine, CreatedResourceIDs: machine.ResourceIDs, CheckpointRequired: true}, WaitReadyOut: machine}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
-		Version:   "test-version",
-		Out:       &out,
-		Err:       &errOut,
-		TTY:       ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
-		Prompts:   prompter,
-		GitHub:    newFakePermittedGitHubService(),
-		Providers: provider.NewRegistry(cloud),
-		Sleep:     noSleep,
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		TTY:            ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:        prompter,
+		GitHub:         newFakePermittedGitHubService(),
+		RemoteExecutor: newFakeRemoteExecutor(),
+		Providers:      provider.NewRegistry(cloud),
+		StateBaseDir:   t.TempDir(),
+		Sleep:          noSleep,
 	})
 	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
 	if err := cmd.Execute(); err != nil {
@@ -290,14 +296,15 @@ func TestUpCloudDeclinedConfirmationSkipsProvision(t *testing.T) {
 	cloud := &provider.FakeProvider{}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
-		Version:   "test-version",
-		Out:       &out,
-		Err:       &errOut,
-		TTY:       ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
-		Prompts:   prompter,
-		GitHub:    newFakePermittedGitHubService(),
-		Providers: provider.NewRegistry(cloud),
-		Sleep:     noSleep,
+		Version:      "test-version",
+		Out:          &out,
+		Err:          &errOut,
+		TTY:          ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:      prompter,
+		GitHub:       newFakePermittedGitHubService(),
+		Providers:    provider.NewRegistry(cloud),
+		StateBaseDir: t.TempDir(),
+		Sleep:        noSleep,
 	})
 	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
 	err := cmd.Execute()
@@ -315,7 +322,7 @@ func TestUpCloudDeclinedConfirmationSkipsProvision(t *testing.T) {
 func TestUpCloudNoTTYWithoutYesSkipsProvision(t *testing.T) {
 	cloud := &provider.FakeProvider{}
 	var out, errOut bytes.Buffer
-	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: newFakePermittedGitHubService(), Providers: provider.NewRegistry(cloud), Sleep: noSleep})
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: newFakePermittedGitHubService(), Providers: provider.NewRegistry(cloud), StateBaseDir: t.TempDir(), Sleep: noSleep})
 	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitInputRequired {
@@ -404,5 +411,137 @@ func TestUpCloudProvisionErrorPersistsPendingStateAndDestroyNextAction(t *testin
 	}
 	if loaded.Provider.Cloud.ServerID != "srv-123" || loaded.Provider.Cloud.SSHKeyID != "key-123" || loaded.Provider.Cloud.FirewallID != "fw-123" || loaded.Provider.Cloud.PrimaryIPv4ID != "ip-123" || loaded.Provider.Cloud.CostProfile.Provider != "hetzner" {
 		t.Fatalf("cloud inventory not persisted: %#v", loaded.Provider.Cloud)
+	}
+}
+
+func TestUpCloudReadinessFailureBlocksRegistrationTokenAndKeepsPendingState(t *testing.T) {
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	machine := cloudReadyMachineForTest()
+	cloud := &provider.FakeProvider{
+		ProvisionOut: provider.ProvisionResult{Machine: machine, CreatedResourceIDs: machine.ResourceIDs, CheckpointRequired: true},
+		WaitReadyErr: errors.New("provider still provisioning"),
+	}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		GitHub:         service,
+		RemoteExecutor: newFakeRemoteExecutor(),
+		Providers:      provider.NewRegistry(cloud),
+		StateBaseDir:   stateDir,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("expected readiness failure, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if !strings.Contains(combined, "Cloud machine is not ready for runner registration yet") || !strings.Contains(combined, "runnerkit destroy --repo owner/name") {
+		t.Fatalf("missing readiness failure guidance:\n%s", combined)
+	}
+	if service.authCalls != 0 || service.tokenCalls != 0 {
+		t.Fatalf("readiness failure should not call registration-token auth; auth=%d token=%d", service.authCalls, service.tokenCalls)
+	}
+	if cloud.ProvisionCalls != 1 || cloud.WaitReadyCalls != 1 {
+		t.Fatalf("provider call counts provision=%d wait=%d", cloud.ProvisionCalls, cloud.WaitReadyCalls)
+	}
+	loaded, found, loadErr := state.NewStore(stateDir).GetRepository("owner/name")
+	if loadErr != nil || !found {
+		t.Fatalf("pending state not saved found=%v err=%v", found, loadErr)
+	}
+	if len(loaded.Operations) != 1 || loaded.Operations[0].Message != "cloud_readiness_pending" || loaded.Operations[0].Artifact != "readiness" {
+		t.Fatalf("missing cloud_readiness_pending operation: %#v", loaded.Operations)
+	}
+}
+
+func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
+	service := newFakePermittedGitHubService()
+	remoteExec := newFakeRemoteExecutor()
+	machine := cloudReadyMachineForTest()
+	cloud := &provider.FakeProvider{
+		ProvisionOut: provider.ProvisionResult{Machine: machine, CreatedResourceIDs: machine.ResourceIDs, CheckpointRequired: true},
+		WaitReadyOut: machine,
+	}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Providers:      provider.NewRegistry(cloud),
+		StateBaseDir:   t.TempDir(),
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud readiness success returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	if cloud.ProvisionCalls != 1 || cloud.WaitReadyCalls != 1 || service.tokenCalls != 1 || service.authCalls != 0 {
+		t.Fatalf("unexpected call counts provision=%d wait=%d token=%d auth=%d", cloud.ProvisionCalls, cloud.WaitReadyCalls, service.tokenCalls, service.authCalls)
+	}
+	ids := []string{}
+	for _, command := range remoteExec.runs {
+		ids = append(ids, command.ID)
+	}
+	joined := strings.Join(ids, ",")
+	for _, want := range []string{"cloud.cloudinit.wait", "host.network.github.github", "host.network.github.api"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing readiness/preflight command %q in %v", want, ids)
+		}
+	}
+	if indexOf(ids, "cloud.cloudinit.wait") > indexOf(ids, "host.network.github.github") {
+		t.Fatalf("cloud-init wait should precede preflight network checks: %v", ids)
+	}
+	if len(cloud.ProvisionInput) != 1 {
+		t.Fatalf("expected one provision input, got %d", len(cloud.ProvisionInput))
+	}
+	labels := strings.Join(cloud.ProvisionInput[0].Labels, ",")
+	for _, want := range []string{"runnerkit-owner-name", "linux", "x64", "persistent"} {
+		if !strings.Contains(labels, want) {
+			t.Fatalf("cloud labels missing %q: %s", want, labels)
+		}
+	}
+}
+
+func cloudReadyMachineForTest() provider.Machine {
+	ids := map[string]string{"server": "srv-123", "ssh_key": "key-123", "firewall": "fw-123", "primary_ipv4": "ip-123"}
+	return provider.Machine{
+		Target:      remote.Target{User: "runnerkit-admin", Host: "203.0.113.10", Port: 22, Raw: "runnerkit-admin@203.0.113.10:22"},
+		PublicIPv4:  "203.0.113.10",
+		ResourceIDs: ids,
+		Provider: state.ProviderRef{
+			Kind:        "hetzner",
+			Name:        "hetzner",
+			Region:      "fsn1",
+			Profile:     "cpx22",
+			IDs:         ids,
+			ResourceIDs: ids,
+			Cloud:       state.CloudInventory{Provider: "hetzner", ServerID: "srv-123", Region: "fsn1", ServerType: "cpx22", Image: "ubuntu-24.04", PublicIPv4: "203.0.113.10"},
+		},
+	}
+}
+
+func indexOf(values []string, want string) int {
+	for i, value := range values {
+		if value == want {
+			return i
+		}
+	}
+	return len(values) + 1
+}
+
+func TestBuildCloudProvisionInputReadsPublicKeyFromSSHKeyFlag(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "runnerkit_ed25519")
+	publicKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest runnerkit@example"
+	if err := os.WriteFile(keyPath+".pub", []byte(publicKey+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := buildCloudProvisionInput(Dependencies{Clock: func() time.Time { return time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC) }}, github.Repo{Owner: "owner", Name: "name", FullName: "owner/name"}, &upOptions{sshKey: keyPath})
+	if input.PublicKey != publicKey {
+		t.Fatalf("PublicKey = %q, want %q", input.PublicKey, publicKey)
 	}
 }

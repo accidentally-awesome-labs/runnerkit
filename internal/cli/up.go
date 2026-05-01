@@ -226,6 +226,7 @@ const (
 	cloudProvisionConfirmationRemedy = "Pass --yes to create billable Hetzner resources after reviewing the cloud provisioning plan, or pass --dry-run to preview only."
 	cloudProvisionPending            = "cloud_provision_pending"
 	cloudReadinessPending            = "cloud_readiness_pending"
+	cloudReadinessFailedMessage      = "Cloud machine is not ready for runner registration yet. Fix the provider or SSH readiness issue, then rerun runnerkit up --repo owner/name --cloud hetzner."
 	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
 	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
 	cloudJSONKeyEstimatedMonthlyCost = "estimated_monthly_cost"
@@ -329,10 +330,39 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 			return err
 		}
 	}
-	if jsonOutput {
-		return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": result.CheckpointRequired, "cloud_plan": plan})
+	readyMachine, err := cloudProvider.WaitReady(ctx, result.Machine)
+	if err != nil {
+		readinessResult := result
+		readinessResult.Machine = readyMachine
+		_ = saveCloudPendingRepository(ctx, deps, renderer, opts, jsonOutput, store, repo, status.Source, decision, input, plan, readinessResult, cloudReadinessPending, "readiness", true)
+		return renderCloudReadinessFailure(renderer, repo, err)
 	}
-	return renderer.Step(1, 1, "Cloud provisioning accepted", ui.Success("Cloud provisioning request accepted."), ui.Bullet("Runner installation continues after cloud readiness checks."), ui.Next("runnerkit destroy --repo "+repo.FullName))
+	report, _, readyMachine, err := waitCloudTargetReady(ctx, deps, readyMachine)
+	if err != nil {
+		readinessResult := result
+		readinessResult.Machine = readyMachine
+		_ = saveCloudPendingRepository(ctx, deps, renderer, opts, jsonOutput, store, repo, status.Source, decision, input, plan, readinessResult, cloudReadinessPending, "readiness", true)
+		return renderCloudReadinessFailure(renderer, repo, err)
+	}
+	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: defaultString(report.Arch, labels.DefaultArch), Mode: labels.DefaultMode})
+	runners, err := deps.GitHub.ListRunners(ctx, repo)
+	if err != nil {
+		_ = renderer.Error("github_runner_list_failed", "RunnerKit can't list repository self-hosted runners.", []string{"Verify GitHub credentials can list repository runners for " + repo.FullName + "."})
+		return NewExitError(ExitGitHubAuth, err)
+	}
+	if existingRunner, found := gh.FindRunnerByName(runners, labelSet.RunnerName); found {
+		return runnerNameConflict(renderer, labelSet.RunnerName, existingRunner)
+	}
+	token, err := deps.GitHub.CreateRegistrationToken(ctx, repo)
+	if err != nil {
+		_ = renderer.Error("github_permission_denied", "RunnerKit can't create a fresh runner registration token.", []string{gh.FineGrainedTokenRemediation(repo)})
+		return NewExitError(ExitGitHubAuth, err)
+	}
+	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
+	if jsonOutput {
+		return renderer.JSON(map[string]any{"ok": true, "command": "up", "repo": repo.FullName, "runner_installed": false, "state_saved": true, "cloud_ready": true, "cloud_plan": plan})
+	}
+	return renderer.Step(1, 1, "Cloud machine ready", ui.Success("Cloud machine is ready for runner registration."), ui.Bullet("Target: "+readyMachine.Target.Display()), ui.Bullet("Labels: ["+strings.Join(labelSet.Labels, ", ")+"]"), ui.Next("runnerkit destroy --repo "+repo.FullName))
 }
 
 func registerKnownCloudProviderSecrets(renderer *ui.Renderer) {
@@ -357,9 +387,96 @@ func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions) 
 		WorkflowSnippet: labelSet.RunsOnYAML,
 		Profile:         profile,
 		SSHAllowedCIDR:  defaultString(opts.sshAllowedCIDR, provider.HetznerDefaultSSHAllowedCIDR),
+		PublicKey:       resolveCloudPublicKey(opts),
 		StateID:         labelSet.RunnerName,
 		CreatedAt:       createdAt,
 	}
+}
+
+func resolveCloudPublicKey(opts *upOptions) string {
+	candidates := []string{}
+	if opts != nil && strings.TrimSpace(opts.sshKey) != "" {
+		keyPath := strings.TrimSpace(opts.sshKey)
+		if strings.HasSuffix(keyPath, ".pub") {
+			candidates = append(candidates, keyPath)
+		} else {
+			candidates = append(candidates, keyPath+".pub")
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".ssh", "id_ed25519.pub"), filepath.Join(home, ".ssh", "id_rsa.pub"))
+	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		if publicKey := strings.TrimSpace(string(data)); publicKey != "" {
+			return publicKey
+		}
+	}
+	return ""
+}
+
+func renderCloudReadinessFailure(renderer *ui.Renderer, repo gh.Repo, cause error) error {
+	message := strings.Replace(cloudReadinessFailedMessage, "owner/name", repo.FullName, 1)
+	remediation := []string{"Run runnerkit destroy --repo " + repo.FullName + " if billable Hetzner resources were created and you want to stop billing."}
+	if cause != nil {
+		remediation = append([]string{cause.Error()}, remediation...)
+	}
+	_ = renderer.Error("cloud_readiness_failed", message, remediation)
+	return NewExitError(ExitSafetyGate, errors.New("cloud_readiness_failed"))
+}
+
+func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provider.Machine) (preflight.Report, remote.HostKey, provider.Machine, error) {
+	target := machine.Target
+	if target.User == "" {
+		target.User = provider.HetznerDefaultSSHUser
+	}
+	if target.Port == 0 {
+		target.Port = 22
+	}
+	machine.Target = target
+	hostKey, err := probeCloudHostKey(ctx, deps.RemoteExecutor, target)
+	if err != nil {
+		return preflight.Report{}, remote.HostKey{}, machine, err
+	}
+	hostKey = remote.NormalizeHostKey(hostKey)
+	if hostKey.Fingerprint == "" {
+		return preflight.Report{}, remote.HostKey{}, machine, errors.New("SSH host key was not observed for cloud machine")
+	}
+	result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "cloud.cloudinit.wait", Script: "cloud-init status --wait || test -f /var/lib/cloud/instance/boot-finished"})
+	if err != nil {
+		return preflight.Report{}, hostKey, machine, err
+	}
+	if result.ExitCode != 0 {
+		return preflight.Report{}, hostKey, machine, remote.RemoteError{CommandID: "cloud.cloudinit.wait", ExitCode: result.ExitCode, Message: "cloud-init readiness failed"}
+	}
+	report, err := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{AllowUnknownLinux: false})
+	if err != nil {
+		return report, hostKey, machine, err
+	}
+	if !report.Passed() {
+		return report, hostKey, machine, errors.New("cloud preflight failed before runner registration")
+	}
+	return report, hostKey, machine, nil
+}
+
+func probeCloudHostKey(ctx context.Context, executor remote.Executor, target remote.Target) (remote.HostKey, error) {
+	if prober, ok := executor.(remote.HostKeyProber); ok {
+		return prober.ProbeHostKey(ctx, target)
+	}
+	probe, err := executor.Probe(ctx, target)
+	if err != nil {
+		return remote.HostKey{}, err
+	}
+	return probe.HostKey, nil
 }
 
 func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {
