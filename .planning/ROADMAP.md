@@ -101,7 +101,7 @@ Plans:
 
 - [x] 04-01: Provider interface, selected low-cost default cloud profile, credential checks, and provisioning plan output.
 - [x] 04-02: Cloud VM, SSH key, firewall/network, tags, and readiness workflow for the recommended provider.
-- [ ] 04-03: Cloud runner installation using the shared BYO bootstrap, state reconciliation, and status/logs integration.
+- [x] 04-03: Cloud runner installation using the shared BYO bootstrap, state reconciliation, and status/logs integration.
 - [ ] 04-04: Cloud destroy, orphan/billing verification, provider-state cleanup, and cloud quickstart documentation.
 
 ### Phase 5: Scoped Ephemeral Mode and Safety Profiles
@@ -153,6 +153,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. CLI, Auth, State, and Safety Foundation     | 4/4            | Complete    | 2026-04-29 |
 | 2. BYO Persistent Runner Happy Path            | 4/4            | Complete    | 2026-04-29 |
 | 3. Operations, Diagnostics, and BYO Cleanup    | 4/4            | Complete    | 2026-04-29 |
-| 4. Recommended Cloud Path and Billable Cleanup | 2/4            | In Progress | -          |
+| 4. Recommended Cloud Path and Billable Cleanup | 3/4            | In Progress | -          |
 | 5. Scoped Ephemeral Mode and Safety Profiles   | 0/3            | Not started | -          |
 | 6. Release, Upgrade, Docs, and v1 Validation   | 0/4            | Not started | -          |

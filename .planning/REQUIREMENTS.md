@@ -27,7 +27,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **MACH-01**: Developer can connect RunnerKit to an existing Linux machine over SSH and run preflight checks before installation.
 - [x] **MACH-02**: Developer can bootstrap a BYO Linux machine with a dedicated non-root runner user, required dependencies, and a managed runner service.
 - [x] **MACH-03**: Developer can provision one recommended low-cost cloud machine path when they do not already have a machine.
-- [ ] **MACH-04**: Developer can install the runner on the provisioned cloud machine using the same lifecycle path as BYO machines.
+- [x] **MACH-04**: Developer can install the runner on the provisioned cloud machine using the same lifecycle path as BYO machines.
 - [x] **MACH-05**: Developer can see enough machine/provider identity in RunnerKit state to safely manage or remove the runner later.
 
 ### Runner Modes
@@ -107,7 +107,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MACH-01     | Phase 2 | Complete |
 | MACH-02     | Phase 2 | Complete |
 | MACH-03     | Phase 4 | Complete |
-| MACH-04     | Phase 4 | Pending  |
+| MACH-04     | Phase 4 | Complete |
 | MACH-05     | Phase 4 | Complete |
 | RUN-01      | Phase 2 | Complete |
 | RUN-02      | Phase 5 | Pending  |
@@ -138,4 +138,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 ---
 
 _Requirements defined: 2026-04-28_
-_Last updated: 2026-04-29 after Phase 1 completion_
+_Last updated: 2026-05-01 after Phase 4 Plan 04-03 completion_

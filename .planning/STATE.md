@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-05-01T00:22:39.222Z"
-last_activity: 2026-05-01 - Plan 04-02 completed; ready for Plan 04-03.
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-05-01T00:42:48.907Z"
+last_activity: 2026-05-01 - Plan 04-03 completed; ready for Plan 04-04.
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 04 of 6 (recommended cloud path and billable cleanup)
-Plan: 3 of 4
-Status: Ready to execute Plan 04-03
-Last activity: 2026-05-01 - Plan 04-02 completed; ready for Plan 04-03.
+Plan: 4 of 4
+Status: Ready to execute Plan 04-04
+Last activity: 2026-05-01 - Plan 04-03 completed; ready for Plan 04-04.
 
 Milestone Progress: [█████████░] 88%
 
@@ -35,9 +35,9 @@ Milestone Progress: [█████████░] 88%
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 15
 - Average duration: 26 min
-- Total execution time: 6.2 hours
+- Total execution time: 6.7 hours
 
 **By Phase:**
 
@@ -46,12 +46,12 @@ Milestone Progress: [█████████░] 88%
 | 01    | 4/4   | 71 min  | 18 min   |
 | 02    | 4/4   | 95 min  | 24 min   |
 | 03    | 4/4   | 176 min | 44 min   |
-| 04    | 2/4   | 24 min  | 12 min   |
+| 04    | 3/4   | 51 min  | 17 min   |
 
 **Recent Trend:**
 
-- Last 5 plans: 03-02 (38 min), 03-03 (44 min), 03-04 (52 min), 04-01 (9 min), 04-02 (15 min)
-- Trend: Phase 4 now has Hetzner provisioning, cloud inventory, and readiness gates; next work is shared runner installation and operations integration.
+- Last 5 plans: 03-03 (44 min), 03-04 (52 min), 04-01 (9 min), 04-02 (15 min), 04-03 (27 min)
+- Trend: Phase 4 now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, and provider-aware status/logs/doctor; next work is billable destroy and cloud quickstart documentation.
 
 _Updated after each plan completion_
 
@@ -95,6 +95,9 @@ Recent decisions affecting current work:
 - Plan 04-02: Store full Hetzner cloud inventory under ProviderRef.Cloud while preserving existing provider kind/ids/region compatibility.
 - Plan 04-02: Persist cloud_provision_pending immediately after billable resources exist and cloud_readiness_pending if provider, SSH, cloud-init, or preflight readiness fails.
 - Plan 04-02: Keep provider-only readiness in internal/provider/hetzner and CLI-owned SSH/cloud-init/BYO preflight readiness before any registration-token creation.
+- Plan 04-03: Cloud runner installation reuses the BYO bootstrap.Apply/service/online-verification path after provider and SSH readiness pass.
+- Plan 04-03: Successful cloud setup replaces pending checkpoints with final cloud-ssh state, GitHub runner ID, provider inventory, and deterministic cleanup IDs.
+- Plan 04-03: Status and doctor use provider Describe for cloud facts while logs use saved provider metadata; operations never call provider mutation methods.
 
 ### Pending Todos
 
@@ -113,5 +116,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-01
-Stopped at: Completed 04-02-PLAN.md
-Resume file: None
+Stopped at: Completed 04-03-PLAN.md
+Resume file: .planning/phases/04-recommended-cloud-path-and-billable-cleanup/04-04-PLAN.md
