@@ -124,6 +124,7 @@ type OperationCheckpoint struct {
 type SafetyMetadata struct {
 	Code             string     `json:"code"`
 	Allowed          bool       `json:"allowed"`
+	SafetyProfile    string     `json:"safety_profile,omitempty"`
 	Warnings         []string   `json:"warnings,omitempty"`
 	AcceptedOverride string     `json:"accepted_override,omitempty"`
 	AcceptedAt       *time.Time `json:"accepted_at,omitempty"`
