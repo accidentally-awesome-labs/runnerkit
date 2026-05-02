@@ -33,9 +33,9 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Runner Modes
 
 - [x] **RUN-01**: Developer can create a persistent runner as the default mode for trusted private solo-development repositories.
-- [ ] **RUN-02**: Developer can choose an explicit ephemeral runner option/profile when they want stronger isolation.
+- [x] **RUN-02**: Developer can choose an explicit ephemeral runner option/profile when they want stronger isolation.
 - [x] **RUN-03**: Developer receives clear warnings before using persistent runners with risky public, fork, or otherwise untrusted workloads.
-- [ ] **RUN-04**: Developer can understand the tradeoff between persistent and ephemeral modes before selecting a mode.
+- [x] **RUN-04**: Developer can understand the tradeoff between persistent and ephemeral modes before selecting a mode.
 
 ### Reliability and Operations
 
@@ -110,9 +110,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MACH-04     | Phase 4 | Complete |
 | MACH-05     | Phase 4 | Complete |
 | RUN-01      | Phase 2 | Complete |
-| RUN-02      | Phase 5 | Pending  |
+| RUN-02      | Phase 5 | Complete |
 | RUN-03      | Phase 2 | Complete |
-| RUN-04      | Phase 5 | Pending  |
+| RUN-04      | Phase 5 | Complete |
 | REL-01      | Phase 3 | Complete |
 | REL-02      | Phase 3 | Complete |
 | REL-03      | Phase 3 | Complete |

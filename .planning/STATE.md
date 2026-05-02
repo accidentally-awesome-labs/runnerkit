@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 5 planned
-last_updated: "2026-05-01T19:03:28.892Z"
-last_activity: 2026-05-01 - Phase 5 plans created and verified; next is Phase 05 execution.
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-05-02T15:10:38.984Z"
+last_activity: 2026-05-02
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-29)
 
 **Core value:** A solo developer can get a reliable, cost-effective GitHub Actions self-hosted runner online and usable in a project in about 10 minutes, without manual GitHub runner setup headaches.
-**Current focus:** Phase 5: Scoped Ephemeral Mode and Safety Profiles
+**Current focus:** Phase 05 — scoped-ephemeral-mode-and-safety-profiles
 
 ## Current Position
 
-Phase: 5 of 6 (scoped ephemeral mode and safety profiles)
-Plan: 3 plans created and verified
-Status: Ready to execute Phase 05
-Last activity: 2026-05-01 - Phase 5 plans created and verified; next is Phase 05 execution.
+Phase: 05 (scoped-ephemeral-mode-and-safety-profiles) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-02
 
 Milestone Progress: [███████░░░] 67%
 
@@ -54,6 +54,7 @@ Milestone Progress: [███████░░░] 67%
 - Trend: Phase 4 is complete: RunnerKit now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, provider-aware status/logs/doctor, billable destroy verification, and cloud quickstart documentation. Phase 5 planning is complete with 3 plans for scoped ephemeral mode and safety profiles.
 
 _Updated after each plan completion_
+| Phase 05 P01 | 16 | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,9 @@ Recent decisions affecting current work:
 - Plan 04-03: Successful cloud setup replaces pending checkpoints with final cloud-ssh state, GitHub runner ID, provider inventory, and deterministic cleanup IDs.
 - Plan 04-03: Status and doctor use provider Describe for cloud facts while logs use saved provider metadata; operations never call provider mutation methods.
 - Plan 04-04: Cloud cleanup uses `runnerkit destroy`; it plans GitHub, remote, provider, and local-state cleanup before mutation, verifies Hetzner resources absent/non-billable before state removal, and keeps pending checkpoints for partial cleanup.
+- [Phase 05]: Mode and safety-profile decisions live in a new internal/runmode package so the CLI, labels, state, and tests share one typed Decision.
+- [Phase 05]: The runner-mode prompt replaces the previous setup-path prompt; selecting persistent-byo or ephemeral-byo lets resolveBYOTarget collect a host while ephemeral-cloud selects --cloud hetzner.
+- [Phase 05]: Public/fork persistent setup blocks with the new UI-SPEC body and DangerousPersistentOverrideCopy before any GitHub auth, registration token, remote, provider, or state mutation; ephemeral cloud is the recommended public/fork path; ephemeral BYO on public/fork requires typed ack or --allow-ephemeral-byo-risk --yes.
 
 ### Pending Todos
 
@@ -116,6 +120,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-01
-Stopped at: Phase 5 planned
-Resume file: .planning/phases/05-scoped-ephemeral-mode-and-safety-profiles/05-01-PLAN.md
+Last session: 2026-05-02T15:10:38.981Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None

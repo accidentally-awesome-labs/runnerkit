@@ -119,7 +119,7 @@ Plans:
 
 Plans:
 
-- [ ] 05-01: Mode/profile selection UX, safety policy, and persistent-vs-ephemeral tradeoff explanations.
+- [x] 05-01: Mode/profile selection UX, safety policy, and persistent-vs-ephemeral tradeoff explanations.
 - [ ] 05-02: Ephemeral registration/lifecycle implementation with TTLs, cleanup finalizers, and log preservation.
 - [ ] 05-03: Safety guide, risky-workload validation, and end-to-end tests for trusted and untrusted workflow scenarios.
 
