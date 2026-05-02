@@ -138,6 +138,51 @@ func TestMachineRefRoundTripsBYOFields(t *testing.T) {
 	}
 }
 
+func TestSafetyMetadataPersistsSafetyProfile(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 5, 2, 1, 0, 0, 0, time.UTC)
+	state := NewState()
+	state.Repositories = []RepositoryState{{
+		Repo:             gh.Repo{Host: "github.com", Owner: "owner", Name: "name", FullName: "owner/name", Private: false},
+		Auth:             AuthReference{Source: "gh", Reference: "gh"},
+		Runner:           RunnerIdentity{Name: "runnerkit-owner-name-ephemeral-abc123", Labels: []string{"self-hosted"}, Mode: "ephemeral", OS: "linux", Arch: "x64"},
+		Machine:          MachineRef{Kind: "cloud-ssh"},
+		Provider:         ProviderRef{Kind: "hetzner"},
+		Cleanup:          CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
+		Safety:           SafetyMetadata{Code: "ok", Allowed: true, SafetyProfile: "ephemeral-cloud"},
+		RunnerKitVersion: "test-version",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}}
+	if err := store.Save(state); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	data, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if !strings.Contains(string(data), `"safety_profile": "ephemeral-cloud"`) {
+		t.Fatalf("expected safety_profile field in serialized state:\n%s", string(data))
+	}
+
+	// Backwards compatible: old state without safety_profile must still load.
+	json := `{"schema_version":"1","repositories":[{"repo":{"fullName":"owner/old"},"auth":{"source":"gh","reference":"gh"},"runner":{"name":"runnerkit-owner-old-local","labels":["self-hosted"],"mode":"persistent","os":"linux","arch":"x64"},"machine":{"kind":"byo-ssh"},"provider":{"kind":"byo"},"cleanup":{"managed_paths":[],"provider_resource_ids":[]},"safety":{"code":"ok","allowed":true},"runnerkit_version":"test","created_at":"2026-04-29T00:00:00Z","updated_at":"2026-04-29T00:00:00Z"}]}`
+	store2 := NewStore(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(store2.Path()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store2.Path(), []byte(json), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store2.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(loaded.Repositories) != 1 || loaded.Repositories[0].Safety.SafetyProfile != "" {
+		t.Fatalf("backwards-compatible load: %#v", loaded.Repositories)
+	}
+}
+
 func TestProjectConfigPathUsesRunnerKitConfigYAML(t *testing.T) {
 	path := ProjectConfigPath("/work/project")
 	if !strings.HasSuffix(path, filepath.Join(".runnerkit", "config.yaml")) {
