@@ -65,6 +65,35 @@ func TestLogsJSONRedactionsApplied(t *testing.T) {
 	}
 }
 
+func TestLogsEphemeralRendersForwardingWarningAndArchiveSections(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.HealthyRepositoryState()
+	repo.Runner.Mode = "ephemeral"
+	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", LogArchivePath: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-local/logs", FinalizerStatus: "pending", CleanupCommand: "runnerkit down --repo owner/repo"}
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	exec := &testsupport.RemoteExecutor{Results: map[string]remote.Result{
+		ops.CommandLogsSystemdJournal:       {Stdout: "journal", ExitCode: 0},
+		ops.CommandLogsRunnerDiagList:       {Stdout: "/opt/actions-runner/runnerkit-owner-repo-local/_diag/Runner_1.log\n", ExitCode: 0},
+		ops.CommandLogsRunnerDiagTail:       {Stdout: "diag", ExitCode: 0},
+		ops.CommandLogsEphemeralArchiveList: {Stdout: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-local/logs/Runner_1.log\n/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-local/logs/systemd-journal.log\n", ExitCode: 0},
+		ops.CommandLogsEphemeralArchiveTail: {Stdout: "preserved", ExitCode: 0},
+	}}
+	out, _, err := executeStatusForTest(t, stateDir, &testsupport.GitHubService{}, exec, "logs", "--repo", repo.Repo.FullName, "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral logs returned error: %v", err)
+	}
+	for _, want := range []string{
+		"/var/lib/runnerkit/ephemeral/",
+		"RunnerKit preserves best-effort logs only; configure external log forwarding for production-grade ephemeral troubleshooting.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("ephemeral logs missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestLogsCloudProviderMetadata(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := testsupport.CloudRepositoryState()

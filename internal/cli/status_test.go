@@ -117,6 +117,57 @@ func TestStatusMissingStateEmptyCopy(t *testing.T) {
 	}
 }
 
+func TestStatusEphemeralCompletedTreatsMissingGitHubRunnerAsTerminal(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.HealthyRepositoryState()
+	repo.Runner.Mode = "ephemeral"
+	repo.Runner.Name = "runnerkit-owner-repo-ephemeral-fake1"
+	repo.Runner.Labels = []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "ephemeral"}
+	repo.Machine.ServiceName = "runnerkit-ephemeral.runnerkit-owner-repo-ephemeral-fake1.service"
+	repo.Safety.SafetyProfile = "ephemeral-byo"
+	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", LogArchivePath: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-fake1/logs", FinalizerStatus: "completed", CleanupCommand: "runnerkit down --repo owner/repo"}
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{Runners: nil}
+	exec := &testsupport.RemoteExecutor{ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Results: map[string]remote.Result{
+		ops.CommandStatusSSHReachable: {ExitCode: 0},
+		ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
+		"status.ephemeral.state":      {Stdout: `{"finalizer_status":"completed"}`, ExitCode: 0},
+	}}
+	out, _, err := executeStatusForTest(t, stateDir, github, exec, "status", "--repo", repo.Repo.FullName, "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral completed status returned error: %v", err)
+	}
+	flat := strings.Join(strings.Fields(out), " ")
+	if !strings.Contains(flat, "Ephemeral runner completed one job and needs cleanup.") {
+		t.Fatalf("expected ephemeral_completed summary in:\n%s", out)
+	}
+	for _, want := range []string{"Mode: ephemeral", "Safety profile: ephemeral-byo", "Log archive: /var/lib/runnerkit/ephemeral/", "Cleanup after the job: runnerkit down --repo owner/repo"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("ephemeral status missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(flat, "github_runner_missing") {
+		t.Fatalf("ephemeral_completed should not surface github_runner_missing:\n%s", out)
+	}
+}
+
+func TestStatusMissingStateRendersUISpecEmptyCopy(t *testing.T) {
+	out, _, err := executeStatusForTest(t, t.TempDir(), &testsupport.GitHubService{}, healthyStatusRemote(), "status", "--repo", "owner/repo", "--no-color")
+	if err != nil {
+		t.Fatalf("missing state status returned error: %v", err)
+	}
+	for _, want := range []string{
+		"No RunnerKit-managed runner is saved for `owner/repo`.",
+		"Run `runnerkit up --repo owner/repo --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("ui-spec empty state missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestStatusCloudProviderJSONAndReadOnly(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := testsupport.CloudRepositoryState()

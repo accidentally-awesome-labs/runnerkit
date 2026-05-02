@@ -175,6 +175,66 @@ func TestDestroyGitHubFailureKeepsState(t *testing.T) {
 	}
 }
 
+func TestDestroyEphemeralCloudPreservesLogsBeforeProviderDestroyAndUsesEphemeralPrompt(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.CloudRepositoryState()
+	repo.Runner.Mode = "ephemeral"
+	repo.Runner.Name = "runnerkit-owner-repo-ephemeral-fake1"
+	repo.Machine.ServiceName = "runnerkit-ephemeral.runnerkit-owner-repo-ephemeral-fake1.service"
+	repo.Safety.SafetyProfile = "ephemeral-cloud"
+	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", LogArchivePath: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-fake1/logs", FinalizerStatus: "pending", CleanupCommand: "runnerkit destroy --repo owner/repo"}
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	exec := doctorRemote(true)
+	exec.Results["ephemeral.logs.preserve"] = remote.Result{ExitCode: 0}
+	cloud := &provider.FakeProvider{VerifyOut: provider.VerificationResult{OK: true}}
+	out, errOut, err := executeDestroyForTest(t, stateDir, github, exec, cloud, "destroy", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral cloud destroy returned error: %v\nstdout=%s\nstderr=%s", err, out, errOut)
+	}
+	preserveIdx := -1
+	for i, command := range exec.Commands {
+		if command.ID == "ephemeral.logs.preserve" {
+			preserveIdx = i
+			break
+		}
+	}
+	if preserveIdx < 0 {
+		t.Fatalf("expected ephemeral.logs.preserve in command IDs: %v", exec.CommandIDs())
+	}
+	if cloud.DestroyCalls != 1 {
+		t.Fatalf("expected one provider Destroy, got %d", cloud.DestroyCalls)
+	}
+}
+
+func TestDestroyEphemeralCloudInteractivePromptCopy(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.CloudRepositoryState()
+	repo.Runner.Mode = "ephemeral"
+	repo.Safety.SafetyProfile = "ephemeral-cloud"
+	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", FinalizerStatus: "pending", CleanupCommand: "runnerkit destroy --repo owner/repo"}
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	prompts := &destroyInputPrompter{input: "destroy owner/repo"}
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	cloud := &provider.FakeProvider{VerifyOut: provider.VerificationResult{OK: true}}
+	exec := doctorRemote(true)
+	exec.Results["ephemeral.logs.preserve"] = remote.Result{ExitCode: 0}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: github, RemoteExecutor: exec, Providers: provider.NewRegistry(cloud), Prompts: prompts, TTY: ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80}, CommandRunner: staticCommandRunner{remote: "git@github.com:owner/repo.git"}, Sleep: noSleep})
+	cmd.SetArgs([]string{"destroy", "--repo", repo.Repo.FullName, "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("interactive ephemeral destroy returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	want := "Destroy ephemeral cloud runner: type `destroy owner/repo` to remove the GitHub runner registration and RunnerKit-created Hetzner resources."
+	if prompts.prompt != want {
+		t.Fatalf("ephemeral destroy prompt = %q, want %q", prompts.prompt, want)
+	}
+}
+
 func TestDestroyRedactsRemovalAndProviderTokens(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveCloudStateForDestroy(t, stateDir)

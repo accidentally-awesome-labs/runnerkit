@@ -140,6 +140,43 @@ func TestDownPartialAndStaleGitHubOnlyFlows(t *testing.T) {
 	}
 }
 
+func TestDownEphemeralBYOPreservesLogsBeforeFileRemoval(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.HealthyRepositoryState()
+	repo.Runner.Mode = "ephemeral"
+	repo.Runner.Name = "runnerkit-owner-repo-ephemeral-fake1"
+	repo.Machine.ServiceName = "runnerkit-ephemeral.runnerkit-owner-repo-ephemeral-fake1.service"
+	repo.Safety.SafetyProfile = "ephemeral-byo"
+	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", LogArchivePath: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-fake1/logs", FinalizerStatus: "completed", CleanupCommand: "runnerkit down --repo owner/repo"}
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	exec := downRemote(0)
+	exec.Results["ephemeral.logs.preserve"] = remote.Result{ExitCode: 0}
+	out, errOut, err := executeDownForTest(t, stateDir, github, exec, nil, false, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral down returned error: %v\nstderr=%s", err, errOut)
+	}
+	preserveIdx := -1
+	filesIdx := -1
+	for i, command := range exec.Commands {
+		if command.ID == "ephemeral.logs.preserve" {
+			preserveIdx = i
+		}
+		if command.ID == "down.files.remove" {
+			filesIdx = i
+		}
+	}
+	if preserveIdx < 0 {
+		t.Fatalf("expected ephemeral.logs.preserve in: %v", exec.CommandIDs())
+	}
+	if filesIdx < 0 || preserveIdx >= filesIdx {
+		t.Fatalf("ephemeral.logs.preserve must run before down.files.remove: preserve=%d files=%d ids=%v", preserveIdx, filesIdx, exec.CommandIDs())
+	}
+	_ = out
+}
+
 func TestDownGitHubDeleteErrorKeepsPendingState(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)
