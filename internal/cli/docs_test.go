@@ -269,6 +269,67 @@ func TestSafetyGuideDocsContainRequiredCopy(t *testing.T) {
 	}
 }
 
+// TestSafetyDocsGrepContract is the docs-grep regression that protects
+// the Phase 5 safety guidance copy. It mirrors the validation strategy
+// commands (grep -R "persistent self-hosted runners" / "Ephemeral mode
+// is not a fleet manager" / the exact Hetzner cost caveat) and also
+// guards against accidentally adding "autoscaling fleet manager" in a
+// promotional context (as opposed to the v1 non-goal sentence
+// `No webhook listener or autoscaling fleet manager.`).
+func TestSafetyDocsGrepContract(t *testing.T) {
+	files := map[string]string{
+		"README.md":                mustReadDocFile(t, "../../README.md"),
+		"docs/safety.md":           mustReadDocFile(t, "../../docs/safety.md"),
+		"docs/byo-quickstart.md":   mustReadDocFile(t, "../../docs/byo-quickstart.md"),
+		"docs/cloud-quickstart.md": mustReadDocFile(t, "../../docs/cloud-quickstart.md"),
+	}
+	// Required across README + docs/safety.md.
+	mustContainAcrossFiles := []struct {
+		text  string
+		paths []string
+	}{
+		{"persistent self-hosted runners", []string{"README.md", "docs/safety.md"}},
+		{"Ephemeral mode is not a fleet manager", []string{"README.md", "docs/safety.md"}},
+		{"Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.", []string{"README.md", "docs/safety.md", "docs/cloud-quickstart.md"}},
+		{"Configure external log forwarding for production-grade ephemeral troubleshooting.", []string{"docs/safety.md"}},
+	}
+	for _, expectation := range mustContainAcrossFiles {
+		for _, path := range expectation.paths {
+			if !strings.Contains(files[path], expectation.text) {
+				t.Fatalf("%s missing required text %q", path, expectation.text)
+			}
+		}
+	}
+
+	// "autoscaling fleet manager" must only appear inside an explicit
+	// non-goal sentence: the preceding text on the same logical line must
+	// contain a negation (`No `, `not a `, or `or `) so the phrase is
+	// always rendered as something RunnerKit does NOT do.
+	for path, content := range files {
+		idx := 0
+		for {
+			pos := strings.Index(content[idx:], "autoscaling fleet manager")
+			if pos < 0 {
+				break
+			}
+			absolute := idx + pos
+			// Find the start of the current line/sentence.
+			lineStart := strings.LastIndex(content[:absolute], "\n")
+			if lineStart < 0 {
+				lineStart = 0
+			} else {
+				lineStart++
+			}
+			prefix := content[lineStart:absolute]
+			lower := strings.ToLower(prefix)
+			if !strings.Contains(lower, "no ") && !strings.Contains(lower, "not a ") && !strings.Contains(lower, " or ") && !strings.Contains(lower, "without ") {
+				t.Fatalf("%s mentions \"autoscaling fleet manager\" without negation; surrounding context: %q", path, content[lineStart:absolute+len("autoscaling fleet manager")+8])
+			}
+			idx = absolute + len("autoscaling fleet manager")
+		}
+	}
+}
+
 func mustReadDocFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

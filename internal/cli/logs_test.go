@@ -95,6 +95,41 @@ func TestLogsEphemeralRendersForwardingWarningAndArchiveSections(t *testing.T) {
 	}
 }
 
+// TestLogsEphemeralPreservedArchive asserts that the ephemeral logs
+// surface includes the production-grade forwarding caveat plus the
+// preserved Runner_*.log, Worker_*.log, and systemd-journal.log archive
+// entries returned by the fake remote executor.
+func TestLogsEphemeralPreservedArchive(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.EphemeralBYORepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	archiveBase := repo.Ephemeral.LogArchivePath
+	exec := &testsupport.RemoteExecutor{Results: map[string]remote.Result{
+		ops.CommandLogsSystemdJournal:       {Stdout: "journal", ExitCode: 0},
+		ops.CommandLogsRunnerDiagList:       {Stdout: "/opt/actions-runner/" + repo.Runner.Name + "/_diag/Runner_1.log\n", ExitCode: 0},
+		ops.CommandLogsRunnerDiagTail:       {Stdout: "diag", ExitCode: 0},
+		ops.CommandLogsEphemeralArchiveList: {Stdout: archiveBase + "/Runner_20260501.log\n" + archiveBase + "/Worker_20260501.log\n" + archiveBase + "/systemd-journal.log\n", ExitCode: 0},
+		ops.CommandLogsEphemeralArchiveTail: {Stdout: "preserved", ExitCode: 0},
+	}}
+	out, _, err := executeStatusForTest(t, stateDir, &testsupport.GitHubService{}, exec, "logs", "--repo", repo.Repo.FullName, "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral preserved logs returned error: %v", err)
+	}
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		"RunnerKit preserves best-effort logs only; configure external log forwarding for production-grade ephemeral troubleshooting.",
+		"Runner_20260501.log",
+		"Worker_20260501.log",
+		"systemd-journal.log",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral preserved logs missing %q (flattened):\n%s", want, out)
+		}
+	}
+}
+
 func TestLogsCloudProviderMetadata(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := testsupport.CloudRepositoryState()

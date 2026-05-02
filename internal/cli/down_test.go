@@ -179,6 +179,47 @@ func TestDownEphemeralBYOPreservesLogsBeforeFileRemoval(t *testing.T) {
 	_ = out
 }
 
+// TestDownEphemeralPreservesLogsBeforeRemovingFiles proves that
+// runnerkit down on an ephemeral BYO state runs the
+// `ephemeral.logs.preserve` remote command before `down.files.remove`
+// so finalizer/diag/journal logs survive cleanup.
+func TestDownEphemeralPreservesLogsBeforeRemovingFiles(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.EphemeralBYORepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{Runners: []gh.Runner{{ID: 999, Name: repo.Runner.Name, OS: "linux", Status: "online", Labels: append([]string(nil), repo.Runner.Labels...)}}}
+	exec := downRemote(0)
+	exec.Results["ephemeral.logs.preserve"] = remote.Result{ExitCode: 0}
+	repo.Cleanup.GitHubRunnerID = 999
+	// Re-save with the updated GitHub runner ID so down can match.
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("re-save state: %v", err)
+	}
+	out, errOut, err := executeDownForTest(t, stateDir, github, exec, nil, false, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral down returned error: %v\nstderr=%s", err, errOut)
+	}
+	preserveIdx := -1
+	filesIdx := -1
+	for i, command := range exec.Commands {
+		if command.ID == "ephemeral.logs.preserve" {
+			preserveIdx = i
+		}
+		if command.ID == "down.files.remove" {
+			filesIdx = i
+		}
+	}
+	if preserveIdx < 0 {
+		t.Fatalf("expected ephemeral.logs.preserve in: %v", exec.CommandIDs())
+	}
+	if filesIdx < 0 || preserveIdx >= filesIdx {
+		t.Fatalf("ephemeral.logs.preserve must run before down.files.remove: preserve=%d files=%d ids=%v", preserveIdx, filesIdx, exec.CommandIDs())
+	}
+	_ = out
+}
+
 func TestDownGitHubDeleteErrorKeepsPendingState(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)

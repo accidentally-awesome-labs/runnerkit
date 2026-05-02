@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/ops"
@@ -166,6 +167,103 @@ func TestStatusMissingStateRendersUISpecEmptyCopy(t *testing.T) {
 		if !strings.Contains(flat, want) {
 			t.Fatalf("ui-spec empty state missing %q (flattened):\n%s", want, out)
 		}
+	}
+}
+
+// TestStatusEphemeralCompletedNeedsCleanup proves that a cloud ephemeral
+// repository with FinalizerStatus=completed (read from the remote
+// sentinel by status.ephemeral.state) renders the UI-SPEC summary
+// "Ephemeral runner completed one job and needs cleanup.", surfaces the
+// cleanup command, prints the saved log archive bullet, and does NOT
+// surface the persistent runnerkit recover hint.
+func TestStatusEphemeralCompletedNeedsCleanup(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.EphemeralCloudRepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{Runners: nil}
+	exec := &testsupport.RemoteExecutor{ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Results: map[string]remote.Result{
+		ops.CommandStatusSSHReachable: {ExitCode: 0},
+		ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
+		"status.ephemeral.state":      {Stdout: `{"finalizer_status":"completed"}`, ExitCode: 0},
+	}}
+	cloud := &provider.FakeProvider{DescribeOut: provider.ProviderStatus{Kind: "hetzner", Found: true, Status: "running", Region: "fsn1", ServerType: "cpx22", Image: "ubuntu-24.04"}}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: github, RemoteExecutor: exec, Providers: provider.NewRegistry(cloud), CommandRunner: staticCommandRunner{remote: "git@github.com:owner/repo.git"}, Sleep: noSleep})
+	cmd.SetArgs([]string{"status", "--repo", repo.Repo.FullName, "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral completed status returned error: %v", err)
+	}
+	flat := strings.Join(strings.Fields(out.String()), " ")
+	for _, want := range []string{
+		"Ephemeral runner completed one job and needs cleanup.",
+		"Next: runnerkit destroy --repo owner/repo",
+		"Log archive: /var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-20260501t183000/logs",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral_completed status missing %q (flattened):\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(flat, "runnerkit recover --repo") {
+		t.Fatalf("ephemeral_completed status must not surface runnerkit recover hint:\n%s", out.String())
+	}
+}
+
+// TestMissingStateRendersRunnerKitEmptyState asserts the UI-SPEC empty
+// state heading and remediation copy when no RunnerKit state exists for
+// the requested repository.
+func TestMissingStateRendersRunnerKitEmptyState(t *testing.T) {
+	out, _, err := executeStatusForTest(t, t.TempDir(), &testsupport.GitHubService{}, healthyStatusRemote(), "status", "--repo", "owner/name", "--no-color")
+	if err != nil {
+		t.Fatalf("missing state status returned error: %v", err)
+	}
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		"No RunnerKit-managed runner is saved for `owner/name`.",
+		"Run `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine.",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ui-spec empty state missing %q (flattened):\n%s", want, out)
+		}
+	}
+}
+
+// TestStatusEphemeralTTLExpired proves that ExpiresAt in the past plus a
+// remote sentinel reporting ttl_expired surfaces the UI-SPEC TTL-expired
+// summary plus the `ephemeral_ttl_expired` reason in JSON output.
+func TestStatusEphemeralTTLExpired(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.EphemeralCloudRepositoryState()
+	expired := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	repo.Ephemeral.ExpiresAt = &expired
+	repo.Ephemeral.FinalizerStatus = "ttl_expired"
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	exec := &testsupport.RemoteExecutor{ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Results: map[string]remote.Result{
+		ops.CommandStatusSSHReachable: {ExitCode: 0},
+		ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
+		"status.ephemeral.state":      {Stdout: `{"finalizer_status":"ttl_expired"}`, ExitCode: 0},
+	}}
+	cloud := &provider.FakeProvider{DescribeOut: provider.ProviderStatus{Kind: "hetzner", Found: true, Status: "running", Region: "fsn1", ServerType: "cpx22", Image: "ubuntu-24.04"}}
+	runStatus := func(args ...string) string {
+		var out, errOut bytes.Buffer
+		cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: &testsupport.GitHubService{}, RemoteExecutor: exec, Providers: provider.NewRegistry(cloud), CommandRunner: staticCommandRunner{remote: "git@github.com:owner/repo.git"}, Sleep: noSleep})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("ttl-expired status returned error: %v\nstderr=%s", err, errOut.String())
+		}
+		return out.String()
+	}
+	humanOut := runStatus("status", "--repo", repo.Repo.FullName, "--no-color")
+	flat := strings.Join(strings.Fields(humanOut), " ")
+	if !strings.Contains(flat, "Ephemeral runner TTL expired before a job completed. Run cleanup now.") {
+		t.Fatalf("expected ttl_expired summary in:\n%s", humanOut)
+	}
+	jsonOut := runStatus("--json", "status", "--repo", repo.Repo.FullName, "--no-color")
+	if !strings.Contains(jsonOut, `"ephemeral_ttl_expired"`) {
+		t.Fatalf("expected ephemeral_ttl_expired in JSON reasons:\n%s", jsonOut)
 	}
 }
 

@@ -254,7 +254,14 @@ func classifyEphemeral(observed ObservedRunner, repo string) (Health, bool) {
 	if cleanup == "" {
 		cleanup = "runnerkit down --repo " + repo
 	}
-	finalizer := strings.ToLower(repoState.Ephemeral.FinalizerStatus)
+	// Prefer the observed (live remote sentinel) finalizer status over
+	// the saved one so a freshly-completed or TTL-expired ephemeral
+	// runner is classified as terminal even if the saved state still
+	// records "pending".
+	finalizer := strings.ToLower(observed.Ephemeral.FinalizerStatus)
+	if finalizer == "" {
+		finalizer = strings.ToLower(repoState.Ephemeral.FinalizerStatus)
+	}
 	// Cleanup pending: ephemeral run finished (finalizer completed) but
 	// down/destroy still has pending checkpoints we must surface so the
 	// CLI does not advertise success.

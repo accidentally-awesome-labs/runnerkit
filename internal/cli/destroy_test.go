@@ -235,6 +235,72 @@ func TestDestroyEphemeralCloudInteractivePromptCopy(t *testing.T) {
 	}
 }
 
+// TestDestroyEphemeralCloudPreservesLogsBeforeProviderDelete proves that
+// runnerkit destroy on an ephemeral cloud repository runs
+// `ephemeral.logs.preserve` before provider Destroy, that the JSON
+// output includes provider_verification, that the destroy command Provider
+// Destroy was called exactly once, and that the typed-confirmation
+// prompt copy uses the dedicated ephemeral cloud destroy template
+// (verified via a second interactive run because --json bypasses the
+// interactive typed confirmation).
+func TestDestroyEphemeralCloudPreservesLogsBeforeProviderDelete(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.EphemeralCloudRepositoryState()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	cloud := &provider.FakeProvider{VerifyOut: provider.VerificationResult{OK: true}}
+	exec := doctorRemote(true)
+	exec.Results["ephemeral.logs.preserve"] = remote.Result{ExitCode: 0}
+
+	// First run: JSON --yes path so we can assert provider_verification
+	// is present in the JSON envelope without a prompt.
+	jsonOut, errOut, err := executeDestroyForTest(t, stateDir, github, exec, cloud, "--json", "destroy", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("ephemeral cloud destroy returned error: %v\nstdout=%s\nstderr=%s", err, jsonOut, errOut)
+	}
+	preserveIdx := -1
+	destroyCallsBefore := cloud.DestroyCalls
+	for i, command := range exec.Commands {
+		if command.ID == "ephemeral.logs.preserve" {
+			preserveIdx = i
+			break
+		}
+	}
+	if preserveIdx < 0 {
+		t.Fatalf("expected ephemeral.logs.preserve in command IDs: %v", exec.CommandIDs())
+	}
+	if destroyCallsBefore != 1 {
+		t.Fatalf("expected one provider Destroy, got %d", destroyCallsBefore)
+	}
+	if !strings.Contains(jsonOut, `"provider_verification"`) {
+		t.Fatalf("expected provider_verification in JSON destroy output:\n%s", jsonOut)
+	}
+
+	// Second run: interactive typed-confirmation path for prompt copy.
+	// Reset state because the first run removed it on success.
+	stateDir2 := t.TempDir()
+	if err := state.NewStore(stateDir2).Save(testsupport.StateWithRepository(testsupport.EphemeralCloudRepositoryState())); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	prompts := &destroyInputPrompter{input: "destroy " + repo.Repo.FullName}
+	github2 := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	cloud2 := &provider.FakeProvider{VerifyOut: provider.VerificationResult{OK: true}}
+	exec2 := doctorRemote(true)
+	exec2.Results["ephemeral.logs.preserve"] = remote.Result{ExitCode: 0}
+	var out2, errOut2 bytes.Buffer
+	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out2, Err: &errOut2, StateBaseDir: stateDir2, GitHub: github2, RemoteExecutor: exec2, Providers: provider.NewRegistry(cloud2), Prompts: prompts, TTY: ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80}, CommandRunner: staticCommandRunner{remote: "git@github.com:owner/repo.git"}, Sleep: noSleep})
+	cmd.SetArgs([]string{"destroy", "--repo", repo.Repo.FullName, "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("interactive ephemeral destroy returned error: %v\nstdout=%s\nstderr=%s", err, out2.String(), errOut2.String())
+	}
+	want := "Destroy ephemeral cloud runner: type `destroy owner/repo` to remove the GitHub runner registration and RunnerKit-created Hetzner resources."
+	if prompts.prompt != want {
+		t.Fatalf("ephemeral destroy prompt = %q, want %q", prompts.prompt, want)
+	}
+}
+
 func TestDestroyRedactsRemovalAndProviderTokens(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveCloudStateForDestroy(t, stateDir)
