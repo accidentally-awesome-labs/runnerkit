@@ -1,0 +1,65 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: runnerkit
+    main: ./cmd/runnerkit
+    binary: runnerkit
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: runnerkit
+    formats: [tar.gz]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+
+signs:
+  - cmd: cosign
+    signature: '${artifact}.sigstore.json'
+    args:
+      - sign-blob
+      - '--bundle=${signature}'
+      - '${artifact}'
+      - '--yes'
+    artifacts: checksum
+
+homebrew_casks:
+  - name: runnerkit
+    binary: runnerkit
+    repository:
+      owner: salar
+      name: homebrew-runnerkit
+      branch: main
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    directory: Casks
+    homepage: https://github.com/salar/runnerkit
+    description: Reliable GitHub Actions self-hosted runners for solo developers
+    commit_author:
+      name: runnerkit-release-bot
+      email: noreply@github.com
+    commit_msg_template: 'runnerkit: bump cask to {{ .Tag }}'
+
+release:
+  github:
+    owner: salar
+    name: runnerkit
+  draft: false
+  prerelease: auto
+  name_template: '{{ .Tag }}'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-SNAPSHOT-{{.ShortCommit}}'
+
+changelog:
+  sort: asc
