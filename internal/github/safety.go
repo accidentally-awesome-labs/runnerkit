@@ -9,8 +9,23 @@ const (
 )
 
 const PublicRepoRiskTitle = "WARNING: Public repository risk"
-const PublicRepoRiskBody = "Persistent self-hosted runners are intended for trusted private repositories; public, fork-based, or otherwise untrusted workflows can execute code on your machine."
-const PublicRepoRiskNextAction = "Use GitHub-hosted runners, wait for RunnerKit ephemeral mode, or pass --allow-public-repo-risk after reviewing the risk."
+
+// PublicRepoRiskBody is the canonical user-facing description of the
+// persistent-runner public/fork risk. Phase 5 tightened the wording
+// because persistent runners are not "intended for trusted private
+// repositories" — they are *unsafe* for any other workload.
+const PublicRepoRiskBody = "Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows."
+
+// PublicRepoRiskNextAction recommends the safer ephemeral cloud command
+// instead of waiting for ephemeral mode (which is now available) or
+// silently telling users to pass --allow-public-repo-risk.
+const PublicRepoRiskNextAction = "Use `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner` for stronger isolation, or use GitHub-hosted runners."
+
+// DangerousPersistentOverrideCopy is the explicit danger remediation
+// shown alongside `--allow-public-repo-risk` so users cannot opt in to
+// running untrusted code repeatedly on their machine without seeing the
+// risk.
+const DangerousPersistentOverrideCopy = "Only pass `--allow-public-repo-risk` if you accept that untrusted code can execute repeatedly on your machine."
 
 type SafetyOptions struct {
 	AllowPublicRepoRisk bool

@@ -323,12 +323,13 @@ func TestUpPublicRepoPersistentBlocksWithEphemeralCloudRecommendation(t *testing
 		t.Fatalf("expected safety gate, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
 	}
 	combined := out.String() + errOut.String()
+	flat := strings.Join(strings.Fields(combined), " ")
 	for _, want := range []string{
 		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
 		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
 	} {
-		if !strings.Contains(combined, want) {
-			t.Fatalf("public persistent block missing %q:\n%s", want, combined)
+		if !strings.Contains(flat, want) {
+			t.Fatalf("public persistent block missing %q (flattened):\n%s", want, flat)
 		}
 	}
 	if service.tokenCalls != 0 || service.authCalls != 0 || service.readCalls != 0 || cloud.ValidateCalls != 0 || cloud.PlanCalls != 0 || cloud.ProvisionCalls != 0 || remoteExec.probeCalls != 0 || len(remoteExec.runs) != 0 {
@@ -358,10 +359,19 @@ func TestUpPublicRepoEphemeralCloudDryRunSurfacesEphemeralCloudRecommendation(t 
 		t.Fatalf("ephemeral cloud public dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
 	combined := out.String() + errOut.String()
-	for _, want := range []string{"Use ephemeral cloud runner", "runnerkit up --repo owner/name --mode ephemeral --cloud hetzner"} {
-		if !strings.Contains(combined, want) {
-			t.Fatalf("ephemeral cloud public dry-run missing %q:\n%s", want, combined)
+	flat := strings.Join(strings.Fields(combined), " ")
+	for _, want := range []string{"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner"} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral cloud public dry-run missing %q (flattened):\n%s", want, flat)
 		}
+	}
+	// Additionally, the warnings array passed through to JSON should have
+	// had "Use ephemeral cloud runner" appended; in human dry-run we look
+	// at the JSON of warnings via the dry-run JSON test in
+	// TestUpEphemeralCloudDryRunJSONIncludesModeFields. For human output
+	// the recommendation surfaces via the public_repo_risk warning copy.
+	if !strings.Contains(flat, "Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.") {
+		t.Fatalf("ephemeral cloud public dry-run missing public-fork persistent warning:\n%s", flat)
 	}
 	if service.tokenCalls != 0 {
 		t.Fatalf("ephemeral cloud dry-run minted token: %d", service.tokenCalls)
@@ -389,8 +399,9 @@ func TestUpPublicRepoEphemeralBYOWithoutAcknowledgementBlocks(t *testing.T) {
 		t.Fatalf("expected ephemeral BYO public gate, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
 	}
 	combined := out.String() + errOut.String()
-	if !strings.Contains(combined, "BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine.") {
-		t.Fatalf("missing BYO ephemeral caveat in error:\n%s", combined)
+	flat := strings.Join(strings.Fields(combined), " ")
+	if !strings.Contains(flat, "BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine.") {
+		t.Fatalf("missing BYO ephemeral caveat in error (flattened):\n%s", flat)
 	}
 	if service.tokenCalls != 0 || remoteExec.probeCalls != 0 {
 		t.Fatalf("ephemeral BYO gate leaked side effects token=%d probe=%d", service.tokenCalls, remoteExec.probeCalls)

@@ -110,7 +110,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return err
 	}
 	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
-	if err := enforceSafetyDecision(ctx, deps, renderer, repo, decision, opts, jsonOutput); err != nil {
+	if err := enforceModeSafetyDecision(ctx, deps, renderer, repo, decision, &modeDecision, opts, jsonOutput); err != nil {
 		return err
 	}
 
@@ -387,6 +387,22 @@ func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, d
 	}
 	if decision.Mode == runmode.ModeEphemeral {
 		lines = append(lines, ui.Bullet(modeEphemeralModeNote))
+	}
+	// Surface any decision-level warnings appended by the safety
+	// enforcement step (e.g. public/fork ephemeral cloud recommends the
+	// safer ephemeral cloud command). De-duplicate against the canonical
+	// per-profile copy already rendered above so the same sentence does
+	// not appear twice.
+	rendered := map[string]bool{}
+	for _, line := range lines {
+		rendered[line.Text] = true
+	}
+	for _, warning := range decision.Warnings {
+		if warning == "" || rendered[warning] {
+			continue
+		}
+		lines = append(lines, ui.WarningLine(warning))
+		rendered[warning] = true
 	}
 	_ = ttl // ttl is documented in modeTTLSafeguardCopy; future plans may render the exact configured value.
 	return renderer.Step(1, 1, modeTradeoffStepTitle, lines...)
@@ -1465,38 +1481,146 @@ func cloudCompletionJSON(repo string, statePath string, plan provider.ProvisionP
 	}
 }
 
-func enforceSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, opts *upOptions, jsonOutput bool) error {
-	if decision.Allowed {
-		if decision.Code == gh.SafetyCodePublicRisk && opts.allowPublicRepoRisk && deps.TTY.StdinTTY && !opts.yes {
-			inputPrompter, ok := deps.Prompts.(interface {
-				Input(context.Context, ui.Prompt) (string, error)
-			})
-			if !ok {
-				message := "RunnerKit can't continue because public repository risk acknowledgement requires typed confirmation."
-				_ = renderer.Error("input_required", message, []string{"Type allow public repo risk for " + repo.FullName + " in an interactive terminal or pass --yes only after reviewing the risk."})
-				return NewExitError(ExitInputRequired, errors.New(message))
-			}
-			want := "allow public repo risk for " + repo.FullName
-			got, err := inputPrompter.Input(ctx, ui.Prompt{Message: want})
-			if err != nil {
-				return err
-			}
-			if got != want {
-				message := "Canceled; no changes made."
-				_ = renderer.Error("canceled", message, nil)
-				return NewExitError(ExitCanceled, errors.New(message))
-			}
+// enforceModeSafetyDecision applies the Phase 5 safety policy that
+// depends on both the GitHub repo trust state and the chosen runner mode.
+//
+// The function MUST run before VerifyAuth, VerifyRunnerManagementRead,
+// CreateRegistrationToken, the remote probe, provider Validate/Plan/
+// Provision, or any state save so risky combinations cannot leak
+// side effects. The four cases are:
+//
+//   - ProfilePersistentRisky without --allow-public-repo-risk: block with
+//     the public_repo_risk error code, render the exact UI-SPEC body,
+//     ephemeral cloud recommendation, and dangerous-override copy.
+//   - ProfilePersistentRisky with --allow-public-repo-risk: keep the
+//     typed acknowledgement flow but use the Phase 5 prompt copy and
+//     surface DangerousPersistentOverrideCopy as part of the warnings.
+//   - ProfileEphemeralCloud: never block on public/fork — ephemeral cloud
+//     is the recommended path. Just append the safer-recommendation
+//     warnings to the decision so renderModeTradeoffs surfaces them.
+//   - ProfileEphemeralBYO on public/fork: require either typed input
+//     `use ephemeral byo for owner/name` or non-interactive
+//     `--allow-ephemeral-byo-risk --yes`; otherwise block with the
+//     BYO clean-VM caveat.
+func enforceModeSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, modeDecision *runmode.Decision, opts *upOptions, jsonOutput bool) error {
+	switch modeDecision.SafetyProfile {
+	case runmode.ProfileEphemeralCloud:
+		// Public/fork ephemeral cloud is the recommended safer path.
+		// Append the recommendation strings so renderModeTradeoffs and
+		// downstream warnings make the safer choice visible. The exact
+		// `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner`
+		// command stays in the warning list so docs greps and human
+		// output assertions both succeed.
+		if !repo.Private || repo.Fork {
+			modeDecision.Warnings = append(modeDecision.Warnings,
+				runmode.WarningPublicForkPersistent,
+				"Use ephemeral cloud runner: runnerkit up --repo "+repo.FullName+" --mode ephemeral --cloud hetzner",
+			)
+		}
+		return nil
+	case runmode.ProfileEphemeralBYO:
+		if !repo.Private || repo.Fork {
+			return enforceEphemeralBYOAcknowledgement(ctx, deps, renderer, repo, opts, jsonOutput)
+		}
+		return nil
+	case runmode.ProfilePersistentRisky:
+		if !opts.allowPublicRepoRisk {
+			return blockPersistentRiskWithUISpecCopy(renderer, decision, jsonOutput)
+		}
+		// --allow-public-repo-risk allowed: require typed acknowledgement
+		// when the user is interactive without --yes, using the Phase 5
+		// prompt text and surfacing DangerousPersistentOverrideCopy.
+		if deps.TTY.StdinTTY && !opts.yes {
+			return acknowledgePersistentPublicRisk(ctx, deps, renderer, repo)
 		}
 		return nil
 	}
-	if jsonOutput {
-		_ = renderer.Error(decision.Code, gh.PublicRepoRiskTitle, append(decision.Warnings, gh.PublicRepoRiskNextAction))
-	} else if decision.Code == gh.SafetyCodePublicRisk {
-		_ = renderer.Warning(gh.PublicRepoRiskTitle, []string{gh.PublicRepoRiskBody}, gh.PublicRepoRiskNextAction)
-	} else {
-		_ = renderer.Warning("WARNING: Fork repository risk", decision.Warnings, "Use a trusted private repository before persistent setup.")
+
+	// ProfilePersistentTrusted: nothing extra to enforce; allow flow.
+	if !decision.Allowed {
+		// Defensive: handle fork_risk where mode profile is still trusted
+		// (e.g., private+fork). Reuse the existing fork_risk warning.
+		if jsonOutput {
+			_ = renderer.Error(decision.Code, "WARNING: Fork repository risk", decision.Warnings)
+		} else {
+			_ = renderer.Warning("WARNING: Fork repository risk", decision.Warnings, "Use a trusted private repository before persistent setup.")
+		}
+		return NewExitError(ExitSafetyGate, errors.New(decision.Code))
 	}
-	return NewExitError(ExitSafetyGate, errors.New(decision.Code))
+	return nil
+}
+
+func blockPersistentRiskWithUISpecCopy(renderer *ui.Renderer, decision gh.SafetyDecision, jsonOutput bool) error {
+	warnings := []string{gh.PublicRepoRiskBody, gh.PublicRepoRiskNextAction, gh.DangerousPersistentOverrideCopy}
+	// Preserve any decision-level warnings already populated so callers
+	// that surface decision.Warnings (e.g., state) keep them, but always
+	// surface the canonical UI-SPEC copy first.
+	for _, w := range decision.Warnings {
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+	if jsonOutput {
+		_ = renderer.Error(gh.SafetyCodePublicRisk, gh.PublicRepoRiskTitle, warnings)
+	} else {
+		_ = renderer.Warning(gh.PublicRepoRiskTitle, []string{gh.PublicRepoRiskBody, gh.DangerousPersistentOverrideCopy}, gh.PublicRepoRiskNextAction)
+	}
+	return NewExitError(ExitSafetyGate, errors.New(gh.SafetyCodePublicRisk))
+}
+
+func acknowledgePersistentPublicRisk(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo) error {
+	inputPrompter, ok := deps.Prompts.(interface {
+		Input(context.Context, ui.Prompt) (string, error)
+	})
+	if !ok {
+		message := "RunnerKit can't continue because public repository risk acknowledgement requires typed confirmation."
+		_ = renderer.Error("input_required", message, []string{"Type allow persistent public repo risk for " + repo.FullName + " in an interactive terminal or pass --yes only after reviewing the risk.", gh.DangerousPersistentOverrideCopy})
+		return NewExitError(ExitInputRequired, errors.New(message))
+	}
+	want := "allow persistent public repo risk for " + repo.FullName
+	got, err := inputPrompter.Input(ctx, ui.Prompt{Message: want, Help: gh.DangerousPersistentOverrideCopy})
+	if err != nil {
+		return err
+	}
+	if got != want {
+		message := "Canceled; no changes made."
+		_ = renderer.Error("canceled", message, nil)
+		return NewExitError(ExitCanceled, errors.New(message))
+	}
+	return nil
+}
+
+func enforceEphemeralBYOAcknowledgement(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, opts *upOptions, jsonOutput bool) error {
+	// Non-interactive happy path: --allow-ephemeral-byo-risk --yes.
+	if opts.allowEphemeralBYORisk && opts.yes {
+		return nil
+	}
+	// Interactive: require typed input "use ephemeral byo for owner/name".
+	if deps.TTY.StdinTTY && deps.Prompts != nil && !jsonOutput {
+		inputPrompter, ok := deps.Prompts.(interface {
+			Input(context.Context, ui.Prompt) (string, error)
+		})
+		if ok {
+			want := "use ephemeral byo for " + repo.FullName
+			got, err := inputPrompter.Input(ctx, ui.Prompt{Message: want, Help: runmode.WarningEphemeralBYONotCleanVM})
+			if err != nil {
+				return err
+			}
+			if got == want {
+				return nil
+			}
+			message := "Canceled; no changes made."
+			_ = renderer.Error("canceled", message, nil)
+			return NewExitError(ExitCanceled, errors.New(message))
+		}
+	}
+	// Otherwise: block with the BYO clean-VM caveat and remediation.
+	message := runmode.WarningEphemeralBYONotCleanVM
+	remediation := []string{
+		"Use runnerkit up --repo " + repo.FullName + " --mode ephemeral --cloud hetzner for stronger isolation, or pass --allow-ephemeral-byo-risk --yes only after reviewing the risk.",
+	}
+	_ = renderer.Error("ephemeral_byo_risk", message, remediation)
+	return NewExitError(ExitSafetyGate, errors.New("ephemeral_byo_risk"))
 }
 
 func resolveUpRepo(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions) (gh.Resolution, error) {
