@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/salar/runnerkit/internal/bootstrap"
+	"github.com/salar/runnerkit/internal/errcodes"
 	"github.com/salar/runnerkit/internal/preflight"
 	"github.com/salar/runnerkit/internal/state"
 )
@@ -40,6 +41,18 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	add := func(id string, severity Severity, source string, evidence string, remediation string) {
 		report.Findings = append(report.Findings, Finding{ID: id, Severity: string(severity), Source: source, Evidence: evidence, Remediation: remediation})
 	}
+	// addWithCode is a thin wrapper that appends the canonical
+	// `See: <URL>` line for a registered errcodes.Code to the
+	// remediation string (D-15). Pass-only findings keep using `add`.
+	addWithCode := func(id string, code errcodes.Code, severity Severity, source string, evidence string, remediation string) {
+		report.Findings = append(report.Findings, Finding{
+			ID:          id,
+			Severity:    string(severity),
+			Source:      source,
+			Evidence:    evidence,
+			Remediation: remediation + "\n\nSee: " + errcodes.URL(code),
+		})
+	}
 	statusCmd := "runnerkit status --repo " + repo
 	logsCmd := "runnerkit logs --repo " + repo + " --since 30m"
 	recoverReregister := "runnerkit recover --repo " + repo + " --reregister --dry-run"
@@ -48,72 +61,72 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	if observed.GitHub.Found {
 		add("github_runner_found", SeverityPass, "github", fmt.Sprintf("GitHub runner %s id %d is present", observed.GitHub.Name, observed.GitHub.ID), statusCmd)
 		if strings.EqualFold(observed.GitHub.Status, "offline") {
-			add("github_runner_offline", SeverityWarning, "github", "GitHub reports runner status offline", logsCmd)
+			addWithCode("github_runner_offline", errcodes.GHRunnerOffline, SeverityWarning, "github", "GitHub reports runner status offline", logsCmd)
 		}
 	} else if len(observed.GitHub.DuplicateCandidates) > 1 {
-		add("github_duplicate_candidates", SeverityError, "github", "multiple RunnerKit runner candidates found", downDryRun)
+		addWithCode("github_duplicate_candidates", errcodes.GHDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runner candidates found", downDryRun)
 	} else {
-		add("github_runner_offline", SeverityWarning, "github", "GitHub runner is missing or offline", logsCmd)
+		addWithCode("github_runner_offline", errcodes.GHRunnerOffline, SeverityWarning, "github", "GitHub runner is missing or offline", logsCmd)
 	}
 	if !observed.SSH.Reachable {
 		if observed.SSH.HostKey == "mismatch" {
-			add("ssh_host_key_mismatch", SeverityError, "ssh", "saved host key fingerprint does not match observed host", "Verify the machine identity before running runnerkit recover --repo "+repo+".")
+			addWithCode("ssh_host_key_mismatch", errcodes.SSHHostKeyMismatch, SeverityError, "ssh", "saved host key fingerprint does not match observed host", "Verify the machine identity before running runnerkit recover --repo "+repo+".")
 		} else {
-			add("ssh_unreachable", SeverityError, "ssh", "SSH is unreachable", "Verify SSH access to "+repoState.Machine.HostRef+", then re-run runnerkit doctor --repo "+repo+".")
+			addWithCode("ssh_unreachable", errcodes.SSHUnreachable, SeverityError, "ssh", "SSH is unreachable", "Verify SSH access to "+repoState.Machine.HostRef+", then re-run runnerkit doctor --repo "+repo+".")
 		}
 	}
 	if observed.Service.ActiveState == "active" {
 		add("service_active", SeverityPass, "systemd", "systemd reports ActiveState=active", statusCmd)
 	} else if serviceFailed(observed.Service) {
-		add("service_failed", SeverityError, "systemd", "systemd reports ActiveState=failed for runnerkit-runner.", logsCmd)
+		addWithCode("service_failed", errcodes.BootServiceFailed, SeverityError, "systemd", "systemd reports ActiveState=failed for runnerkit-runner.", logsCmd)
 	} else if observed.Service.LoadState == "not-found" || strings.Contains(strings.ToLower(observed.Service.Error), "missing") {
-		add("service_missing", SeverityError, "systemd", "saved systemd service is missing", "runnerkit recover --repo "+repo+" --reinstall-service --dry-run")
+		addWithCode("service_missing", errcodes.BootServiceMissing, SeverityError, "systemd", "saved systemd service is missing", "runnerkit recover --repo "+repo+" --reinstall-service --dry-run")
 	}
 	if !observed.Labels.Match {
-		add("label_drift", SeverityWarning, "labels", labelEvidence(observed.Labels), recoverReregister)
+		addWithCode("label_drift", errcodes.GHLabelDrift, SeverityWarning, "labels", labelEvidence(observed.Labels), recoverReregister)
 	}
 	if observed.Provider.Kind != "" && observed.Provider.Kind != "byo" {
 		providerCleanup := "Run runnerkit destroy --repo " + repo + " --dry-run to review billable resources before cleanup."
 		if observed.Provider.Error != "" {
-			add("provider_error", SeverityWarning, "provider", observed.Provider.Error, providerCleanup)
+			addWithCode("provider_error", errcodes.ProvProviderError, SeverityWarning, "provider", observed.Provider.Error, providerCleanup)
 		} else if !observed.Provider.Found {
-			add("provider_resource_missing", SeverityWarning, "provider", "provider resource is missing", providerCleanup)
+			addWithCode("provider_resource_missing", errcodes.ProvResourceMissing, SeverityWarning, "provider", "provider resource is missing", providerCleanup)
 		} else if len(observed.Provider.Drift) > 0 {
-			add("provider_drift", SeverityWarning, "provider", strings.Join(observed.Provider.Drift, ", "), providerCleanup)
+			addWithCode("provider_drift", errcodes.ProvDrift, SeverityWarning, "provider", strings.Join(observed.Provider.Drift, ", "), providerCleanup)
 		} else {
 			add("provider_found", SeverityPass, "provider", observed.Provider.Kind+" resources are present", "runnerkit status --repo "+repo)
 		}
 	}
 	if !checks.InstallPathOK {
 		evidence := defaultEvidence(checks.InstallPathError, "install path check failed")
-		add("install_path_missing", SeverityError, "remote", evidence, recoverReregister)
+		addWithCode("install_path_missing", errcodes.BootInstallPathMissing, SeverityError, "remote", evidence, recoverReregister)
 	}
 	if !checks.WorkDirOK {
 		evidence := defaultEvidence(checks.WorkDirError, "work dir check failed")
-		add("work_dir_missing", SeverityWarning, "remote", evidence, recoverReregister)
+		addWithCode("work_dir_missing", errcodes.BootWorkDirMissing, SeverityWarning, "remote", evidence, recoverReregister)
 	}
 	for _, result := range checks.Preflight.Results {
 		switch result.ID {
 		case preflight.CheckDisk:
 			if result.Severity != preflight.SeverityPass {
-				add("disk_low", SeverityWarning, "preflight", result.Message, "Free disk space under /opt and /var/lib before restarting the runner.")
+				addWithCode("disk_low", errcodes.BootDiskLow, SeverityWarning, "preflight", result.Message, "Free disk space under /opt and /var/lib before restarting the runner.")
 			}
 		case preflight.CheckTools:
 			if result.Severity != preflight.SeverityPass {
-				add("tools_missing", SeverityWarning, "preflight", result.Message, "Install missing tools or re-run runnerkit up after fixing preflight.")
+				addWithCode("tools_missing", errcodes.BootToolsMissing, SeverityWarning, "preflight", result.Message, "Install missing tools or re-run runnerkit up after fixing preflight.")
 			}
 		case preflight.CheckNetworkGitHub:
 			if result.Severity != preflight.SeverityPass {
-				add("network_github_failed", SeverityError, "preflight", result.Message, "Allow HTTPS egress to https://github.com and https://api.github.com.")
+				addWithCode("network_github_failed", errcodes.AuthNetworkGitHubFailed, SeverityError, "preflight", result.Message, "Allow HTTPS egress to https://github.com and https://api.github.com.")
 			}
 		case preflight.CheckTime:
 			if result.Severity != preflight.SeverityPass {
-				add("time_unsynchronized", SeverityWarning, "preflight", result.Message, "Enable NTP/time sync if TLS or token expiry errors occur.")
+				addWithCode("time_unsynchronized", errcodes.BootTimeUnsynchronized, SeverityWarning, "preflight", result.Message, "Enable NTP/time sync if TLS or token expiry errors occur.")
 			}
 		}
 	}
 	if len(repoState.Cleanup.Notes) > 0 || len(repoState.Operations) > 0 {
-		add("cleanup_pending", SeverityWarning, "state", "cleanup checkpoints or notes are pending", downDryRun)
+		addWithCode("cleanup_pending", errcodes.CleanCleanupPending, SeverityWarning, "state", "cleanup checkpoints or notes are pending", downDryRun)
 	}
 	// Stale runner version: when the saved RunnerTemplateVersion is older
 	// than the bundled `bootstrap.RunnerVersion`, surface a warning that
@@ -121,7 +134,7 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	// finding ID to RKD-BOOT-002 via the errcodes package; here we keep the
 	// snake_case finding ID consistent with the existing convention.
 	if observedPin := repoState.RunnerTemplateVersion; observedPin != "" && observedPin != bootstrap.RunnerVersion {
-		add("runner_version_stale", SeverityWarning, "bootstrap",
+		addWithCode("runner_version_stale", errcodes.BootRunnerVersionStale, SeverityWarning, "bootstrap",
 			fmt.Sprintf("installed runner version %s is older than bundled pin %s", observedPin, bootstrap.RunnerVersion),
 			"runnerkit upgrade-runner --repo "+repo)
 	}
@@ -135,7 +148,7 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 		}
 		switch {
 		case hasEphemeralCleanupPending(repoState.Operations, repoState.Cleanup.Notes):
-			add(ReasonEphemeralCleanupPending, SeverityWarning, "ephemeral", "ephemeral cleanup checkpoints are pending", cleanup)
+			addWithCode(ReasonEphemeralCleanupPending, errcodes.CleanEphemeralCleanupPending, SeverityWarning, "ephemeral", "ephemeral cleanup checkpoints are pending", cleanup)
 		case ttlExpired(&repoState) && repoState.Ephemeral.FinalizerStatus != "completed":
 			add(ReasonEphemeralTTLExpired, SeverityWarning, "ephemeral", "ephemeral TTL safeguard expired before completion", cleanup)
 		case !observed.GitHub.Found && repoState.Ephemeral.FinalizerStatus == "completed":

@@ -3,12 +3,19 @@ package state
 import (
 	"errors"
 	"fmt"
+
+	"github.com/salar/runnerkit/internal/errcodes"
 )
 
 // ErrSchemaTooNew is returned when state.json was written by a newer
 // RunnerKit than the current binary knows about. Refuse-to-mutate per
 // CONTEXT decision D-09. Maps to ExitStateSchemaTooNew (=7) in cli/exit.go.
-var ErrSchemaTooNew = errors.New("runnerkit state schema_version is newer than this CLI knows; upgrade RunnerKit (run `runnerkit upgrade`) to read this state")
+//
+// The error text embeds the stable RKD-STATE-004 code and a See: URL so
+// callers that surface err.Error() directly to users always include the
+// canonical troubleshooting reference (D-15).
+var ErrSchemaTooNew = errors.New(errcodes.FormatLine(errcodes.StateSchemaTooNew) +
+	"\n\nrunnerkit state schema_version is newer than this CLI knows; upgrade RunnerKit (run `runnerkit upgrade`) to read this state")
 
 type migrationFn func(State) (State, error)
 

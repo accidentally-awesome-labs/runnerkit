@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/salar/runnerkit/internal/bootstrap"
+	"github.com/salar/runnerkit/internal/errcodes"
 	"github.com/salar/runnerkit/internal/ops"
 	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/remote"
@@ -258,7 +259,11 @@ func runRecoveryCommand(ctx context.Context, executor remote.Executor, target re
 }
 
 func recoveryCommandError(renderer *ui.Renderer, err error) error {
-	_ = renderer.Error("recovery_command_failed", "RunnerKit could not apply the recovery command.", []string{err.Error(), "Run runnerkit logs --repo owner/repo --since 30m for recent service output."})
+	_ = renderer.Error("recovery_command_failed", "RunnerKit could not apply the recovery command.", []string{
+		err.Error(),
+		"Run runnerkit logs --repo owner/repo --since 30m for recent service output.",
+		errcodes.FormatLine(errcodes.GHRecoverReregisterFailed),
+	})
 	return NewExitError(ExitSafetyGate, err)
 }
 

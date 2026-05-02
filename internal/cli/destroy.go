@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/salar/runnerkit/internal/bootstrap"
+	"github.com/salar/runnerkit/internal/errcodes"
 	"github.com/salar/runnerkit/internal/ops"
 	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/redact"
@@ -274,6 +275,10 @@ func renderCloudDestroyResultHuman(renderer *ui.Renderer, repo string, results [
 	lines := []ui.Line{}
 	if partial {
 		lines = append(lines, ui.WarningLine(fmt.Sprintf(destroyIncompleteCopyTemplate, repo)))
+		// Surface the canonical RKD codes alongside the partial-cleanup
+		// banner so the See: URL points users to the right entry (D-15).
+		lines = append(lines, ui.Bullet(errcodes.FormatLine(errcodes.CleanDestroyPartial)))
+		lines = append(lines, ui.Bullet(errcodes.FormatLine(errcodes.ProvHCloudPartialDestroy)))
 	} else {
 		lines = append(lines, ui.Success(destroyCompleteCopy))
 	}
@@ -282,6 +287,14 @@ func renderCloudDestroyResultHuman(renderer *ui.Renderer, repo string, results [
 	}
 	if len(pending) > 0 {
 		lines = append(lines, ui.Bullet("pending: "+strings.Join(pending, ", ")))
+		// If the ephemeral log-preservation finalizer is in the pending
+		// list, emit the dedicated RKD-CLEAN-004 reference.
+		for _, p := range pending {
+			if p == pendingEphemeralLogPreservation {
+				lines = append(lines, ui.Bullet(errcodes.FormatLine(errcodes.CleanEphemeralLogPreserveFailed)))
+				break
+			}
+		}
 	}
 	return renderer.Step(1, 1, "cloud destroy", lines...)
 }

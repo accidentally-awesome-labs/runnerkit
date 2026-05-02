@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/salar/runnerkit/internal/bootstrap"
+	"github.com/salar/runnerkit/internal/errcodes"
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/ops"
 	"github.com/salar/runnerkit/internal/redact"
@@ -81,11 +82,25 @@ func runDown(deps Dependencies, jsonOutput bool, noColor bool, opts *downOptions
 	lines := []ui.Line{}
 	if partial {
 		lines = append(lines, ui.WarningLine("Cleanup incomplete"))
+		// Emit the canonical RKD codes that map to the most common
+		// down-partial paths. The See: URL points users at the right
+		// troubleshooting entry per D-15.
+		for _, p := range pending {
+			switch p {
+			case "ephemeral_log_preservation_pending":
+				lines = append(lines, ui.Bullet(errcodes.FormatLine(errcodes.CleanEphemeralLogPreserveFailed)))
+			}
+		}
 	} else {
 		lines = append(lines, ui.Success("Cleanup complete"))
 	}
 	for _, result := range results {
 		lines = append(lines, ui.Bullet(result.Artifact+": "+result.Status+" "+result.Message))
+		if result.Status == "failed" && result.Artifact == string(ops.ArtifactRunnerFiles) {
+			// File removal failure surfaces as a cleanup_result; surface
+			// the RKD-CLEAN-003 docs reference alongside.
+			lines = append(lines, ui.Bullet(errcodes.FormatLine(errcodes.CleanDownFilesRemoveFailed)))
+		}
 	}
 	return renderer.Step(1, 1, "cleanup complete", lines...)
 }

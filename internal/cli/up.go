@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/salar/runnerkit/internal/bootstrap"
+	"github.com/salar/runnerkit/internal/errcodes"
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/labels"
 	"github.com/salar/runnerkit/internal/preflight"
@@ -130,6 +131,10 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		if len(remediation) == 0 {
 			remediation = []string{"Create a fine-grained token scoped only to " + repo.FullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."}
 		}
+		// Append the stable RKD-AUTH-004 code + See: URL after the
+		// existing remediation copy (D-15). Append (not prepend) so
+		// existing tests that index remediation[0] keep working.
+		remediation = append(remediation, errcodes.FormatLine(errcodes.AuthRunnerManagementPermissionDenied))
 		_ = renderer.Error("github_permission_denied", message, remediation)
 		if err == nil {
 			err = errors.New(message)
@@ -591,6 +596,9 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		if len(remediation) == 0 {
 			remediation = []string{gh.FineGrainedTokenRemediation(repo)}
 		}
+		// Append the stable RKD-AUTH-004 code + See: URL after the
+		// existing remediation copy (D-15).
+		remediation = append(remediation, errcodes.FormatLine(errcodes.AuthRunnerManagementPermissionDenied))
 		_ = renderer.Error("github_permission_denied", message, remediation)
 		if err == nil {
 			err = errors.New(message)
@@ -614,6 +622,10 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		if len(remediation) == 0 {
 			remediation = []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run runnerkit up --repo " + repo.FullName + " --cloud hetzner"}
 		}
+		// Append the stable RKD-PROV-004 code + See: URL after the
+		// existing remediation copy (D-15). Append (not prepend) so
+		// existing tests that index remediation[0] keep working.
+		remediation = append(remediation, errcodes.FormatLine(errcodes.ProvHCloudTokenMissing))
 		_ = renderer.Error("provider_credentials_missing", message, remediation)
 		if err == nil {
 			err = errors.New(message)
@@ -1788,7 +1800,12 @@ func enforceModeSafetyDecision(ctx context.Context, deps Dependencies, renderer 
 }
 
 func blockPersistentRiskWithUISpecCopy(renderer *ui.Renderer, decision gh.SafetyDecision, jsonOutput bool) error {
-	warnings := []string{gh.PublicRepoRiskBody, gh.PublicRepoRiskNextAction, gh.DangerousPersistentOverrideCopy}
+	// RKD-AUTH-001: every emit site prepends the stable code + See: URL
+	// (D-15). Existing tests assert on `public_repo_risk` and the
+	// `WARNING: Public repository risk` title — those still hold because
+	// we ADD a code line, we don't replace existing copy.
+	rkd := errcodes.FormatLine(errcodes.AuthPublicRepoBlocked)
+	warnings := []string{rkd, gh.PublicRepoRiskBody, gh.PublicRepoRiskNextAction, gh.DangerousPersistentOverrideCopy}
 	// Preserve any decision-level warnings already populated so callers
 	// that surface decision.Warnings (e.g., state) keep them, but always
 	// surface the canonical UI-SPEC copy first.
@@ -1800,7 +1817,7 @@ func blockPersistentRiskWithUISpecCopy(renderer *ui.Renderer, decision gh.Safety
 	if jsonOutput {
 		_ = renderer.Error(gh.SafetyCodePublicRisk, gh.PublicRepoRiskTitle, warnings)
 	} else {
-		_ = renderer.Warning(gh.PublicRepoRiskTitle, []string{gh.PublicRepoRiskBody, gh.DangerousPersistentOverrideCopy}, gh.PublicRepoRiskNextAction)
+		_ = renderer.Warning(gh.PublicRepoRiskTitle, []string{rkd, gh.PublicRepoRiskBody, gh.DangerousPersistentOverrideCopy}, gh.PublicRepoRiskNextAction)
 	}
 	return NewExitError(ExitSafetyGate, errors.New(gh.SafetyCodePublicRisk))
 }
@@ -1852,9 +1869,13 @@ func enforceEphemeralBYOAcknowledgement(ctx context.Context, deps Dependencies, 
 		}
 	}
 	// Otherwise: block with the BYO clean-VM caveat and remediation.
+	// Append the stable RKD-AUTH-003 code + See: URL after the existing
+	// remediation copy (D-15). Append (not prepend) so existing tests
+	// that index remediation[0] keep working.
 	message := runmode.WarningEphemeralBYONotCleanVM
 	remediation := []string{
 		"Use runnerkit up --repo " + repo.FullName + " --mode ephemeral --cloud hetzner for stronger isolation, or pass --allow-ephemeral-byo-risk --yes only after reviewing the risk.",
+		errcodes.FormatLine(errcodes.AuthEphemeralBYOPublicForkAck),
 	}
 	_ = renderer.Error("ephemeral_byo_risk", message, remediation)
 	return NewExitError(ExitSafetyGate, errors.New("ephemeral_byo_risk"))
