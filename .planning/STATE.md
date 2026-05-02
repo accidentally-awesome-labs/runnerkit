@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md
-last_updated: "2026-05-02T20:55:15.989Z"
+stopped_at: Completed 06-01-release-packaging-PLAN.md (Tasks 1-4); Task 5 awaiting human-action checkpoint (maintainer creates salar/homebrew-runnerkit + HOMEBREW_TAP_GITHUB_TOKEN secret)
+last_updated: "2026-05-02T21:04:04.606Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-05-02
 
@@ -59,6 +59,7 @@ _Updated after each plan completion_
 | Phase 05-scoped-ephemeral-mode-and-safety-profiles P03 | 16 min | 3 tasks | 13 files |
 | Phase 06-release-upgrade-docs-and-v1-validation P02 | 12 min | 3 tasks tasks | 12 files files |
 | Phase 06-release-upgrade-docs-and-v1-validation P03 | 14m | 4 tasks tasks | 20 files files |
+| Phase 06-release-upgrade-docs-and-v1-validation P01 | 5m | 4 tasks (5 planned; Task 5 is human-action checkpoint) tasks | 6 files files |
 
 ## Accumulated Context
 
@@ -125,6 +126,11 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: Append (not prepend) RKD codes to remediation arrays so existing tests indexing remediation[0] keep passing; the stable code lives at remediation[len-1].
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: errcodes.URL detection rule — keep .md suffix iff base contains /blob/ (GitHub blob URLs) and strip it otherwise (static-site URLs). No separate config flag required.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: ErrSchemaTooNew embeds RKD-STATE-004 + default URL via errcodes.FormatLine so err.Error() carries the stable code without wrapper at every call site; errors.Is wiring preserved.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Single-tag release pipeline (vX.Y.Z push from upstream) produces 4-platform binaries + sha256 checksums + cosign keyless sigstore bundle + Homebrew Cask formula update via GoReleaser v2 in one workflow run.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Cosign signs ONLY checksums.txt (signs[].artifacts: checksum) per D-04, using bundle output (.sigstore.json) over the deprecated v1/v2 .sig+.crt format; bundle is verifiable via cosign verify-blob with cert-identity pinned to the workflow path + tag ref.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Tag-only trigger (on: push: tags: ['v*']) with no pull_request/workflow_dispatch sidesteps fork-PR OIDC strip (Pitfall 1). PR validation runs goreleaser check + snapshot build + 4-arch dist assertion + go test ./... on a separate workflow with no signing.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: README install verification cert-identity URL is string-equal to the workflow file path (.github/workflows/release.yml@refs/tags/${TAG}) embedded in cosign keyless cert; OIDC issuer is locked to https://token.actions.githubusercontent.com (NOT the user-OAuth issuer).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Homebrew Cask publishing requires cross-repo PAT (HOMEBREW_TAP_GITHUB_TOKEN) because default GITHUB_TOKEN cannot push outside the workflow's own repo. Tap repo (salar/homebrew-runnerkit) and PAT secret are documented in docs/release-process.md as one-time maintainer prerequisites; Task 5 is a human-action checkpoint pending external resolution.
 
 ### Pending Todos
 
@@ -142,6 +148,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T20:55:15.986Z
-Stopped at: Completed 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md
+Last session: 2026-05-02T21:04:04.602Z
+Stopped at: Completed 06-01-release-packaging-PLAN.md (Tasks 1-4); Task 5 awaiting human-action checkpoint (maintainer creates salar/homebrew-runnerkit + HOMEBREW_TAP_GITHUB_TOKEN secret)
 Resume file: None
