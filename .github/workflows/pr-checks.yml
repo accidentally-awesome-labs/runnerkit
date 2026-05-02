@@ -1,0 +1,50 @@
+name: pr-checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v3.0.6'
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          install-only: true
+      - name: goreleaser check
+        run: goreleaser check
+      - name: goreleaser snapshot build
+        run: goreleaser release --snapshot --skip=publish --clean
+      - name: assert dist contents
+        run: |
+          set -euo pipefail
+          ls dist/
+          # Assert the four expected platform archives + checksums file are present
+          for arch in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            ls dist/runnerkit_*_${arch}.tar.gz >/dev/null
+          done
+          ls dist/runnerkit_*_checksums.txt >/dev/null
+
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: go test
+        run: go test ./... -count=1 -race
