@@ -33,6 +33,7 @@ func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 }
 
 func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOptions) error {
+	defer maybeShowUpdateNotice(deps, jsonOutput)
 	renderer := newRenderer(deps, jsonOutput, noColor)
 	ctx := context.Background()
 	repo, err := resolveReadOnlyRepo(ctx, deps, renderer, opts.repo, "Pass --repo owner/name or run runnerkit doctor from a GitHub repository.")

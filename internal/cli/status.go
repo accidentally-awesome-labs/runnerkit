@@ -43,6 +43,7 @@ func newStatusCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 }
 
 func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOptions) error {
+	defer maybeShowUpdateNotice(deps, jsonOutput)
 	renderer := newRenderer(deps, jsonOutput, noColor)
 	ctx := context.Background()
 	store := rkstate.NewStore(deps.StateBaseDir)

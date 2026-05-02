@@ -91,6 +91,7 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 }
 
 func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) error {
+	defer maybeShowUpdateNotice(deps, jsonOutput)
 	renderer := newRenderer(deps, jsonOutput, noColor)
 	ctx := context.Background()
 	resolution, err := resolveUpRepo(ctx, deps, renderer, opts)
