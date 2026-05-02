@@ -35,8 +35,8 @@ func TestStoreSavesVersionedSecretFreeStateAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state file was not written: %v", err)
 	}
-	if !bytes.Contains(data, []byte(`"schema_version": "1"`)) {
-		t.Fatalf("state file missing schema_version 1:\n%s", data)
+	if !bytes.Contains(data, []byte(`"schema_version": "2"`)) {
+		t.Fatalf("state file missing schema_version 2:\n%s", data)
 	}
 	for _, forbidden := range []string{"registration_token", "private_key"} {
 		if bytes.Contains(data, []byte(forbidden)) {

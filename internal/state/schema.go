@@ -7,7 +7,7 @@ import (
 	gh "github.com/salar/runnerkit/internal/github"
 )
 
-const SchemaVersion = "1"
+const SchemaVersion = "2"
 
 var ErrRepositoryExists = errors.New("repository state already exists")
 

@@ -7,14 +7,15 @@ import (
 )
 
 const (
-	ExitSuccess       = 0
-	ExitUnexpected    = 1
-	ExitInvalidInput  = 2
-	ExitGitHubAuth    = 3
-	ExitSafetyGate    = 4
-	ExitStateIO       = 5
-	ExitInputRequired = 6
-	ExitCanceled      = 130
+	ExitSuccess           = 0
+	ExitUnexpected        = 1
+	ExitInvalidInput      = 2
+	ExitGitHubAuth        = 3
+	ExitSafetyGate        = 4
+	ExitStateIO           = 5
+	ExitInputRequired     = 6
+	ExitStateSchemaTooNew = 7
+	ExitCanceled          = 130
 )
 
 // ExitError carries a typed process exit code through Cobra command execution.

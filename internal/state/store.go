@@ -64,7 +64,51 @@ func (s Store) Load() (State, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return State{}, err
 	}
+	// Refuse-to-mutate path: if on-disk schema is newer than this CLI knows,
+	// surface ErrSchemaTooNew immediately and write no backup. The state
+	// file on disk is left untouched.
+	if state.SchemaVersion != "" && cmpVersion(state.SchemaVersion, SchemaVersion) > 0 {
+		return State{}, ErrSchemaTooNew
+	}
+	// Forward migration: when the on-disk schema is older than what the CLI
+	// knows, write a side-by-side backup of the ORIGINAL raw bytes BEFORE
+	// running Migrate (D-09). The backup MUST persist even if subsequent
+	// steps fail.
+	migrated := state
+	migrating := state.SchemaVersion != "" && cmpVersion(state.SchemaVersion, SchemaVersion) < 0
+	if migrating {
+		backupPath := fmt.Sprintf("%s.backup-v%s-%s", s.path, state.SchemaVersion, time.Now().UTC().Format("20060102T150405Z"))
+		if err := writeBackup(backupPath, data); err != nil {
+			return State{}, fmt.Errorf("write state backup: %w", err)
+		}
+		mig, mErr := Migrate(state)
+		if mErr != nil {
+			return State{}, mErr
+		}
+		migrated = mig
+		// Persist the migrated state via the existing atomic-write helper so
+		// future loads see schema_version >= SchemaVersion. If this save
+		// fails, the original file is left in place (atomic rename) and the
+		// backup file persists for recovery.
+		if err := s.Save(migrated); err != nil {
+			return State{}, fmt.Errorf("write migrated state: %w", err)
+		}
+		return migrated, nil
+	}
 	return Migrate(state)
+}
+
+// writeBackup writes the raw bytes to a side-by-side backup path with mode
+// 0600. The backup must exist before any mutation of the original file. We
+// intentionally do NOT chmod the parent directory here — the directory was
+// already created with 0700 by the Store, and silently relaxing perms
+// during a load would surprise users who tightened them externally.
+func writeBackup(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
 }
 
 func (s Store) Save(state State) error {
