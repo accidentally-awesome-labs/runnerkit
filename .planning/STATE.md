@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-05-02T15:10:38.984Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-05-02T15:43:26.892Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 05 (scoped-ephemeral-mode-and-safety-profiles) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-02
 
@@ -55,6 +55,7 @@ Milestone Progress: [███████░░░] 67%
 
 _Updated after each plan completion_
 | Phase 05 P01 | 16 | 3 tasks | 11 files |
+| Phase 05-scoped-ephemeral-mode-and-safety-profiles P02 | 23 min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,10 @@ Recent decisions affecting current work:
 - [Phase 05]: Mode and safety-profile decisions live in a new internal/runmode package so the CLI, labels, state, and tests share one typed Decision.
 - [Phase 05]: The runner-mode prompt replaces the previous setup-path prompt; selecting persistent-byo or ephemeral-byo lets resolveBYOTarget collect a host while ephemeral-cloud selects --cloud hetzner.
 - [Phase 05]: Public/fork persistent setup blocks with the new UI-SPEC body and DangerousPersistentOverrideCopy before any GitHub auth, registration token, remote, provider, or state mutation; ephemeral cloud is the recommended public/fork path; ephemeral BYO on public/fork requires typed ack or --allow-ephemeral-byo-risk --yes.
+- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: Ephemeral lifecycle classification (waiting/busy/completed/ttl_expired/cleanup_pending) runs before persistent github_runner_missing in ops.Classify so completed auto-deregistration is reported as terminal progress.
+- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: bootstrap.ApplyEphemeral mirrors Apply's command shape but replaces svc.sh install/start with finalizer/service/TTL-timer/verify steps; ServiceNotActiveError surfaces only for ephemeral install/verify failures.
+- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: ephemeral.logs.preserve runs before file/provider mutation in down/destroy and never blocks cleanup; failures record ephemeral_log_preservation_pending and surface via ephemeral_cleanup_pending classification.
+- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: provider.ProvisionInput.Mode drives HetznerOwnershipTags mode=ephemeral and ephemeral cloud resource names; persistent default unchanged.
 
 ### Pending Todos
 
@@ -120,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T15:10:38.981Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-05-02T15:43:26.889Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
