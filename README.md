@@ -2,6 +2,77 @@
 
 RunnerKit is a CLI-first tool for solo developers who want reliable GitHub Actions self-hosted runners without manually copying registration commands, wiring services, or guessing which labels to use. The v1 path starts with GitHub Actions, local state, strict redaction, and a BYO Linux host flow.
 
+## Install
+
+RunnerKit is distributed via two channels (D-01).
+
+### Homebrew (macOS, Linux)
+
+```bash
+brew install salar/runnerkit/runnerkit
+```
+
+This taps the official cask repo (`salar/homebrew-runnerkit`) and installs the
+latest release. Upgrade with `brew upgrade runnerkit`.
+
+### GitHub Releases (all supported platforms)
+
+Supported CLI host platforms (D-02):
+
+| OS    | Architecture | Asset name                                      |
+|-------|--------------|-------------------------------------------------|
+| macOS | arm64        | `runnerkit_<version>_darwin_arm64.tar.gz`       |
+| macOS | amd64        | `runnerkit_<version>_darwin_amd64.tar.gz`       |
+| Linux | amd64        | `runnerkit_<version>_linux_amd64.tar.gz`        |
+| Linux | arm64        | `runnerkit_<version>_linux_arm64.tar.gz`        |
+
+Linux 386 and 32-bit ARM are not supported.
+
+Download from <https://github.com/salar/runnerkit/releases/latest>:
+
+```bash
+# Replace v1.0.0 with the desired tag
+TAG=v1.0.0
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')      # darwin or linux
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
+curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_${OS}_${ARCH}.tar.gz"
+curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
+curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
+```
+
+### Verify the release (D-05)
+
+Verify the cosign keyless signature on `checksums.txt` (proves the file was
+produced by the upstream release workflow), then verify the archive against
+the checksums file.
+
+```bash
+# Replace v1.0.0 with the tag you downloaded.
+TAG=v1.0.0
+
+cosign verify-blob \
+  --bundle  runnerkit_${TAG#v}_checksums.txt.sigstore.json \
+  --certificate-identity   "https://github.com/salar/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  runnerkit_${TAG#v}_checksums.txt
+
+sha256sum -c runnerkit_${TAG#v}_checksums.txt --ignore-missing
+```
+
+A successful run prints `Verified OK` (cosign) and one `OK` line per archive
+(sha256sum). If either step fails, do NOT install the binary.
+
+Then extract and place `runnerkit` on your `PATH`:
+
+```bash
+tar -xzf runnerkit_${TAG#v}_${OS}_${ARCH}.tar.gz
+sudo install -m 0755 runnerkit /usr/local/bin/runnerkit
+```
+
+Troubleshooting install verification failures: see
+[docs/troubleshooting/README.md](docs/troubleshooting/README.md).
+
 ## Safety: persistent vs ephemeral
 
 Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows. The lower-case validation phrase used throughout the docs is: persistent self-hosted runners.
