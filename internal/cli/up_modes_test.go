@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/ui"
 )
@@ -277,4 +278,152 @@ func TestUpPersistentDefaultStillRendersPersistentSnippet(t *testing.T) {
 			t.Fatalf("persistent default output missing %q:\n%s", want, out)
 		}
 	}
+}
+
+// publicRepoCloudGitHubService returns a public/fork repo so safety gates
+// fire while still permitting downstream operations when allowed.
+type publicRepoCloudGitHubService struct {
+	*fakePermittedGitHubService
+}
+
+func (s publicRepoCloudGitHubService) Repository(_ context.Context, repo github.Repo) (github.Repo, error) {
+	if repo.Host == "" {
+		repo.Host = "github.com"
+	}
+	repo.Private = false
+	return repo, nil
+}
+
+func newPublicRepoFakeService() *publicRepoCloudGitHubService {
+	return &publicRepoCloudGitHubService{fakePermittedGitHubService: newFakePermittedGitHubService()}
+}
+
+func TestUpPublicRepoPersistentBlocksWithEphemeralCloudRecommendation(t *testing.T) {
+	// Public/fork persistent setup must block before VerifyAuth,
+	// VerifyRunnerManagementRead, CreateRegistrationToken, remote
+	// probe/run, provider validate/plan/provision, or state save.
+	stateDir := t.TempDir()
+	service := newPublicRepoFakeService()
+	remoteExec := newFakeRemoteExecutor()
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Providers:      provider.NewRegistry(cloud),
+		StateBaseDir:   stateDir,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "persistent", "--host", "alice@example.com", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("expected safety gate, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	for _, want := range []string{
+		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
+		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("public persistent block missing %q:\n%s", want, combined)
+		}
+	}
+	if service.tokenCalls != 0 || service.authCalls != 0 || service.readCalls != 0 || cloud.ValidateCalls != 0 || cloud.PlanCalls != 0 || cloud.ProvisionCalls != 0 || remoteExec.probeCalls != 0 || len(remoteExec.runs) != 0 {
+		t.Fatalf("public persistent block leaked side effects: token=%d auth=%d read=%d validate=%d plan=%d provision=%d probe=%d runs=%d", service.tokenCalls, service.authCalls, service.readCalls, cloud.ValidateCalls, cloud.PlanCalls, cloud.ProvisionCalls, remoteExec.probeCalls, len(remoteExec.runs))
+	}
+}
+
+func TestUpPublicRepoEphemeralCloudDryRunSurfacesEphemeralCloudRecommendation(t *testing.T) {
+	// Public ephemeral cloud is not blocked, but the tradeoffs and
+	// warnings must mention ephemeral cloud as the safer choice and the
+	// dry-run path must not mint a registration token.
+	stateDir := t.TempDir()
+	service := newPublicRepoFakeService()
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:      "test-version",
+		Out:          &out,
+		Err:          &errOut,
+		GitHub:       service,
+		Providers:    provider.NewRegistry(cloud),
+		StateBaseDir: stateDir,
+		Sleep:        noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral cloud public dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	for _, want := range []string{"Use ephemeral cloud runner", "runnerkit up --repo owner/name --mode ephemeral --cloud hetzner"} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("ephemeral cloud public dry-run missing %q:\n%s", want, combined)
+		}
+	}
+	if service.tokenCalls != 0 {
+		t.Fatalf("ephemeral cloud dry-run minted token: %d", service.tokenCalls)
+	}
+}
+
+func TestUpPublicRepoEphemeralBYOWithoutAcknowledgementBlocks(t *testing.T) {
+	// Public/fork ephemeral BYO requires --allow-ephemeral-byo-risk --yes
+	// or typed acknowledgement; missing both should block before remote
+	// probe and registration token.
+	service := newPublicRepoFakeService()
+	remoteExec := newFakeRemoteExecutor()
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("expected ephemeral BYO public gate, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if !strings.Contains(combined, "BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine.") {
+		t.Fatalf("missing BYO ephemeral caveat in error:\n%s", combined)
+	}
+	if service.tokenCalls != 0 || remoteExec.probeCalls != 0 {
+		t.Fatalf("ephemeral BYO gate leaked side effects token=%d probe=%d", service.tokenCalls, remoteExec.probeCalls)
+	}
+}
+
+func TestUpPublicRepoEphemeralBYOWithAllowFlagDryRunRendersBYOCaveat(t *testing.T) {
+	// --allow-ephemeral-byo-risk --yes for a public repo permits dry-run
+	// and still surfaces the BYO clean-VM caveat.
+	out, errOut, err := executeForTest(t, "up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--allow-ephemeral-byo-risk", "--yes", "--dry-run", "--no-color")
+	if err != nil {
+		// public repo via newFakePermittedGitHubService is private; we need
+		// the public-repo service here. Use the dependency-injection form.
+		_ = err
+	}
+	var out2, errOut2 bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out2,
+		Err:            &errOut2,
+		TTY:            ui.TerminalCapabilities{Width: 100},
+		GitHub:         newPublicRepoFakeService(),
+		RemoteExecutor: newFakeRemoteExecutor(),
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--allow-ephemeral-byo-risk", "--yes", "--dry-run", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral BYO acknowledged dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out2.String(), errOut2.String())
+	}
+	flat := strings.Join(strings.Fields(out2.String()), " ")
+	if !strings.Contains(flat, "BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine.") {
+		t.Fatalf("expected BYO clean-VM caveat in acknowledged dry-run: %s", out2.String())
+	}
+	_ = out
+	_ = errOut
 }
