@@ -43,7 +43,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **REL-02**: Developer can run `runnerkit logs` to inspect relevant runner, service, bootstrap, or remote-install logs without manual SSH spelunking.
 - [x] **REL-03**: Developer can run `runnerkit doctor` to diagnose common setup and runner failures with actionable remediation guidance.
 - [x] **REL-04**: Developer can restart or recover a stopped/offline RunnerKit-managed persistent runner using documented or guided CLI steps.
-- [ ] **REL-05**: Developer can update the runner binary/service or follow a documented upgrade path that prevents immediate runner rot.
+- [x] **REL-05**: Developer can update the runner binary/service or follow a documented upgrade path that prevents immediate runner rot.
 
 ### Cleanup and State
 
@@ -117,7 +117,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REL-02      | Phase 3 | Complete |
 | REL-03      | Phase 3 | Complete |
 | REL-04      | Phase 3 | Complete |
-| REL-05      | Phase 6 | Pending  |
+| REL-05      | Phase 6 | Complete |
 | CLEAN-01    | Phase 4 | Complete |
 | CLEAN-02    | Phase 3 | Complete |
 | CLEAN-03    | Phase 3 | Complete |

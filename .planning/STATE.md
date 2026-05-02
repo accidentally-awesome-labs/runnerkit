@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v1.0.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 6 context gathered
-last_updated: "2026-05-02T18:36:31.950Z"
+status: executing
+stopped_at: Completed 06-02-upgrade-and-state-migration-PLAN.md
+last_updated: "2026-05-02T20:35:41.776Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 23
+  completed_plans: 20
 ---
 
 # Project State
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-29)
 
 **Core value:** A solo developer can get a reliable, cost-effective GitHub Actions self-hosted runner online and usable in a project in about 10 minutes, without manual GitHub runner setup headaches.
-**Current focus:** Phase 05 — scoped-ephemeral-mode-and-safety-profiles
+**Current focus:** Phase 06 — release-upgrade-docs-and-v1-validation
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-05-02
 
 Milestone Progress: [███████░░░] 67%
@@ -57,6 +57,7 @@ _Updated after each plan completion_
 | Phase 05 P01 | 16 | 3 tasks | 11 files |
 | Phase 05-scoped-ephemeral-mode-and-safety-profiles P02 | 23 min | 3 tasks | 24 files |
 | Phase 05-scoped-ephemeral-mode-and-safety-profiles P03 | 16 min | 3 tasks | 13 files |
+| Phase 06-release-upgrade-docs-and-v1-validation P02 | 12 min | 3 tasks tasks | 12 files files |
 
 ## Accumulated Context
 
@@ -113,6 +114,11 @@ Recent decisions affecting current work:
 - [Phase 05]: Plan 05-03: Mode-decision warnings (notably the public/fork ephemeral cloud recommendation) merge into ephemeral BYO/cloud completion via mergeWarnings with de-duplication so safety guidance flows to user-visible output.
 - [Phase 05]: Plan 05-03: classifyEphemeral prefers observed remote sentinel finalizer status over saved RepositoryState so freshly-completed/TTL-expired ephemeral runners classify as terminal even when state on disk records 'pending'.
 - [Phase 05]: Plan 05-03: EphemeralBYO/Cloud RepositoryState fixtures share the deterministic ephemeral runner name runnerkit-owner-repo-ephemeral-20260501t183000 so status/logs/doctor/down/destroy regressions assert exact ephemeral artifact paths.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: Side-by-side state backup is taken in Store.Load (not Migrate) so it captures the ORIGINAL raw bytes byte-for-byte before any parsing.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: ErrSchemaTooNew refuses to mutate (no backup, no rewrite) when on-disk schema_version is newer than the binary; maps to ExitStateSchemaTooNew = 7.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: Lazy update-check honors six silent paths (jsonOutput, $CI, $RUNNERKIT_NO_UPDATE_NOTIFIER, network error, fresh cache, same-version response); uses conditional GET via ETag to avoid re-downloading payloads.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: runnerkit upgrade is print-only (channel-detect Homebrew/binary/unknown); reads latest from cache so the command is instantaneous and deterministic in CI.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: upgrade-runner refuses without --force when ephemeral FinalizerStatus is waiting/busy/empty; no-ops on completed/ttl_expired; State.RunnerTemplateVersion is bumped only after Apply returns nil.
 
 ### Pending Todos
 
@@ -130,6 +136,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T18:36:31.946Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-release-upgrade-docs-and-v1-validation/06-CONTEXT.md
+Last session: 2026-05-02T20:35:41.772Z
+Stopped at: Completed 06-02-upgrade-and-state-migration-PLAN.md
+Resume file: None
