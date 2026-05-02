@@ -75,6 +75,12 @@ type ProvisionInput struct {
 	PublicKey       string    `json:"public_key,omitempty"`
 	StateID         string    `json:"state_id"`
 	CreatedAt       time.Time `json:"created_at"`
+
+	// Mode tags the provisioned cloud resources with the chosen runner
+	// mode. Phase 5 ephemeral cloud sets this to "ephemeral"; persistent
+	// cloud setup leaves it empty so HetznerOwnershipTags falls back to
+	// the existing "persistent" default.
+	Mode string `json:"mode,omitempty"`
 }
 
 type ValidationResult struct {

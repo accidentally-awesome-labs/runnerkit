@@ -78,13 +78,17 @@ func HetznerOwnershipTags(input ProvisionInput) map[string]string {
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
+	mode := strings.TrimSpace(input.Mode)
+	if mode == "" {
+		mode = "persistent"
+	}
 	return map[string]string{
 		"runnerkit":  "true",
 		"managed":    "true",
 		"repo":       input.RepoFullName,
 		"runner":     input.RunnerName,
 		"state_id":   input.StateID,
-		"mode":       "persistent",
+		"mode":       mode,
 		"created_at": createdAt.Format(time.RFC3339),
 	}
 }

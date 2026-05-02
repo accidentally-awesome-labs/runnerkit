@@ -167,6 +167,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return NewExitError(ExitSafetyGate, err)
 	}
 	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report)
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
+	}
 	bootstrapPlan := bootstrap.Plan(bootstrapOpts)
 
 	if opts.dryRun {
@@ -195,14 +198,26 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
 	bootstrapOpts.RunnerToken = token.Token
-	if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
-		var serviceErr bootstrap.ServiceNotActiveError
-		if errors.As(err, &serviceErr) {
-			_ = renderer.Error("runner_service_not_active", "RunnerKit installed the runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service."})
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		if _, err := bootstrap.ApplyEphemeral(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
+			var serviceErr bootstrap.ServiceNotActiveError
+			if errors.As(err, &serviceErr) {
+				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the ephemeral runner but the service is not active.", []string{"Run systemctl status " + bootstrapOpts.EphemeralServiceName + " on the host or re-run runnerkit up after fixing the service."})
+				return NewExitError(ExitSafetyGate, err)
+			}
+			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the ephemeral runner install plan.", []string{"Review the remote host output, fix the issue, and re-run runnerkit up."})
 			return NewExitError(ExitSafetyGate, err)
 		}
-		_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the BYO runner install plan.", []string{"Review the remote host output, fix the issue, and re-run runnerkit up."})
-		return NewExitError(ExitSafetyGate, err)
+	} else {
+		if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
+			var serviceErr bootstrap.ServiceNotActiveError
+			if errors.As(err, &serviceErr) {
+				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service."})
+				return NewExitError(ExitSafetyGate, err)
+			}
+			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the BYO runner install plan.", []string{"Review the remote host output, fix the issue, and re-run runnerkit up."})
+			return NewExitError(ExitSafetyGate, err)
+		}
 	}
 
 	onlineRunner, ok, err := waitForRunnerOnline(ctx, deps, repo, labelSet.RunnerName, labelSet.Labels)
@@ -212,6 +227,17 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if !ok {
 		_ = renderer.Error("runner_online_timeout", "RunnerKit could not verify the GitHub runner came online with the expected labels.", []string{"Check the remote service status and GitHub repository Actions runner settings, then re-run runnerkit up."})
 		return NewExitError(ExitSafetyGate, errors.New("runner_online_timeout"))
+	}
+
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		repoState := buildEphemeralBYORepositoryState(deps, repo, status.Source, decision, modeDecision, labelSet, target, hostKey, acceptedAt, bootstrapOpts, onlineRunner, opts.ephemeralTTL)
+		if err := saveRepositoryState(ctx, deps, renderer, opts, jsonOutput, store, repo.FullName, repoState); err != nil {
+			return err
+		}
+		if jsonOutput {
+			return renderer.JSON(ephemeralCompletionJSON(repo.FullName, modeDecision, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, false))
+		}
+		return renderEphemeralCompletionHuman(renderer, repo.FullName, modeDecision, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, false)
 	}
 
 	repoState := buildBYORepositoryState(deps, repo, status.Source, decision, labelSet, target, hostKey, acceptedAt, bootstrapOpts, onlineRunner)
@@ -437,10 +463,10 @@ func modeSelectionPayload(decision runmode.Decision, ttl time.Duration) map[stri
 	}
 }
 
-// shortEphemeralID returns a short hex id suitable for ephemeral runner
-// names. It uses crypto/rand so consecutive ephemeral runs do not collide
-// in GitHub.
-func shortEphemeralID() string {
+// shortEphemeralIDFn is the seam tests override to make ephemeral
+// runner names deterministic. Production uses crypto/rand so
+// consecutive ephemeral runs do not collide in GitHub.
+var shortEphemeralIDFn = func() string {
 	var b [3]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		// Fall back to a stable but non-empty value if randomness is
@@ -449,6 +475,56 @@ func shortEphemeralID() string {
 		return "rk0001"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func shortEphemeralID() string { return shortEphemeralIDFn() }
+
+// ephemeralSuffix returns a deterministic short id derived from now. It
+// is exposed for tests that want a stable suffix; the runtime code uses
+// shortEphemeralID for crypto/rand uniqueness.
+func ephemeralSuffix(now time.Time) string {
+	return strings.ToLower(now.UTC().Format("20060102t150405"))
+}
+
+// ephemeralLogArchivePath returns the canonical host path RunnerKit
+// preserves _diag and journal logs to before cleanup.
+func ephemeralLogArchivePath(runnerName string) string {
+	return "/var/lib/runnerkit/ephemeral/" + runnerName + "/logs"
+}
+
+// ephemeralServiceName returns the canonical systemd unit name for an
+// ephemeral runner.
+func ephemeralServiceName(runnerName string) string {
+	return "runnerkit-ephemeral." + runnerName + ".service"
+}
+
+// ephemeralCleanupCommand returns the cleanup command appropriate for
+// the runner's setup path: `runnerkit destroy` for cloud (billable) or
+// `runnerkit down` for BYO.
+func ephemeralCleanupCommand(repoFullName string, cloud bool) string {
+	if cloud {
+		return "runnerkit destroy --repo " + repoFullName
+	}
+	return "runnerkit down --repo " + repoFullName
+}
+
+// ephemeralBootstrapOptions populates the ephemeral-specific fields of
+// bootstrap.Options on top of the persistent defaults so ApplyEphemeral
+// can write the one-shot service, finalizer, TTL timer, and log
+// archive without diverging from the existing buildBootstrapOptions
+// shape used by the BYO/cloud persistent paths.
+func ephemeralBootstrapOptions(opts bootstrap.Options, ttl time.Duration) bootstrap.Options {
+	if ttl == 0 {
+		ttl = runmode.DefaultEphemeralTTL
+	}
+	opts.Mode = runmode.ModeEphemeral
+	opts.EphemeralTTL = ttl
+	opts.LogArchivePath = ephemeralLogArchivePath(opts.RunnerName)
+	opts.FinalizerPath = "/usr/local/lib/runnerkit/ephemeral/" + opts.RunnerName + "/finalize.sh"
+	opts.EphemeralServiceName = ephemeralServiceName(opts.RunnerName)
+	opts.EphemeralTTLServiceName = "runnerkit-ephemeral." + opts.RunnerName + ".ttl.service"
+	opts.EphemeralTTLTimerName = "runnerkit-ephemeral." + opts.RunnerName + ".ttl.timer"
+	return opts
 }
 
 // buildModeLabelSet builds a labels.LabelSet for the chosen mode. The
@@ -521,6 +597,14 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		return NewExitError(ExitGitHubAuth, err)
 	}
 	input := buildCloudProvisionInput(deps, repo, opts)
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		input.Mode = runmode.ModeEphemeral
+		runnerName := labels.EphemeralRunnerName(repo, shortEphemeralID())
+		input.RunnerName = runnerName
+		input.StateID = runnerName
+		input.Labels = []string{"self-hosted", "runnerkit", labels.RepoScopedLabel(repo), labels.DefaultOS, labels.DefaultArch, labels.ModeEphemeral}
+		input.WorkflowSnippet = labels.WorkflowSnippet(input.Labels)
+	}
 	registerKnownCloudProviderSecrets(renderer)
 	validation, err := cloudProvider.Validate(ctx, input)
 	if err != nil || !validation.OK {
@@ -588,12 +672,18 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	arch := defaultString(report.Arch, labels.DefaultArch)
 	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.DefaultMode})
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		labelSet = labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.ModeEphemeral, RunnerName: input.RunnerName})
+	}
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the recommended cloud runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
 	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report)
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
+	}
 
 	runners, err := deps.GitHub.ListRunners(ctx, repo)
 	if err != nil {
@@ -610,14 +700,26 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
 	bootstrapOpts.RunnerToken = token.Token
-	if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, readyMachine.Target, bootstrapOpts); err != nil {
-		var serviceErr bootstrap.ServiceNotActiveError
-		if errors.As(err, &serviceErr) {
-			_ = renderer.Error("runner_service_not_active", "RunnerKit installed the cloud runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or run runnerkit logs --repo " + repo.FullName + " --since 30m after fixing the service."})
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		if _, err := bootstrap.ApplyEphemeral(ctx, deps.RemoteExecutor, readyMachine.Target, bootstrapOpts); err != nil {
+			var serviceErr bootstrap.ServiceNotActiveError
+			if errors.As(err, &serviceErr) {
+				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the ephemeral cloud runner but the service is not active.", []string{"Run systemctl status " + bootstrapOpts.EphemeralServiceName + " on the host or run runnerkit logs --repo " + repo.FullName + " --since 30m after fixing the service."})
+				return NewExitError(ExitSafetyGate, err)
+			}
+			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the ephemeral cloud runner install plan.", []string{"Review the remote host output, fix the issue, and run runnerkit destroy --repo " + repo.FullName + " if you need to stop billing."})
 			return NewExitError(ExitSafetyGate, err)
 		}
-		_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the cloud runner install plan.", []string{"Review the remote host output, fix the issue, and run runnerkit destroy --repo " + repo.FullName + " if you need to stop billing."})
-		return NewExitError(ExitSafetyGate, err)
+	} else {
+		if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, readyMachine.Target, bootstrapOpts); err != nil {
+			var serviceErr bootstrap.ServiceNotActiveError
+			if errors.As(err, &serviceErr) {
+				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the cloud runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or run runnerkit logs --repo " + repo.FullName + " --since 30m after fixing the service."})
+				return NewExitError(ExitSafetyGate, err)
+			}
+			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the cloud runner install plan.", []string{"Review the remote host output, fix the issue, and run runnerkit destroy --repo " + repo.FullName + " if you need to stop billing."})
+			return NewExitError(ExitSafetyGate, err)
+		}
 	}
 	onlineRunner, ok, err := waitForRunnerOnline(ctx, deps, repo, labelSet.RunnerName, labelSet.Labels)
 	if err != nil {
@@ -630,6 +732,17 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 
 	finalResult := result
 	finalResult.Machine = readyMachine
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		repoState := buildEphemeralCloudRepositoryState(deps, repo, status.Source, decision, modeDecision, labelSet, readyMachine.Target, hostKey, input, plan, finalResult, bootstrapOpts, onlineRunner, opts.sshKey, opts.ephemeralTTL)
+		if err := store.SaveRepository(repoState, true); err != nil {
+			_ = renderer.Error("state_io_failed", "RunnerKit can't save final ephemeral cloud runner state.", []string{"Check permissions for " + store.Path() + " and run runnerkit destroy --repo " + repo.FullName + " if billable resources were created."})
+			return NewExitError(ExitStateIO, err)
+		}
+		if jsonOutput {
+			return renderer.JSON(ephemeralCompletionJSON(repo.FullName, modeDecision, decision.Warnings, store.Path(), readyMachine.Target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, true))
+		}
+		return renderEphemeralCompletionHuman(renderer, repo.FullName, modeDecision, decision.Warnings, store.Path(), readyMachine.Target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, true)
+	}
 	repoState := buildCloudRepositoryState(deps, repo, status.Source, decision, labelSet, readyMachine.Target, hostKey, input, plan, finalResult, bootstrapOpts, onlineRunner, opts.sshKey)
 	if err := store.SaveRepository(repoState, true); err != nil {
 		_ = renderer.Error("state_io_failed", "RunnerKit can't save final cloud runner state.", []string{"Check permissions for " + store.Path() + " and run runnerkit destroy --repo " + repo.FullName + " if billable resources were created."})
@@ -1478,6 +1591,116 @@ func cloudCompletionJSON(repo string, statePath string, plan provider.ProvisionP
 		"billable_resources": resourceIDs,
 		"destroy_command":    "runnerkit destroy --repo " + repo,
 		"install_path":       opts.InstallPath,
+	}
+}
+
+// buildEphemeralBYORepositoryState builds the state row that BYO
+// ephemeral up persists. It is a thin wrapper around the persistent
+// BYO state builder that overrides the Mode/SafetyProfile/ServiceName
+// fields and populates EphemeralMetadata.
+func buildEphemeralBYORepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, modeDecision runmode.Decision, labelSet labels.LabelSet, target remote.Target, hostKey remote.HostKey, acceptedAt *time.Time, opts bootstrap.Options, onlineRunner gh.Runner, ttl time.Duration) rkstate.RepositoryState {
+	state := buildBYORepositoryState(deps, repo, source, decision, labelSet, target, hostKey, acceptedAt, opts, onlineRunner)
+	state.Runner.Mode = runmode.ModeEphemeral
+	state.Machine.ServiceName = ephemeralServiceName(labelSet.RunnerName)
+	state.Safety.SafetyProfile = modeDecision.SafetyProfile
+	state.Ephemeral = ephemeralMetadataFor(deps, repo, labelSet.RunnerName, ttl, false)
+	return state
+}
+
+// buildEphemeralCloudRepositoryState builds the state row that cloud
+// ephemeral up persists. It reuses the persistent cloud state builder
+// then overrides Mode/SafetyProfile/ServiceName and populates
+// EphemeralMetadata with the cloud cleanup command.
+func buildEphemeralCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSource, decision gh.SafetyDecision, modeDecision runmode.Decision, labelSet labels.LabelSet, target remote.Target, hostKey remote.HostKey, input provider.ProvisionInput, plan provider.ProvisionPlan, result provider.ProvisionResult, opts bootstrap.Options, onlineRunner gh.Runner, keyPathRef string, ttl time.Duration) rkstate.RepositoryState {
+	state := buildCloudRepositoryState(deps, repo, source, decision, labelSet, target, hostKey, input, plan, result, opts, onlineRunner, keyPathRef)
+	state.Runner.Mode = runmode.ModeEphemeral
+	state.Machine.ServiceName = ephemeralServiceName(labelSet.RunnerName)
+	state.Safety.SafetyProfile = modeDecision.SafetyProfile
+	state.Ephemeral = ephemeralMetadataFor(deps, repo, labelSet.RunnerName, ttl, true)
+	return state
+}
+
+func ephemeralMetadataFor(deps Dependencies, repo gh.Repo, runnerName string, ttl time.Duration, cloud bool) rkstate.EphemeralMetadata {
+	now := deps.Clock()
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if ttl == 0 {
+		ttl = runmode.DefaultEphemeralTTL
+	}
+	expires := now.Add(ttl)
+	return rkstate.EphemeralMetadata{
+		Enabled:         true,
+		TTL:             "24h",
+		ExpiresAt:       &expires,
+		LogArchivePath:  ephemeralLogArchivePath(runnerName),
+		FinalizerStatus: "pending",
+		CleanupCommand:  ephemeralCleanupCommand(repo.FullName, cloud),
+	}
+}
+
+// renderEphemeralCompletionHuman renders the human-readable completion
+// step for an ephemeral runner. It always begins with "Ephemeral runner
+// ready" and includes the canonical UI-SPEC sentences asserted by
+// integration tests.
+func renderEphemeralCompletionHuman(renderer *ui.Renderer, repoFullName string, modeDecision runmode.Decision, warnings []string, statePath string, target remote.Target, labelSet labels.LabelSet, opts bootstrap.Options, onlineRunner gh.Runner, ttl time.Duration, cloud bool) error {
+	cleanup := ephemeralCleanupCommand(repoFullName, cloud)
+	logArchive := defaultString(opts.LogArchivePath, ephemeralLogArchivePath(labelSet.RunnerName))
+	lines := []ui.Line{
+		ui.Success("Ephemeral runner ready: " + labelSet.RunnerName),
+		ui.Bullet("Mode: ephemeral"),
+		ui.Bullet("Safety profile: " + modeDecision.SafetyProfile),
+		ui.Bullet("Machine target: " + target.Display()),
+		ui.Bullet("Service name: " + ephemeralServiceName(labelSet.RunnerName)),
+		ui.Bullet("Labels: [" + strings.Join(labelSet.Labels, ", ") + "]"),
+		ui.Bullet(labelSet.RunsOnYAML),
+		ui.WarningLine("Do not use runs-on: self-hosted alone for RunnerKit-managed runners."),
+		ui.Bullet("GitHub runner ID: " + fmt.Sprintf("%d", onlineRunner.ID)),
+		ui.Bullet("Log archive: " + logArchive),
+		ui.Bullet("State path: " + statePath),
+		ui.Bullet("GitHub will assign at most one job to this runner, then automatically deregister it."),
+		ui.Bullet("TTL safeguard: RunnerKit finalizes the ephemeral runner after 24h if no job completes."),
+		ui.Bullet("RunnerKit preserves best-effort runner _diag and systemd journal logs before cleanup."),
+		ui.Next("Cleanup after the job: " + cleanup),
+		ui.Bullet("Install path: " + opts.InstallPath),
+		ui.WarningLine("Ephemeral mode is not a fleet manager. RunnerKit creates one scoped runner; jobs with matching labels can still queue if no runner is online."),
+	}
+	for _, warning := range warnings {
+		lines = append(lines, ui.WarningLine(warning))
+	}
+	_ = ttl // ttl is implied in the canonical 24h sentence above.
+	return renderer.Step(1, 1, "Ephemeral runner ready", lines...)
+}
+
+func ephemeralCompletionJSON(repoFullName string, modeDecision runmode.Decision, warnings []string, statePath string, target remote.Target, labelSet labels.LabelSet, opts bootstrap.Options, onlineRunner gh.Runner, ttl time.Duration, cloud bool) map[string]any {
+	if warnings == nil {
+		warnings = []string{}
+	}
+	cleanup := ephemeralCleanupCommand(repoFullName, cloud)
+	logArchive := defaultString(opts.LogArchivePath, ephemeralLogArchivePath(labelSet.RunnerName))
+	if ttl == 0 {
+		ttl = runmode.DefaultEphemeralTTL
+	}
+	return map[string]any{
+		"ok":               true,
+		"command":          "up",
+		"repo":             repoFullName,
+		"runner_installed": true,
+		"runner_name":      labelSet.RunnerName,
+		"labels":           labelSet.Labels,
+		"machine_target":   target.Display(),
+		"service_name":     ephemeralServiceName(labelSet.RunnerName),
+		"workflow_snippet": labelSet.RunsOnYAML,
+		"github_runner_id": onlineRunner.ID,
+		"state_path":       statePath,
+		"warnings":         warnings,
+		"install_path":     opts.InstallPath,
+		"mode":             runmode.ModeEphemeral,
+		"safety_profile":   modeDecision.SafetyProfile,
+		"ephemeral":        true,
+		"ttl":              ttl.String(),
+		"log_archive":      logArchive,
+		"cleanup_command":  cleanup,
 	}
 }
 

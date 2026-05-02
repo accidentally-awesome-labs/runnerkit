@@ -25,12 +25,26 @@ type RepositoryState struct {
 	Provider               ProviderRef           `json:"provider"`
 	Cleanup                CleanupMetadata       `json:"cleanup"`
 	Safety                 SafetyMetadata        `json:"safety"`
+	Ephemeral              EphemeralMetadata     `json:"ephemeral,omitempty"`
 	Operations             []OperationCheckpoint `json:"operations,omitempty"`
 	RunnerKitVersion       string                `json:"runnerkit_version"`
 	RunnerTemplateVersion  string                `json:"runner_template_version,omitempty"`
 	ServiceTemplateVersion string                `json:"service_template_version,omitempty"`
 	CreatedAt              time.Time             `json:"created_at"`
 	UpdatedAt              time.Time             `json:"updated_at"`
+}
+
+// EphemeralMetadata records ephemeral runner lifecycle facts that
+// `status`, `logs`, `doctor`, `down`, and `destroy` all consume. The
+// fields are persisted in user-local state with the `ephemeral` key
+// so older states without the field continue to load.
+type EphemeralMetadata struct {
+	Enabled         bool       `json:"enabled"`
+	TTL             string     `json:"ttl,omitempty"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	LogArchivePath  string     `json:"log_archive_path,omitempty"`
+	FinalizerStatus string     `json:"finalizer_status,omitempty"`
+	CleanupCommand  string     `json:"cleanup_command,omitempty"`
 }
 
 // AuthReference records where auth came from, never the credential value.
