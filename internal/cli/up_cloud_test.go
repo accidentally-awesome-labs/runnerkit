@@ -154,7 +154,10 @@ func (p *recordingSetupPathPrompter) Input(context.Context, ui.Prompt) (string, 
 }
 
 func TestUpInteractiveNoHostOffersBYOAndCloudChoices(t *testing.T) {
-	prompter := &recordingSetupPathPrompter{selectedValue: "byo"}
+	// Phase 5 replaces the previous setup-path prompt with the explicit
+	// mode/profile prompt so users see persistent vs ephemeral tradeoffs
+	// before any setup-path mutation.
+	prompter := &recordingSetupPathPrompter{selectedValue: "persistent-byo"}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
 		Version:        "test-version",
@@ -171,11 +174,11 @@ func TestUpInteractiveNoHostOffersBYOAndCloudChoices(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("interactive BYO dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
-	if prompter.selectPrompt != "Choose setup path for `owner/repo`:" {
+	if prompter.selectPrompt != "Choose runner mode for `owner/repo`:" {
 		t.Fatalf("select prompt = %q", prompter.selectPrompt)
 	}
 	joined := strings.Join(prompter.optionLabels, "\n")
-	for _, want := range []string{"Use existing SSH host (BYO)", "Provision recommended cloud runner (Hetzner)"} {
+	for _, want := range []string{"Persistent trusted runner", "Ephemeral one-job runner on existing machine", "Ephemeral one-job cloud runner (Hetzner)"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing option %q in %#v", want, prompter.optionLabels)
 		}

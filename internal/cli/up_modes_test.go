@@ -81,38 +81,77 @@ func TestUpInteractiveModeSelectionUsesUISpecLabels(t *testing.T) {
 }
 
 func TestUpEphemeralBYODryRunRendersUISpecCopyAndSnippet(t *testing.T) {
-	out, errOut, err := executeForTest(t, "up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("ephemeral BYO dry-run returned error: %v\nstderr=%s", err, errOut)
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		TTY:            ui.TerminalCapabilities{Width: 100},
+		GitHub:         newFakePermittedGitHubService(),
+		RemoteExecutor: newFakeRemoteExecutor(),
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral BYO dry-run returned error: %v\nstderr=%s", err, errOut.String())
 	}
 	for _, want := range []string{
 		"Mode: ephemeral",
 		"Safety profile: ephemeral-byo",
 		"runs-on: [self-hosted, runnerkit, runnerkit-owner-name, linux, x64, ephemeral]",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("ephemeral BYO output missing %q:\n%s", want, out.String())
+		}
+	}
+	// Long warning copy may wrap on narrow terminals; assert by stripping
+	// internal whitespace runs so the test is resilient to wrapWidth.
+	flat := strings.Join(strings.Fields(out.String()), " ")
+	for _, want := range []string{
 		"BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine.",
 		"Ephemeral mode is not a fleet manager.",
 	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("ephemeral BYO output missing %q:\n%s", want, out)
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral BYO output missing %q (flattened):\n%s", want, flat)
 		}
 	}
 }
 
 func TestUpEphemeralCloudDryRunRendersTradeoffsAndCostCaveat(t *testing.T) {
-	out, errOut, err := executeForTest(t, "up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--dry-run", "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("ephemeral cloud dry-run returned error: %v\nstderr=%s", err, errOut)
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		TTY:            ui.TerminalCapabilities{Width: 100},
+		GitHub:         newFakePermittedGitHubService(),
+		RemoteExecutor: newFakeRemoteExecutor(),
+		Providers:      provider.NewRegistry(&provider.FakeProvider{}),
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--dry-run", "--yes", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
-	wants := []string{
+	for _, want := range []string{
 		"Safety profile: ephemeral-cloud",
 		"Ephemeral cloud runners still create billable Hetzner resources",
+		"runs-on: [self-hosted, runnerkit, runnerkit-owner-name, linux, x64, ephemeral]",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("ephemeral cloud output missing %q:\n%s", want, out.String())
+		}
+	}
+	// Long warning copy may wrap on narrow terminals; assert by flattening
+	// internal whitespace runs so wrapped output still matches the
+	// canonical UI-SPEC sentence.
+	flat := strings.Join(strings.Fields(out.String()), " ")
+	for _, want := range []string{
 		"Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.",
 		"TTL safeguard: RunnerKit finalizes the ephemeral runner after 24h if no job completes.",
-		"runs-on: [self-hosted, runnerkit, runnerkit-owner-name, linux, x64, ephemeral]",
-	}
-	for _, want := range wants {
-		if !strings.Contains(out, want) {
-			t.Fatalf("ephemeral cloud output missing %q:\n%s", want, out)
+	} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral cloud output missing %q (flattened):\n%s", want, flat)
 		}
 	}
 }
@@ -131,13 +170,22 @@ func TestUpInvalidModeReturnsExitInvalidInput(t *testing.T) {
 }
 
 func TestUpEphemeralCloudDryRunJSONIncludesModeFields(t *testing.T) {
-	out, errOut, err := executeForTest(t, "--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--dry-run", "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("ephemeral cloud json dry-run returned error: %v\nstderr=%s", err, errOut)
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:   "test-version",
+		Out:       &out,
+		Err:       &errOut,
+		GitHub:    newFakePermittedGitHubService(),
+		Providers: provider.NewRegistry(&provider.FakeProvider{}),
+		Sleep:     noSleep,
+	})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--dry-run", "--yes", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral cloud json dry-run returned error: %v\nstderr=%s", err, errOut.String())
 	}
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("invalid json: %v\n%s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out.String())
 	}
 	if payload["mode"] != "ephemeral" {
 		t.Fatalf("payload[mode] = %#v, want ephemeral", payload["mode"])

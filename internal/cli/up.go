@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/salar/runnerkit/internal/provider"
 	"github.com/salar/runnerkit/internal/redact"
 	"github.com/salar/runnerkit/internal/remote"
+	"github.com/salar/runnerkit/internal/runmode"
 	rkstate "github.com/salar/runnerkit/internal/state"
 	"github.com/salar/runnerkit/internal/ui"
 	"github.com/salar/runnerkit/internal/workflow"
@@ -28,20 +31,23 @@ const (
 )
 
 type upOptions struct {
-	repo                string
-	yes                 bool
-	nonInteractive      bool
-	dryRun              bool
-	allowPublicRepoRisk bool
-	replace             bool
-	host                string
-	sshPort             int
-	sshKey              string
-	allowUnknownLinux   bool
-	cloud               string
-	cloudRegion         string
-	cloudProfile        string
-	sshAllowedCIDR      string
+	repo                  string
+	yes                   bool
+	nonInteractive        bool
+	dryRun                bool
+	allowPublicRepoRisk   bool
+	allowEphemeralBYORisk bool
+	replace               bool
+	host                  string
+	sshPort               int
+	sshKey                string
+	allowUnknownLinux     bool
+	cloud                 string
+	cloudRegion           string
+	cloudProfile          string
+	sshAllowedCIDR        string
+	mode                  string
+	ephemeralTTL          time.Duration
 }
 
 type GitHubService interface {
@@ -77,6 +83,9 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().StringVar(&opts.cloudRegion, "cloud-region", provider.HetznerDefaultRegion, "provider region/location for cloud runner")
 	cmd.Flags().StringVar(&opts.cloudProfile, "cloud-profile", provider.HetznerDefaultServerType, "provider server profile for cloud runner")
 	cmd.Flags().StringVar(&opts.sshAllowedCIDR, "ssh-allowed-cidr", provider.HetznerDefaultSSHAllowedCIDR, "SSH ingress CIDR for cloud runner")
+	cmd.Flags().StringVar(&opts.mode, "mode", "", "runner mode: persistent or ephemeral")
+	cmd.Flags().DurationVar(&opts.ephemeralTTL, "ephemeral-ttl", runmode.DefaultEphemeralTTL, "TTL safeguard for ephemeral runners")
+	cmd.Flags().BoolVar(&opts.allowEphemeralBYORisk, "allow-ephemeral-byo-risk", false, "acknowledge that BYO ephemeral mode is not a clean VM for risky repositories")
 
 	return cmd
 }
@@ -96,6 +105,10 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		_ = renderer.Error("github_permission_denied", message, []string{gh.FineGrainedTokenRemediation(resolution.Repo), "Verify GitHub credentials can read repository metadata for " + resolution.Repo.FullName + "."})
 		return NewExitError(ExitGitHubAuth, err)
 	}
+	modeDecision, err := resolveModeDecision(ctx, deps, renderer, repo, opts, jsonOutput)
+	if err != nil {
+		return err
+	}
 	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
 	if err := enforceSafetyDecision(ctx, deps, renderer, repo, decision, opts, jsonOutput); err != nil {
 		return err
@@ -106,7 +119,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return err
 	}
 	if setupPath == setupPathCloud {
-		return runCloudUp(ctx, deps, renderer, repo, decision, opts, jsonOutput)
+		return runCloudUp(ctx, deps, renderer, repo, decision, modeDecision, opts, jsonOutput)
 	}
 
 	status, err := deps.GitHub.VerifyAuth(ctx, repo)
@@ -147,7 +160,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 
 	arch := defaultString(report.Arch, labels.DefaultArch)
-	labelSet := labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.DefaultMode})
+	labelSet := buildModeLabelSet(repo, modeDecision, arch)
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the Phase 2 BYO persistent runner path."})
@@ -157,7 +170,10 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	bootstrapPlan := bootstrap.Plan(bootstrapOpts)
 
 	if opts.dryRun {
-		return renderDryRun(renderer, jsonOutput, repo, status.Source, decision.Warnings, store.Path(), target, report, labelSet, bootstrapPlan)
+		if err := renderModeTradeoffs(renderer, jsonOutput, repo, modeDecision, opts.ephemeralTTL); err != nil {
+			return err
+		}
+		return renderDryRun(renderer, jsonOutput, repo, status.Source, decision.Warnings, store.Path(), target, report, labelSet, bootstrapPlan, modeDecision, opts.ephemeralTTL)
 	}
 
 	runners, err := deps.GitHub.ListRunners(ctx, repo)
@@ -231,7 +247,206 @@ const (
 	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
 	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
 	cloudJSONKeyEstimatedMonthlyCost = "estimated_monthly_cost"
+
+	// Mode/profile selection copy. The exact strings below come from the
+	// Phase 5 UI-SPEC and must not drift; tests in this package and in
+	// docs grep these literals.
+	modePromptMessage          = "Choose runner mode for `owner/name`:"
+	modeOptionPersistentLabel  = "Persistent trusted runner"
+	modeOptionPersistentDesc   = "Reuses one runner across trusted private jobs. Lowest ongoing friction, but unsafe for public, fork, or untrusted workflows."
+	modeOptionEphemeralBYOL    = "Ephemeral one-job runner on existing machine"
+	modeOptionEphemeralBYODesc = "GitHub assigns one job then deregisters the runner. The machine is reused, so this is not a clean VM."
+	modeOptionEphemeralCloudL  = "Ephemeral one-job cloud runner (Hetzner)"
+	modeOptionEphemeralCloudD  = "Stronger isolation for risky workloads. Creates billable resources until `runnerkit destroy` verifies cleanup."
+	modePersistentDefaultNote  = "Default mode: persistent for trusted private repositories."
+	modeEphemeralModeNote      = "Ephemeral mode: one GitHub job, automatic deregistration, TTL cleanup, and preserved troubleshooting logs."
+	modeNotFleetWarning        = "Ephemeral mode is not a fleet manager. RunnerKit creates one scoped runner; jobs with matching labels can still queue if no runner is online."
+	modeTTLSafeguardCopy       = "TTL safeguard: RunnerKit finalizes the ephemeral runner after 24h if no job completes."
+	modeLogPreservationCopy    = "Log preservation copy: RunnerKit preserves best-effort runner _diag and systemd journal logs before cleanup."
+	modeBYOEphemeralCaveat     = "BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine. Do not store unrelated secrets on the host."
+	modeEphemeralCloudCostCopy = "Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup."
+	modeTradeoffStepTitle      = "Runner mode selection"
+
+	// Internal mode-selection values for the interactive Select prompt.
+	modeChoicePersistentBYO   = "persistent-byo"
+	modeChoiceEphemeralBYO    = "ephemeral-byo"
+	modeChoiceEphemeralCloud  = "ephemeral-cloud"
 )
+
+// resolveModeDecision normalizes the user-supplied --mode flag, prompts
+// the developer to choose mode/profile when no host or cloud was supplied
+// and the terminal is interactive, and returns the typed runmode.Decision
+// that downstream rendering and safety enforcement consume. It runs before
+// any GitHub auth, registration-token, remote, provider, or state action
+// so error remediation surfaces the supported-modes copy without leaking
+// side effects.
+func resolveModeDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, opts *upOptions, jsonOutput bool) (runmode.Decision, error) {
+	rawMode := strings.TrimSpace(opts.mode)
+	if rawMode != "" {
+		mode, err := runmode.Normalize(rawMode)
+		if err != nil {
+			_ = renderer.Error("invalid_mode", "RunnerKit can't continue because --mode "+rawMode+" is not a supported mode.", []string{err.Error()})
+			return runmode.Decision{}, NewExitError(ExitInvalidInput, err)
+		}
+		opts.mode = mode
+	}
+	hostSet := strings.TrimSpace(opts.host) != ""
+	cloudSet := strings.TrimSpace(opts.cloud) != ""
+
+	// Interactive mode prompt only runs when the user hasn't already
+	// disambiguated the mode/profile via --mode or --cloud and we have a
+	// usable TTY+prompter; --yes/--non-interactive/--json all skip the
+	// prompt and fall back to the persistent default for trusted private
+	// repos.
+	if rawMode == "" && !hostSet && !cloudSet &&
+		!jsonOutput && !opts.nonInteractive && !opts.yes &&
+		deps.TTY.StdinTTY && deps.Prompts != nil {
+		message := strings.Replace(modePromptMessage, "owner/name", repo.FullName, 1)
+		choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: message}, []ui.Option{
+			{Value: modeChoicePersistentBYO, Label: modeOptionPersistentLabel, Description: modeOptionPersistentDesc},
+			{Value: modeChoiceEphemeralBYO, Label: modeOptionEphemeralBYOL, Description: modeOptionEphemeralBYODesc},
+			{Value: modeChoiceEphemeralCloud, Label: modeOptionEphemeralCloudL, Description: modeOptionEphemeralCloudD},
+		})
+		if err != nil {
+			return runmode.Decision{}, err
+		}
+		switch choice {
+		case modeChoiceEphemeralCloud:
+			opts.mode = runmode.ModeEphemeral
+			opts.cloud = provider.HetznerProvider
+		case modeChoiceEphemeralBYO:
+			opts.mode = runmode.ModeEphemeral
+		default:
+			opts.mode = runmode.ModePersistent
+		}
+	}
+
+	mode := opts.mode
+	if mode == "" {
+		mode = runmode.ModePersistent
+	}
+	setupPathHint := "byo"
+	if strings.TrimSpace(opts.cloud) != "" {
+		setupPathHint = "cloud"
+	}
+	decision := runmode.Evaluate(repo, runmode.Options{
+		Mode:                  mode,
+		SetupPath:             setupPathHint,
+		AllowPersistentRisk:   opts.allowPublicRepoRisk,
+		AllowEphemeralBYORisk: opts.allowEphemeralBYORisk,
+	})
+	return decision, nil
+}
+
+// renderModeTradeoffs writes the mode/safety profile tradeoff bullets and
+// safety warnings before any setup-path mutation. JSON output emits a
+// `mode_selection` payload with the same fields. The caller chooses
+// whether to suppress this in pure JSON dry-run flows that already embed
+// the same fields in the dry-run payload (see renderDryRun and
+// renderCloudProvisionPlan).
+func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, decision runmode.Decision, ttl time.Duration) error {
+	if jsonOutput {
+		return nil
+	}
+	lines := []ui.Line{
+		ui.Bullet("Mode: " + decision.Mode),
+		ui.Bullet("Safety profile: " + decision.SafetyProfile),
+		ui.Bullet("Cost: " + decision.Tradeoffs.Cost),
+		ui.Bullet("Isolation: " + decision.Tradeoffs.Isolation),
+		ui.Bullet("Cleanup: " + decision.Tradeoffs.Cleanup),
+		ui.Bullet("Operations: " + decision.Tradeoffs.Operations),
+		ui.Bullet("Logs: " + decision.Tradeoffs.Logs),
+	}
+	if len(decision.RecommendedFor) > 0 {
+		lines = append(lines, ui.Bullet("Recommended for: "+strings.Join(decision.RecommendedFor, ", ")))
+	}
+	if len(decision.NotRecommendedFor) > 0 {
+		lines = append(lines, ui.Bullet("Not recommended for: "+strings.Join(decision.NotRecommendedFor, ", ")))
+	}
+	switch decision.SafetyProfile {
+	case runmode.ProfileEphemeralBYO:
+		lines = append(lines,
+			ui.WarningLine(modeBYOEphemeralCaveat),
+			ui.WarningLine(modeNotFleetWarning),
+			ui.Bullet(modeTTLSafeguardCopy),
+			ui.Bullet(modeLogPreservationCopy),
+		)
+	case runmode.ProfileEphemeralCloud:
+		costCopy := strings.Replace(modeEphemeralCloudCostCopy, "owner/name", repo.FullName, 1)
+		lines = append(lines,
+			ui.WarningLine(runmode.WarningEphemeralCloudBillable),
+			ui.WarningLine(costCopy),
+			ui.WarningLine(modeNotFleetWarning),
+			ui.Bullet(modeTTLSafeguardCopy),
+			ui.Bullet(modeLogPreservationCopy),
+		)
+	case runmode.ProfilePersistentTrusted:
+		lines = append(lines, ui.Bullet(modePersistentDefaultNote))
+	case runmode.ProfilePersistentRisky:
+		lines = append(lines, ui.WarningLine(runmode.WarningPublicForkPersistent))
+	}
+	if decision.Mode == runmode.ModeEphemeral {
+		lines = append(lines, ui.Bullet(modeEphemeralModeNote))
+	}
+	_ = ttl // ttl is documented in modeTTLSafeguardCopy; future plans may render the exact configured value.
+	return renderer.Step(1, 1, modeTradeoffStepTitle, lines...)
+}
+
+// modeSelectionPayload returns the canonical map of mode-selection JSON
+// keys (mode, safety_profile, ephemeral, ttl, tradeoffs, recommended_for,
+// not_recommended_for, warnings) so callers embed identical fields in
+// every JSON payload that fronts mode-dependent mutation.
+func modeSelectionPayload(decision runmode.Decision, ttl time.Duration) map[string]any {
+	warnings := decision.Warnings
+	if warnings == nil {
+		warnings = []string{}
+	}
+	recommended := decision.RecommendedFor
+	if recommended == nil {
+		recommended = []string{}
+	}
+	notRecommended := decision.NotRecommendedFor
+	if notRecommended == nil {
+		notRecommended = []string{}
+	}
+	return map[string]any{
+		"mode":                decision.Mode,
+		"safety_profile":      decision.SafetyProfile,
+		"ephemeral":           decision.Mode == runmode.ModeEphemeral,
+		"ttl":                 ttl.String(),
+		"tradeoffs":           decision.Tradeoffs,
+		"recommended_for":     recommended,
+		"not_recommended_for": notRecommended,
+		"warnings":            warnings,
+	}
+}
+
+// shortEphemeralID returns a short hex id suitable for ephemeral runner
+// names. It uses crypto/rand so consecutive ephemeral runs do not collide
+// in GitHub.
+func shortEphemeralID() string {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Fall back to a stable but non-empty value if randomness is
+		// unavailable; uniqueness is best-effort and still better than a
+		// fixed name.
+		return "rk0001"
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// buildModeLabelSet builds a labels.LabelSet for the chosen mode. The
+// persistent path keeps the existing `runnerkit-owner-repo-local` runner
+// name and persistent runs-on snippet; ephemeral mode uses
+// `runnerkit-owner-repo-ephemeral-<short-id>` and emits the ephemeral
+// runs-on snippet.
+func buildModeLabelSet(repo gh.Repo, decision runmode.Decision, arch string) labels.LabelSet {
+	if decision.Mode == runmode.ModeEphemeral {
+		runnerName := labels.EphemeralRunnerName(repo, shortEphemeralID())
+		return labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.ModeEphemeral, RunnerName: runnerName})
+	}
+	return labels.Build(repo, labels.Options{OS: labels.DefaultOS, Arch: arch, Mode: labels.ModePersistent})
+}
 
 func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, opts *upOptions, jsonOutput bool) (setupPath, error) {
 	if strings.TrimSpace(opts.host) != "" {
@@ -244,6 +459,13 @@ func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Rende
 		}
 		_ = renderer.Error("invalid_cloud_provider", "RunnerKit does not support cloud provider "+opts.cloud+" in Phase 4.", []string{cloudUnsupportedCopy})
 		return "", NewExitError(ExitInvalidInput, errors.New("unsupported cloud provider"))
+	}
+	// When mode is already chosen (via --mode or the interactive mode
+	// prompt in resolveModeDecision), interpret a missing --cloud and
+	// --host as the BYO path. resolveBYOTarget will prompt or error for
+	// the SSH host as needed.
+	if strings.TrimSpace(opts.mode) != "" {
+		return setupPathBYO, nil
 	}
 	if !jsonOutput && !opts.nonInteractive && !opts.yes && deps.TTY.StdinTTY && deps.Prompts != nil {
 		choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: "Choose setup path for `" + repo.FullName + "`:"}, []ui.Option{
@@ -263,7 +485,7 @@ func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Rende
 	return "", NewExitError(ExitInputRequired, errors.New(cloudNoIntentCopy))
 }
 
-func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, opts *upOptions, jsonOutput bool) error {
+func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, modeDecision runmode.Decision, opts *upOptions, jsonOutput bool) error {
 	cloudProvider, ok := deps.Providers.Get(provider.HetznerProvider)
 	if !ok || cloudProvider == nil {
 		_ = renderer.Error("invalid_cloud_provider", "RunnerKit does not support cloud provider hetzner in Phase 4.", []string{cloudUnsupportedCopy})
@@ -303,14 +525,17 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		return NewExitError(ExitSafetyGate, err)
 	}
 	if opts.dryRun {
-		return renderCloudProvisionPlan(renderer, jsonOutput, repo, plan)
+		if err := renderModeTradeoffs(renderer, jsonOutput, repo, modeDecision, opts.ephemeralTTL); err != nil {
+			return err
+		}
+		return renderCloudProvisionPlan(renderer, jsonOutput, repo, plan, modeDecision, opts.ephemeralTTL)
 	}
 	store := rkstate.NewStore(deps.StateBaseDir)
 	replaceExisting, err := confirmCloudStateReplaceBeforeProvision(ctx, deps, renderer, opts, jsonOutput, store, repo.FullName)
 	if err != nil {
 		return err
 	}
-	if err := confirmCloudProvisionPlan(ctx, deps, renderer, opts, jsonOutput, repo, plan); err != nil {
+	if err := confirmCloudProvisionPlan(ctx, deps, renderer, opts, jsonOutput, repo, plan, modeDecision); err != nil {
 		return err
 	}
 	result, err := cloudProvider.Provision(ctx, input)
@@ -514,36 +739,60 @@ func probeCloudHostKey(ctx context.Context, executor remote.Executor, target rem
 	return probe.HostKey, nil
 }
 
-func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {
+func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan, modeDecision runmode.Decision, ttl time.Duration) error {
 	caveat := defaultString(plan.CostEstimateCaveat, cloudCostCaveatCopy)
+	// Override the persistent default labels/snippet for ephemeral cloud
+	// dry-run output so the rendered runs-on snippet matches the chosen
+	// mode. The provider plan is generated before the mode label set is
+	// applied to ProvisionInput in 05-02; for 05-01 we only need to make
+	// sure the dry-run output advertises the ephemeral runs-on snippet.
+	planLabels := plan.Labels
+	planSnippet := plan.WorkflowSnippet
+	if modeDecision.Mode == runmode.ModeEphemeral {
+		ephemeralLabels := []string{"self-hosted", "runnerkit", labels.RepoScopedLabel(repo), labels.DefaultOS, labels.DefaultArch, labels.ModeEphemeral}
+		planLabels = ephemeralLabels
+		planSnippet = labels.WorkflowSnippet(ephemeralLabels)
+	}
 	if jsonOutput {
-		return renderer.JSON(map[string]any{
+		payload := map[string]any{
 			"ok":               true,
 			"command":          "up",
 			"repo":             repo.FullName,
 			"cloud_plan":       plan,
 			"runner_installed": false,
 			"state_saved":      false,
-			"workflow_snippet": plan.WorkflowSnippet,
-			"labels":           plan.Labels,
-		})
+			"workflow_snippet": planSnippet,
+			"labels":           planLabels,
+		}
+		for k, v := range modeSelectionPayload(modeDecision, ttl) {
+			payload[k] = v
+		}
+		return renderer.JSON(payload)
 	}
-	return renderer.Step(1, 1, cloudProvisioningPlanTitle,
+	costRepoCopy := strings.Replace(modeEphemeralCloudCostCopy, "owner/name", repo.FullName, 1)
+	lines := []ui.Line{
 		ui.WarningLine(caveat),
-		ui.Bullet("Provider: "+plan.Provider),
-		ui.Bullet("Region: "+plan.Region),
-		ui.Bullet("Server type: "+plan.ServerType),
-		ui.Bullet("Image: "+plan.Image),
-		ui.Bullet("Estimated cost: "+plan.EstimatedHourlyCost+", "+plan.EstimatedMonthlyCost),
+		ui.Bullet("Provider: " + plan.Provider),
+		ui.Bullet("Region: " + plan.Region),
+		ui.Bullet("Server type: " + plan.ServerType),
+		ui.Bullet("Image: " + plan.Image),
+		ui.Bullet("Estimated cost: " + plan.EstimatedHourlyCost + ", " + plan.EstimatedMonthlyCost),
 		ui.Bullet("Resources: server, SSH key, firewall, public IPv4/IPv6"),
 		ui.Bullet("Not created: backups, snapshots, volumes, floating IPs"),
-		ui.Bullet("Resource names: "+formatCloudResourceNames(plan.ResourceNames)),
-		ui.Bullet("Tags: "+formatCloudTags(plan.Tags)),
-		ui.Bullet("SSH allowed CIDR: "+plan.SSHAllowedCIDR),
-		ui.Bullet("Labels: ["+strings.Join(plan.Labels, ", ")+"]"),
-		ui.Bullet(plan.WorkflowSnippet),
-		ui.Next("Future cleanup: "+plan.FutureDestroyCommand),
-	)
+		ui.Bullet("Resource names: " + formatCloudResourceNames(plan.ResourceNames)),
+		ui.Bullet("Tags: " + formatCloudTags(plan.Tags)),
+		ui.Bullet("SSH allowed CIDR: " + plan.SSHAllowedCIDR),
+		ui.Bullet("Labels: [" + strings.Join(planLabels, ", ") + "]"),
+		ui.Bullet(planSnippet),
+	}
+	if modeDecision.SafetyProfile == runmode.ProfileEphemeralCloud {
+		lines = append(lines,
+			ui.WarningLine(costRepoCopy),
+			ui.Bullet(modeTTLSafeguardCopy),
+		)
+	}
+	lines = append(lines, ui.Next("Future cleanup: "+plan.FutureDestroyCommand))
+	return renderer.Step(1, 1, cloudProvisioningPlanTitle, lines...)
 }
 
 func formatCloudResourceNames(names map[string]string) string {
@@ -572,8 +821,8 @@ func formatCloudTags(tags map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan) error {
-	if err := renderCloudProvisionPlan(renderer, jsonOutput, repo, plan); err != nil {
+func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, repo gh.Repo, plan provider.ProvisionPlan, modeDecision runmode.Decision) error {
+	if err := renderCloudProvisionPlan(renderer, jsonOutput, repo, plan, modeDecision, opts.ephemeralTTL); err != nil {
 		return err
 	}
 	if opts.yes {
@@ -910,9 +1159,9 @@ func renderPreflightFailure(renderer *ui.Renderer, jsonOutput bool, report prefl
 	return NewExitError(ExitSafetyGate, errors.New("ssh_preflight_failed"))
 }
 
-func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source gh.AuthSource, warnings []string, statePath string, target remote.Target, report preflight.Report, labelSet labels.LabelSet, plan workflow.Plan) error {
+func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source gh.AuthSource, warnings []string, statePath string, target remote.Target, report preflight.Report, labelSet labels.LabelSet, plan workflow.Plan, modeDecision runmode.Decision, ttl time.Duration) error {
 	if jsonOutput {
-		return renderer.JSON(map[string]any{
+		payload := map[string]any{
 			"ok":               true,
 			"command":          "up",
 			"repo":             repo.FullName,
@@ -924,15 +1173,34 @@ func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source g
 			"labels":           labelSet.Labels,
 			"machine_target":   target.Display(),
 			"workflow_snippet": labelSet.RunsOnYAML,
-			"warnings":         warnings,
+			"warnings":         mergeWarnings(warnings, modeDecision.Warnings),
 			"ssh-preflight":    report.Results,
 			"bootstrap-plan":   plan,
-		})
+		}
+		for k, v := range modeSelectionPayload(modeDecision, ttl) {
+			if k == "warnings" {
+				continue // warnings are already merged with safety warnings above.
+			}
+			payload[k] = v
+		}
+		return renderer.JSON(payload)
 	}
 	if err := renderPreflightHuman(renderer, report); err != nil {
 		return err
 	}
 	return renderer.Step(2, 2, "bootstrap-plan", ui.Bullet("Runner name: "+labelSet.RunnerName), ui.Bullet("Target: "+target.Display()), ui.Bullet("Labels: ["+strings.Join(labelSet.Labels, ", ")+"]"), ui.Bullet(labelSet.RunsOnYAML), ui.WarningLine(labelSet.Warning), ui.Bullet("Dry run: no state file was written and no runner was installed."))
+}
+
+// mergeWarnings concatenates safety and mode-selection warnings while
+// preserving order and avoiding nil slices in JSON output.
+func mergeWarnings(safety []string, mode []string) []string {
+	out := make([]string, 0, len(safety)+len(mode))
+	out = append(out, safety...)
+	out = append(out, mode...)
+	if out == nil {
+		return []string{}
+	}
+	return out
 }
 
 func renderPreflightHuman(renderer *ui.Renderer, report preflight.Report) error {
