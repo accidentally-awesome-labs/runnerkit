@@ -14,7 +14,11 @@ This guide covers the Phase 2 happy path: connect RunnerKit to an existing trust
 
 Persistent self-hosted runners are intended for trusted private repositories; public, fork-based, or otherwise untrusted workflows can execute code on your machine.
 
-Do not use this persistent BYO path for public pull requests or untrusted workflow code. Use GitHub-hosted runners or wait for RunnerKit's future ephemeral mode for stronger isolation.
+Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.
+
+Do not use this persistent BYO path for public pull requests or untrusted workflow code. Use runnerkit up --repo owner/name --mode ephemeral --cloud hetzner for stronger isolation, or use GitHub-hosted runners.
+
+For full guidance see the [Self-hosted Runner Safety Guide](safety.md).
 
 ## Run setup
 
