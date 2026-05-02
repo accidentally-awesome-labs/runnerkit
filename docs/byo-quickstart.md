@@ -89,6 +89,16 @@ Review logs before sharing; redaction is best-effort for workflow-produced secre
 - **Runner service is not active**: Run runnerkit status --repo owner/name, then runnerkit logs --repo owner/name --since 30m and runnerkit doctor --repo owner/name before restarting anything manually.
 - **GitHub runner stays offline**: Check outbound HTTPS to GitHub, the runner service logs, and the repository Actions runner settings.
 
+### If something fails
+
+Look for a `RKD-<COMPONENT>-NNN` code in the failure output. The accompanying
+`See: <URL>` link points at a Symptom / Diagnosis / Fix entry in
+[docs/troubleshooting/](troubleshooting/README.md). Most BYO failures fall in:
+
+- [SSH](troubleshooting/ssh.md) — connectivity, host-key, key path
+- [Bootstrap and service](troubleshooting/bootstrap.md) — preflight, runner user, systemd
+- [GitHub runner](troubleshooting/github.md) — registration, online verification
+
 ## Recovery
 
 Preview recovery before changing the host:

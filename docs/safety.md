@@ -67,6 +67,10 @@ Or use GitHub-hosted runners.
 
 If you fully understand the risk and still want a persistent runner for an untrusted workflow, RunnerKit blocks the setup unless you pass `--allow-public-repo-risk`. Only pass `--allow-public-repo-risk` if you accept that untrusted code can execute repeatedly on your machine.
 
+> If you see `RKD-AUTH-001` or `RKD-AUTH-003` in CLI output, the
+> [auth troubleshooting page](troubleshooting/auth.md) has copy-paste fix
+> commands. Read this page first before allowing.
+
 ## BYO ephemeral caveats
 
 BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine. The host is reused, so any artifacts, packages, or secrets present on it remain after the runner deregisters.

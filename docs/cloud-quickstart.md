@@ -93,6 +93,17 @@ runnerkit destroy --repo owner/name --yes
 
 RunnerKit removes local state only after GitHub runner registration and provider cleanup are verified. If cleanup is partial, rerun `runnerkit destroy --repo owner/name` after fixing the blocker; RunnerKit keeps pending checkpoints and provider resource IDs in state.
 
+### If something fails
+
+Look for a `RKD-<COMPONENT>-NNN` code in the failure output. The accompanying
+`See: <URL>` link points at a Symptom / Diagnosis / Fix entry in
+[docs/troubleshooting/](troubleshooting/README.md). Most cloud failures fall
+in:
+
+- [Provider](troubleshooting/provider.md) — `HCLOUD_TOKEN`, quota, partial destroy, billable lingering
+- [Bootstrap and service](troubleshooting/bootstrap.md) — same as BYO
+- [GitHub runner](troubleshooting/github.md) — registration, online verification
+
 ## Limitations
 
 RunnerKit supports one recommended cloud path.

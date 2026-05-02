@@ -74,6 +74,22 @@ For public, fork-based, or otherwise untrusted workflows, use `runnerkit up --re
 RunnerKit prints labels/snippets and does not edit workflow YAML.
 Cost estimates are approximate and billing stops only after relevant provider resources are destroyed or verified non-billable.
 
+## Troubleshooting
+
+If a `runnerkit` command prints a `See: <URL>` line, the URL points at a stable
+entry in [docs/troubleshooting/](docs/troubleshooting/README.md). Index by
+component:
+
+- [Auth and safety](docs/troubleshooting/auth.md) — `RKD-AUTH-NNN`
+- [SSH](docs/troubleshooting/ssh.md) — `RKD-SSH-NNN`
+- [Bootstrap and service](docs/troubleshooting/bootstrap.md) — `RKD-BOOT-NNN`
+- [GitHub runner](docs/troubleshooting/github.md) — `RKD-GH-NNN`
+- [Cloud provider](docs/troubleshooting/provider.md) — `RKD-PROV-NNN`
+- [Cleanup, state, CLI input](docs/troubleshooting/cleanup.md) — `RKD-CLEAN-NNN`, `RKD-STATE-NNN`, `RKD-CORE-NNN`
+
+You can override the URL prefix the CLI prints with
+`RUNNERKIT_DOCS_BASE=https://your-docs-host/runnerkit`.
+
 ## BYO operations
 
 Start with read-only operations before manual SSH troubleshooting:
