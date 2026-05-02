@@ -183,6 +183,70 @@ func TestSafetyMetadataPersistsSafetyProfile(t *testing.T) {
 	}
 }
 
+func TestEphemeralMetadataPersistsAndIsBackwardsCompatible(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 5, 2, 18, 30, 0, 0, time.UTC)
+	expires := now.Add(24 * time.Hour)
+	state := NewState()
+	state.Repositories = []RepositoryState{{
+		Repo:    gh.Repo{Host: "github.com", Owner: "owner", Name: "name", FullName: "owner/name", Private: false},
+		Auth:    AuthReference{Source: "gh", Reference: "gh"},
+		Runner:  RunnerIdentity{Name: "runnerkit-owner-name-ephemeral-abc123", Labels: []string{"self-hosted", "ephemeral"}, Mode: "ephemeral", OS: "linux", Arch: "x64"},
+		Machine: MachineRef{Kind: "byo-ssh", ServiceName: "runnerkit-ephemeral.runnerkit-owner-name-ephemeral-abc123.service"},
+		Provider: ProviderRef{Kind: "byo"},
+		Cleanup: CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
+		Safety:  SafetyMetadata{Code: "ok", Allowed: true, SafetyProfile: "ephemeral-byo"},
+		Ephemeral: EphemeralMetadata{
+			Enabled:         true,
+			TTL:             "24h",
+			ExpiresAt:       &expires,
+			LogArchivePath:  "/var/lib/runnerkit/ephemeral/runnerkit-owner-name-ephemeral-abc123/logs",
+			FinalizerStatus: "pending",
+			CleanupCommand:  "runnerkit down --repo owner/name",
+		},
+		RunnerKitVersion: "test-version",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}}
+	if err := store.Save(state); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	data, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	for _, want := range []string{
+		`"ephemeral"`,
+		`"enabled": true`,
+		`"ttl": "24h"`,
+		`"expires_at"`,
+		`"log_archive_path": "/var/lib/runnerkit/ephemeral/runnerkit-owner-name-ephemeral-abc123/logs"`,
+		`"finalizer_status": "pending"`,
+		`"cleanup_command": "runnerkit down --repo owner/name"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("ephemeral metadata missing %q:\n%s", want, string(data))
+		}
+	}
+
+	// Backwards compatible: state without the ephemeral key still loads.
+	json := `{"schema_version":"1","repositories":[{"repo":{"fullName":"owner/legacy"},"auth":{"source":"gh","reference":"gh"},"runner":{"name":"runnerkit-owner-legacy-local","labels":["self-hosted"],"mode":"persistent","os":"linux","arch":"x64"},"machine":{"kind":"byo-ssh"},"provider":{"kind":"byo"},"cleanup":{"managed_paths":[],"provider_resource_ids":[]},"safety":{"code":"ok","allowed":true},"runnerkit_version":"test","created_at":"2026-04-29T00:00:00Z","updated_at":"2026-04-29T00:00:00Z"}]}`
+	store2 := NewStore(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(store2.Path()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store2.Path(), []byte(json), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store2.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(loaded.Repositories) != 1 || loaded.Repositories[0].Ephemeral.Enabled {
+		t.Fatalf("backwards-compat load: %#v", loaded.Repositories)
+	}
+}
+
 func TestProjectConfigPathUsesRunnerKitConfigYAML(t *testing.T) {
 	path := ProjectConfigPath("/work/project")
 	if !strings.HasSuffix(path, filepath.Join(".runnerkit", "config.yaml")) {

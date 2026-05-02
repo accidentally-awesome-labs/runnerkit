@@ -63,6 +63,18 @@ func TestDefaultHetznerProfileAndPlanValues(t *testing.T) {
 	}
 }
 
+func TestHetznerOwnershipTagsRespectModeOverride(t *testing.T) {
+	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
+	persistent := HetznerOwnershipTags(ProvisionInput{RepoFullName: "owner/name", RunnerName: "runnerkit-owner-name-local", StateID: "state-1", CreatedAt: now})
+	if persistent["mode"] != "persistent" {
+		t.Fatalf("default mode tag = %q, want persistent", persistent["mode"])
+	}
+	ephemeral := HetznerOwnershipTags(ProvisionInput{RepoFullName: "owner/name", RunnerName: "runnerkit-owner-name-ephemeral-abc123", StateID: "state-1", CreatedAt: now, Mode: "ephemeral"})
+	if ephemeral["mode"] != "ephemeral" {
+		t.Fatalf("ephemeral mode tag = %q, want ephemeral", ephemeral["mode"])
+	}
+}
+
 func TestProvisionErrorWrapsCause(t *testing.T) {
 	cause := errors.New("boom")
 	err := &ProvisionError{Stage: "server", Err: cause}

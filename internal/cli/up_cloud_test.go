@@ -530,6 +530,33 @@ func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
 	}
 }
 
+func TestUpCloudEphemeralPlanRendersHetznerCostCaveatBeforeProvision(t *testing.T) {
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	cloud := &provider.FakeProvider{}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:      "test-version",
+		Out:          &out,
+		Err:          &errOut,
+		GitHub:       service,
+		Providers:    provider.NewRegistry(cloud),
+		StateBaseDir: stateDir,
+		Sleep:        noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ephemeral cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	flat := strings.Join(strings.Fields(out.String()), " ")
+	if !strings.Contains(flat, "Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.") {
+		t.Fatalf("ephemeral cloud plan missing exact Hetzner cost caveat:\n%s", flat)
+	}
+	if cloud.ProvisionCalls != 0 {
+		t.Fatalf("dry-run must not call Provision: %d", cloud.ProvisionCalls)
+	}
+}
+
 func cloudReadyMachineForTest() provider.Machine {
 	ids := map[string]string{"server": "srv-123", "ssh_key": "key-123", "firewall": "fw-123", "primary_ipv4": "ip-123"}
 	return provider.Machine{
