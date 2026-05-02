@@ -69,6 +69,60 @@ func HealthyRunner() gh.Runner {
 	return gh.Runner{ID: TestGitHubRunnerID, Name: TestRunnerName, OS: "linux", Status: "online", Busy: false, Labels: append([]string(nil), TestLabels...)}
 }
 
+// EphemeralBYORepositoryState returns a repository state fixture for an
+// ephemeral BYO runner. The runner name uses the deterministic short id
+// "20260501t183000" so tests can assert exact ephemeral artifact paths;
+// labels include the `ephemeral` mode label; and CleanupCommand points
+// at `runnerkit down --repo owner/repo` so tests can prove BYO ephemeral
+// cleanup uses `down` and not `destroy`.
+func EphemeralBYORepositoryState() state.RepositoryState {
+	repo := HealthyRepositoryState()
+	runnerName := "runnerkit-owner-repo-ephemeral-20260501t183000"
+	repo.Runner.Mode = "ephemeral"
+	repo.Runner.Name = runnerName
+	repo.Runner.Labels = []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "ephemeral"}
+	repo.Runner.WorkflowSnippet = labels.WorkflowSnippet(repo.Runner.Labels)
+	repo.Machine.InstallPath = "/opt/actions-runner/" + runnerName
+	repo.Machine.WorkDir = "/var/lib/runnerkit/work/" + runnerName
+	repo.Machine.ServiceName = "runnerkit-ephemeral." + runnerName + ".service"
+	repo.Safety.SafetyProfile = "ephemeral-byo"
+	repo.Ephemeral = state.EphemeralMetadata{
+		Enabled:         true,
+		TTL:             "24h",
+		LogArchivePath:  "/var/lib/runnerkit/ephemeral/" + runnerName + "/logs",
+		FinalizerStatus: "pending",
+		CleanupCommand:  "runnerkit down --repo owner/repo",
+	}
+	return repo
+}
+
+// EphemeralCloudRepositoryState returns a repository state fixture for
+// an ephemeral cloud runner provisioned on Hetzner. The runner name uses
+// the deterministic short id "20260501t183000"; labels include
+// `ephemeral`; provider tags include `mode=ephemeral`; and CleanupCommand
+// points at `runnerkit destroy --repo owner/repo` so cleanup tests prove
+// cloud ephemeral cleanup goes through `destroy`.
+func EphemeralCloudRepositoryState() state.RepositoryState {
+	repo := CloudRepositoryState()
+	runnerName := "runnerkit-owner-repo-ephemeral-20260501t183000"
+	repo.Runner.Mode = "ephemeral"
+	repo.Runner.Name = runnerName
+	repo.Runner.Labels = []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "ephemeral"}
+	repo.Runner.WorkflowSnippet = labels.WorkflowSnippet(repo.Runner.Labels)
+	repo.Machine.InstallPath = "/opt/actions-runner/" + runnerName
+	repo.Machine.WorkDir = "/var/lib/runnerkit/work/" + runnerName
+	repo.Machine.ServiceName = "runnerkit-ephemeral." + runnerName + ".service"
+	repo.Safety.SafetyProfile = "ephemeral-cloud"
+	repo.Ephemeral = state.EphemeralMetadata{
+		Enabled:         true,
+		TTL:             "24h",
+		LogArchivePath:  "/var/lib/runnerkit/ephemeral/" + runnerName + "/logs",
+		FinalizerStatus: "pending",
+		CleanupCommand:  "runnerkit destroy --repo owner/repo",
+	}
+	return repo
+}
+
 func CloudRepositoryState() state.RepositoryState {
 	repo := HealthyRepositoryState()
 	repo.Machine.Kind = "cloud-ssh"

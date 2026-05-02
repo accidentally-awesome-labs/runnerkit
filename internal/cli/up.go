@@ -235,9 +235,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 			return err
 		}
 		if jsonOutput {
-			return renderer.JSON(ephemeralCompletionJSON(repo.FullName, modeDecision, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, false))
+			return renderer.JSON(ephemeralCompletionJSON(repo.FullName, modeDecision, mergeWarnings(decision.Warnings, modeDecision.Warnings), store.Path(), target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, false))
 		}
-		return renderEphemeralCompletionHuman(renderer, repo.FullName, modeDecision, decision.Warnings, store.Path(), target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, false)
+		return renderEphemeralCompletionHuman(renderer, repo.FullName, modeDecision, mergeWarnings(decision.Warnings, modeDecision.Warnings), store.Path(), target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, false)
 	}
 
 	repoState := buildBYORepositoryState(deps, repo, status.Source, decision, labelSet, target, hostKey, acceptedAt, bootstrapOpts, onlineRunner)
@@ -739,9 +739,9 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 			return NewExitError(ExitStateIO, err)
 		}
 		if jsonOutput {
-			return renderer.JSON(ephemeralCompletionJSON(repo.FullName, modeDecision, decision.Warnings, store.Path(), readyMachine.Target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, true))
+			return renderer.JSON(ephemeralCompletionJSON(repo.FullName, modeDecision, mergeWarnings(decision.Warnings, modeDecision.Warnings), store.Path(), readyMachine.Target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, true))
 		}
-		return renderEphemeralCompletionHuman(renderer, repo.FullName, modeDecision, decision.Warnings, store.Path(), readyMachine.Target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, true)
+		return renderEphemeralCompletionHuman(renderer, repo.FullName, modeDecision, mergeWarnings(decision.Warnings, modeDecision.Warnings), store.Path(), readyMachine.Target, labelSet, bootstrapOpts, onlineRunner, opts.ephemeralTTL, true)
 	}
 	repoState := buildCloudRepositoryState(deps, repo, status.Source, decision, labelSet, readyMachine.Target, hostKey, input, plan, finalResult, bootstrapOpts, onlineRunner, opts.sshKey)
 	if err := store.SaveRepository(repoState, true); err != nil {
@@ -1324,8 +1324,21 @@ func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source g
 // preserving order and avoiding nil slices in JSON output.
 func mergeWarnings(safety []string, mode []string) []string {
 	out := make([]string, 0, len(safety)+len(mode))
-	out = append(out, safety...)
-	out = append(out, mode...)
+	seen := map[string]bool{}
+	for _, warning := range safety {
+		if warning == "" || seen[warning] {
+			continue
+		}
+		seen[warning] = true
+		out = append(out, warning)
+	}
+	for _, warning := range mode {
+		if warning == "" || seen[warning] {
+			continue
+		}
+		seen[warning] = true
+		out = append(out, warning)
+	}
 	if out == nil {
 		return []string{}
 	}
