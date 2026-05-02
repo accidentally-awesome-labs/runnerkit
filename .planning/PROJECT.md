@@ -18,10 +18,9 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 - Phase 2 complete (2026-04-29): RunnerKit has the BYO persistent runner happy path: SSH target intake, host-key trust, Linux/systemd preflight, non-root bootstrap scripts, repository runner registration, online verification, persistent state, RunnerKit label guidance, safety warnings, fake smoke coverage, and BYO quickstart docs.
 - Phase 3 complete (2026-04-29): RunnerKit has BYO operations hardening: read-only `status`, bounded redacted `logs`, read-only `doctor` findings, guided `recover`, safe `down` cleanup, stale GitHub deregistration, partial cleanup checkpoints, and updated troubleshooting/cleanup docs.
 - Phase 4 complete (2026-05-01): RunnerKit has one recommended Hetzner cloud path with plan-before-mutation provisioning, env-only provider credentials, cloud inventory in state, shared BYO bootstrap/registration lifecycle, provider-aware status/logs/doctor, billable `destroy` cleanup, provider verification before state removal, and cloud quickstart docs.
+- Phase 5 complete (2026-05-02): RunnerKit has explicit `--mode persistent|ephemeral` selection with `--ephemeral-ttl 24h` default, mode/profile tradeoff rendering before mutation, mode-aware safety policy that blocks public/fork persistent runs and steers untrusted workloads to ephemeral, scoped one-job ephemeral lifecycle with cleanup finalizers and TTL safeguards, `_diag` log preservation across `down`/`destroy`, ephemeral-aware `status`/`logs`/`doctor`, `docs/safety.md` self-hosted guidance with quickstart updates, and E2E coverage for trusted+untrusted persistent/ephemeral.
 
 ### Active
-
-- [ ] Developer can choose, or be guided toward, ephemeral-per-job runners when stronger isolation is needed.
 
 ### Out of Scope
 
@@ -33,7 +32,7 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 
 ## Current State
 
-Phase 4 is complete and verified. RunnerKit now supports the BYO persistent path plus one recommended Hetzner cloud path: `runnerkit up --cloud hetzner` renders a plan, provisions a cloud runner, reuses the shared BYO bootstrap/registration lifecycle, and persists provider inventory for operations. `runnerkit status`, `runnerkit logs`, and `runnerkit doctor` surface provider facts without mutation, while `runnerkit destroy` plans and verifies GitHub/provider cleanup before removing local cloud state. Next work is Phase 5: scoped ephemeral mode and safety profiles.
+Phase 5 is complete and verified. RunnerKit now offers explicit mode/profile selection: `runnerkit up --mode persistent|ephemeral` (default ephemeral TTL 24h) with a tradeoff prompt and renderer that show cost, isolation, cleanup, and operational differences before any setup-path mutation. Mode-aware safety policy blocks persistent runs on public/fork repos, recommends ephemeral cloud as the safer untrusted-workload path, and gates ephemeral BYO on public/fork behind a typed acknowledgement. Ephemeral runs use one-job registration with a 24h TTL safeguard, cleanup finalizers that preserve `_diag` archives across `down` and `destroy`, and ephemeral-aware status/logs/doctor that honor remote sentinel finalizers. `docs/safety.md` plus updated README/BYO/cloud quickstarts document when persistent self-hosted is unsafe and when ephemeral mode is recommended. Next work is Phase 6: release, upgrade, docs, and v1 validation.
 
 ## Context
 
@@ -69,7 +68,7 @@ Important product shape decisions gathered during initialization:
 | Make the interface CLI-only                                        | User selected CLI-only for day-to-day use; avoids dashboard scope and supports fast setup.                                                                                         | - Pending   |
 | Register runners only, do not edit workflows                       | User wants the tool to register runners and labels; developers update workflow files themselves. Phase 2 completion output and docs print snippets without mutating workflow YAML. | Accepted    |
 | Support BYO machines and cloud provisioning                        | Phases 2-4 delivered the BYO Linux/systemd persistent lifecycle and one recommended Hetzner cloud path through setup, operations, recovery/destroy, and cleanup documentation.     | Accepted    |
-| Support both ephemeral and persistent runner models with a default | Phase 2 established persistent as the trusted-private default; explicit ephemeral mode remains planned for Phase 5.                                                                | In Progress |
+| Support both ephemeral and persistent runner models with a default | Phase 2 established persistent as the trusted-private default; Phase 5 added explicit `--mode persistent\|ephemeral` with 24h ephemeral TTL, mode-aware safety policy, and tradeoff rendering before mutation. | Accepted    |
 | Defer enterprise features                                          | User explicitly scoped out enterprise controls for v1.                                                                                                                             | - Pending   |
 | Use real GitHub service as production default                      | Phase 1 verification found fake-permitted auth/metadata unsafe; production now defaults to `gh.NewService` with `github.OSCommandRunner{}` while tests inject fakes explicitly.    | Accepted    |
 | Store explicit SSH host-key trust                                  | Phase 2 requires accepted fingerprints in state and fail-closed behavior on mismatch before remote mutation.                                                                       | Accepted    |
@@ -98,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-_Last updated: 2026-05-01 after Phase 4 completion_
+_Last updated: 2026-05-02 after Phase 5 completion_
