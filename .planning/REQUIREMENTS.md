@@ -59,7 +59,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **DOC-01**: Developer can follow a concise quickstart for the BYO machine path.
 - [x] **DOC-02**: Developer can follow a concise quickstart for the recommended cloud path.
 - [x] **DOC-03**: Developer can read safety guidance explaining when persistent self-hosted runners are unsafe and when ephemeral mode is recommended.
-- [ ] **DOC-04**: Developer can read cleanup and troubleshooting guidance for common failure modes.
+- [x] **DOC-04**: Developer can read cleanup and troubleshooting guidance for common failure modes.
 
 ## v2 Requirements
 
@@ -127,7 +127,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DOC-01      | Phase 2 | Complete |
 | DOC-02      | Phase 4 | Complete |
 | DOC-03      | Phase 5 | Complete |
-| DOC-04      | Phase 6 | Pending  |
+| DOC-04      | Phase 6 | Complete |
 
 **Coverage:**
 

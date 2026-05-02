@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-02-upgrade-and-state-migration-PLAN.md
-last_updated: "2026-05-02T20:35:41.776Z"
+stopped_at: Completed 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md
+last_updated: "2026-05-02T20:55:15.989Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 23
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-05-02
 
@@ -58,6 +58,7 @@ _Updated after each plan completion_
 | Phase 05-scoped-ephemeral-mode-and-safety-profiles P02 | 23 min | 3 tasks | 24 files |
 | Phase 05-scoped-ephemeral-mode-and-safety-profiles P03 | 16 min | 3 tasks | 13 files |
 | Phase 06-release-upgrade-docs-and-v1-validation P02 | 12 min | 3 tasks tasks | 12 files files |
+| Phase 06-release-upgrade-docs-and-v1-validation P03 | 14m | 4 tasks tasks | 20 files files |
 
 ## Accumulated Context
 
@@ -119,6 +120,11 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: Lazy update-check honors six silent paths (jsonOutput, $CI, $RUNNERKIT_NO_UPDATE_NOTIFIER, network error, fresh cache, same-version response); uses conditional GET via ETag to avoid re-downloading payloads.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: runnerkit upgrade is print-only (channel-detect Homebrew/binary/unknown); reads latest from cache so the command is instantaneous and deterministic in CI.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: upgrade-runner refuses without --force when ephemeral FinalizerStatus is waiting/busy/empty; no-ops on completed/ttl_expired; State.RunnerTemplateVersion is bumped only after Apply returns nil.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: STATE and CORE codes share docs/troubleshooting/cleanup.md so the file matrix stays at exactly 6 (auth, ssh, bootstrap, github, provider, cleanup) per D-14.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: RKD-BOOT-001 reserved; RKD-BOOT-002 maps to runner_version_stale (Plan 06-02), the most-likely runtime warning. Reserved-numbering note in README components-table footnote prevents the gap from looking like a docs bug.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: Append (not prepend) RKD codes to remediation arrays so existing tests indexing remediation[0] keep passing; the stable code lives at remediation[len-1].
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: errcodes.URL detection rule — keep .md suffix iff base contains /blob/ (GitHub blob URLs) and strip it otherwise (static-site URLs). No separate config flag required.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: ErrSchemaTooNew embeds RKD-STATE-004 + default URL via errcodes.FormatLine so err.Error() carries the stable code without wrapper at every call site; errors.Is wiring preserved.
 
 ### Pending Todos
 
@@ -136,6 +142,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T20:35:41.772Z
-Stopped at: Completed 06-02-upgrade-and-state-migration-PLAN.md
+Last session: 2026-05-02T20:55:15.986Z
+Stopped at: Completed 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md
 Resume file: None
