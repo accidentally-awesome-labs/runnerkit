@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/salar/runnerkit/internal/bootstrap"
 	"github.com/salar/runnerkit/internal/preflight"
 	"github.com/salar/runnerkit/internal/state"
 )
@@ -113,6 +114,16 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	}
 	if len(repoState.Cleanup.Notes) > 0 || len(repoState.Operations) > 0 {
 		add("cleanup_pending", SeverityWarning, "state", "cleanup checkpoints or notes are pending", downDryRun)
+	}
+	// Stale runner version: when the saved RunnerTemplateVersion is older
+	// than the bundled `bootstrap.RunnerVersion`, surface a warning that
+	// points at `runnerkit upgrade-runner` (D-08). Plan 06-03 will map this
+	// finding ID to RKD-BOOT-002 via the errcodes package; here we keep the
+	// snake_case finding ID consistent with the existing convention.
+	if observedPin := repoState.RunnerTemplateVersion; observedPin != "" && observedPin != bootstrap.RunnerVersion {
+		add("runner_version_stale", SeverityWarning, "bootstrap",
+			fmt.Sprintf("installed runner version %s is older than bundled pin %s", observedPin, bootstrap.RunnerVersion),
+			"runnerkit upgrade-runner --repo "+repo)
 	}
 	// Ephemeral lifecycle findings: surface waiting/busy/completed/
 	// ttl_expired/cleanup_pending so doctor reports the same vocabulary

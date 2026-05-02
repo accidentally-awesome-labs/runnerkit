@@ -122,6 +122,8 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newDownCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newDestroyCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newStateCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newUpgradeCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newUpgradeRunnerCommand(deps, &jsonOutput, &noColor))
 
 	return root
 }
