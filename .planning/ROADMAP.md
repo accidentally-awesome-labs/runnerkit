@@ -138,10 +138,10 @@ Plans:
 
 Plans:
 
-- [ ] 06-01: Release packaging, checksums, install instructions, and supported-platform smoke tests.
-- [ ] 06-02: Runner/CLI upgrade workflow, state migrations, compatibility checks, and rollback guidance.
-- [ ] 06-03: Troubleshooting, cleanup, recovery, and common-failure documentation.
-- [ ] 06-04: End-to-end v1 validation across BYO, cloud, persistent, ephemeral, status, doctor, and cleanup paths.
+- [ ] 06-01-release-packaging-PLAN.md — GoReleaser v2 + cosign keyless + Homebrew Cask + tag-triggered release workflow + PR CI gate + README install matrix + maintainer release-process docs.
+- [ ] 06-02-upgrade-and-state-migration-PLAN.md — Lazy 24h-cached update notice + runnerkit upgrade (channel detect, print-only) + runnerkit upgrade-runner (re-Apply with bundled pin) + forward-only state migration with side-by-side backup + ExitStateSchemaTooNew + doctor stale-runner finding.
+- [ ] 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md — internal/errcodes/ stable RKD-<COMPONENT>-NNN registry + RUNNERKIT_DOCS_BASE override + 6 docs/troubleshooting/ component files with explicit anchors and Symptom/Diagnosis/Fix structure + CLI emit-site wiring.
+- [ ] 06-04-v1-validation-and-live-smoke-PLAN.md — make smoke-live targets + cmd/_smokebin/empty_precheck + destroy_verify (D-12 gates 1+2) + 10-min stopwatch checklist + 06-VERIFICATION.md baseline + RELEASE-NOTES-v1.0.0.md.
 
 ## Progress
 
