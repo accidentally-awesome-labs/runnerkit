@@ -145,6 +145,8 @@ func TestDownEphemeralBYOPreservesLogsBeforeFileRemoval(t *testing.T) {
 	repo := testsupport.HealthyRepositoryState()
 	repo.Runner.Mode = "ephemeral"
 	repo.Runner.Name = "runnerkit-owner-repo-ephemeral-fake1"
+	repo.Machine.InstallPath = "/opt/actions-runner/runnerkit-owner-repo-ephemeral-fake1"
+	repo.Machine.WorkDir = "/var/lib/runnerkit/work/runnerkit-owner-repo-ephemeral-fake1"
 	repo.Machine.ServiceName = "runnerkit-ephemeral.runnerkit-owner-repo-ephemeral-fake1.service"
 	repo.Safety.SafetyProfile = "ephemeral-byo"
 	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", LogArchivePath: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-fake1/logs", FinalizerStatus: "completed", CleanupCommand: "runnerkit down --repo owner/repo"}

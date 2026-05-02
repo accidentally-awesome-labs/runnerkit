@@ -114,6 +114,27 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	if len(repoState.Cleanup.Notes) > 0 || len(repoState.Operations) > 0 {
 		add("cleanup_pending", SeverityWarning, "state", "cleanup checkpoints or notes are pending", downDryRun)
 	}
+	// Ephemeral lifecycle findings: surface waiting/busy/completed/
+	// ttl_expired/cleanup_pending so doctor reports the same vocabulary
+	// as status without re-running the live remote probes.
+	if repoState.Runner.Mode == "ephemeral" {
+		cleanup := repoState.Ephemeral.CleanupCommand
+		if cleanup == "" {
+			cleanup = downDryRun
+		}
+		switch {
+		case hasEphemeralCleanupPending(repoState.Operations, repoState.Cleanup.Notes):
+			add(ReasonEphemeralCleanupPending, SeverityWarning, "ephemeral", "ephemeral cleanup checkpoints are pending", cleanup)
+		case ttlExpired(&repoState) && repoState.Ephemeral.FinalizerStatus != "completed":
+			add(ReasonEphemeralTTLExpired, SeverityWarning, "ephemeral", "ephemeral TTL safeguard expired before completion", cleanup)
+		case !observed.GitHub.Found && repoState.Ephemeral.FinalizerStatus == "completed":
+			add(ReasonEphemeralCompleted, SeverityPass, "ephemeral", "ephemeral runner finalized after one job", cleanup)
+		case observed.GitHub.Busy:
+			add(ReasonEphemeralBusy, SeverityPass, "ephemeral", "ephemeral runner is running its one allowed job", cleanup)
+		case observed.GitHub.Found:
+			add(ReasonEphemeralWaiting, SeverityPass, "ephemeral", "ephemeral runner is online and waiting for its one job", cleanup)
+		}
+	}
 	add("logs_available", SeverityPass, "logs", "bounded systemd journal and runner diag collection is available", logsCmd)
 	return report
 }

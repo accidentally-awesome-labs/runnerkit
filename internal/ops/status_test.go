@@ -61,9 +61,9 @@ func TestClassifyHealthStates(t *testing.T) {
 func TestClassifyEphemeralStates(t *testing.T) {
 	repo := testsupport.HealthyRepositoryState()
 	repo.Runner.Mode = "ephemeral"
-	now := repo.UpdatedAt
-	expires := now.Add(24 * 60 * 60 * 1e9)
-	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", ExpiresAt: &expires, FinalizerStatus: "pending", CleanupCommand: "runnerkit down --repo owner/repo"}
+	now := time.Now()
+	future := now.Add(time.Hour)
+	repo.Ephemeral = state.EphemeralMetadata{Enabled: true, TTL: "24h", ExpiresAt: &future, FinalizerStatus: "pending", CleanupCommand: "runnerkit down --repo owner/repo"}
 
 	t.Run("ephemeral_completed when github absent and finalizer completed", func(t *testing.T) {
 		repoState := repo

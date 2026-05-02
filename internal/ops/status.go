@@ -2,6 +2,7 @@ package ops
 
 import (
 	"strings"
+	"time"
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/state"
@@ -41,7 +42,28 @@ const (
 	ReasonProviderResourceMissing   = "provider_resource_missing"
 	ReasonProviderDrift             = "provider_drift"
 	ReasonCollectionError           = "collection_error"
+
+	// Ephemeral lifecycle reason IDs.
+	ReasonEphemeralWaiting        = "ephemeral_waiting"
+	ReasonEphemeralBusy           = "ephemeral_busy"
+	ReasonEphemeralCompleted      = "ephemeral_completed"
+	ReasonEphemeralTTLExpired     = "ephemeral_ttl_expired"
+	ReasonEphemeralCleanupPending = "ephemeral_cleanup_pending"
 )
+
+// EphemeralFact records the ephemeral lifecycle facts surfaced via
+// `status` JSON `sources.ephemeral` and human bullets. RunnerKit
+// populates it from saved EphemeralMetadata plus the remote sentinel
+// state.json when SSH is reachable.
+type EphemeralFact struct {
+	Mode            string `json:"mode"`
+	State           string `json:"state"`
+	TTL             string `json:"ttl,omitempty"`
+	ExpiresAt       string `json:"expires_at,omitempty"`
+	LogArchivePath  string `json:"log_archive_path,omitempty"`
+	FinalizerStatus string `json:"finalizer_status,omitempty"`
+	CleanupCommand  string `json:"cleanup_command,omitempty"`
+}
 
 type Reason struct {
 	ID       string `json:"id"`
@@ -126,6 +148,7 @@ type ObservedRunner struct {
 	Service          ServiceFact            `json:"service"`
 	Labels           LabelFact              `json:"labels"`
 	Provider         ProviderFact           `json:"provider"`
+	Ephemeral        EphemeralFact          `json:"ephemeral"`
 	CollectionErrors []CollectionError      `json:"collection_errors,omitempty"`
 }
 
@@ -170,6 +193,15 @@ func Classify(observed ObservedRunner) Health {
 	if observed.SSH.HostKey == "mismatch" {
 		return health(HealthBroken, "RunnerKit stopped because the saved host key fingerprint does not match the current host.", reason(ReasonSSHHostKeyMismatch, SeverityError, "ssh", "saved host key fingerprint differs from observed host"), next("runnerkit doctor --repo "+repo, "Verify the machine identity before recovery."))
 	}
+	// Ephemeral mode classification runs BEFORE the persistent
+	// `!observed.GitHub.Found` branch so missing GitHub runners after a
+	// completed ephemeral job are treated as terminal progress, not
+	// persistent recovery conditions.
+	if observed.State.Runner.Mode == "ephemeral" {
+		if classified, matched := classifyEphemeral(observed, repo); matched {
+			return classified
+		}
+	}
 	if observed.Service.LoadState == "not-found" || strings.Contains(strings.ToLower(observed.Service.Error), "missing") {
 		if !observed.GitHub.Found {
 			return health(HealthBroken, "RunnerKit can't determine runner health because required facts are missing.", reason(ReasonServiceMissing, SeverityError, "systemd", "saved service is missing"), next("runnerkit doctor --repo "+repo, "Inspect missing service and runner records."))
@@ -209,6 +241,68 @@ func Classify(observed ObservedRunner) Health {
 		return health(HealthReady, "Runner is online, idle, reachable over SSH, service is active, and labels match.")
 	}
 	return health(HealthUnknown, "RunnerKit can't determine runner health because required facts are missing.", reason(ReasonCollectionError, SeverityWarning, "status", "insufficient status facts"), next("runnerkit doctor --repo "+repo, "Collect deeper diagnostics."))
+}
+
+// classifyEphemeral applies Phase 5 ephemeral lifecycle classification
+// rules that run before persistent recovery conditions. It returns
+// (Health, true) when the observed state matches an ephemeral
+// terminal/active state and (zero, false) when callers should fall
+// through to persistent classification.
+func classifyEphemeral(observed ObservedRunner, repo string) (Health, bool) {
+	repoState := observed.State
+	cleanup := repoState.Ephemeral.CleanupCommand
+	if cleanup == "" {
+		cleanup = "runnerkit down --repo " + repo
+	}
+	finalizer := strings.ToLower(repoState.Ephemeral.FinalizerStatus)
+	// Cleanup pending: ephemeral run finished (finalizer completed) but
+	// down/destroy still has pending checkpoints we must surface so the
+	// CLI does not advertise success.
+	if hasEphemeralCleanupPending(repoState.Operations, repoState.Cleanup.Notes) && (finalizer == "completed" || !observed.GitHub.Found) {
+		return health(HealthNeedsAttention, "Ephemeral cleanup is incomplete and pending checkpoints remain.", reason(ReasonEphemeralCleanupPending, SeverityWarning, "state", "pending ephemeral cleanup checkpoints"), next(cleanup, "Re-run cleanup to finish removing the ephemeral runner.")), true
+	}
+	// TTL expired before completion: state expiry is in the past and
+	// the finalizer never reported completed.
+	if ttlExpired(repoState) && finalizer != "completed" {
+		return health(HealthNeedsAttention, "Ephemeral runner TTL expired before a job completed. Run cleanup now.", reason(ReasonEphemeralTTLExpired, SeverityWarning, "ephemeral", "TTL safeguard expired"), next(cleanup, "Run cleanup to finalize the expired ephemeral runner.")), true
+	}
+	// Completed: GitHub auto-deregistered the ephemeral runner and the
+	// finalizer reported completed. This is terminal happy progress —
+	// the caller should NOT surface github_runner_missing as a
+	// persistent recovery hint.
+	if !observed.GitHub.Found && finalizer == "completed" {
+		return health(HealthNeedsAttention, "Ephemeral runner completed one job and needs cleanup.", reason(ReasonEphemeralCompleted, SeverityPass, "ephemeral", "ephemeral runner finalized after one job"), next(cleanup, "Clean up the completed ephemeral runner.")), true
+	}
+	// Busy: GitHub reports the runner busy.
+	if observed.GitHub.Found && observed.GitHub.Busy {
+		return health(HealthBusy, "Ephemeral runner is running its one allowed job.", reason(ReasonEphemeralBusy, SeverityPass, "github", "GitHub runner busy=true"), next("Wait for the GitHub Actions job to finish, then run "+cleanup, "Ephemeral runner is running its one allowed job.")), true
+	}
+	// Waiting: GitHub reports the runner online and not busy.
+	if observed.GitHub.Found && strings.EqualFold(observed.GitHub.Status, "online") && !observed.GitHub.Busy {
+		return health(HealthReady, "Ephemeral runner is online and waiting for its one job.", reason(ReasonEphemeralWaiting, SeverityPass, "github", "GitHub runner online and idle"), next("Trigger a workflow targeting the runs-on snippet; cleanup with "+cleanup, "Ephemeral runner is online and waiting for its one job.")), true
+	}
+	return Health{}, false
+}
+
+func ttlExpired(repoState *state.RepositoryState) bool {
+	if repoState == nil || repoState.Ephemeral.ExpiresAt == nil {
+		return false
+	}
+	return repoState.Ephemeral.ExpiresAt.Before(time.Now())
+}
+
+func hasEphemeralCleanupPending(operations []state.OperationCheckpoint, notes []string) bool {
+	for _, op := range operations {
+		if op.Status == "pending" && (strings.Contains(op.Message, "ephemeral_log_preservation") || strings.Contains(op.Artifact, "ephemeral")) {
+			return true
+		}
+	}
+	for _, note := range notes {
+		if strings.Contains(note, "ephemeral_log_preservation_pending") || strings.Contains(note, "ephemeral_cleanup_pending") {
+			return true
+		}
+	}
+	return false
 }
 
 func serviceFailed(service ServiceFact) bool {

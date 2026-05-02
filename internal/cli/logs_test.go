@@ -84,12 +84,13 @@ func TestLogsEphemeralRendersForwardingWarningAndArchiveSections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ephemeral logs returned error: %v", err)
 	}
+	flat := strings.Join(strings.Fields(out), " ")
 	for _, want := range []string{
 		"/var/lib/runnerkit/ephemeral/",
 		"RunnerKit preserves best-effort logs only; configure external log forwarding for production-grade ephemeral troubleshooting.",
 	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("ephemeral logs missing %q:\n%s", want, out)
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral logs missing %q (flattened):\n%s", want, out)
 		}
 	}
 }

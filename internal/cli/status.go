@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	gh "github.com/salar/runnerkit/internal/github"
 	"github.com/salar/runnerkit/internal/labels"
@@ -87,7 +88,14 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 		if jsonOutput {
 			return renderer.JSON(statusJSONPayload("repo", store.Path(), observed, health))
 		}
-		return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."), ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."), ui.Bullet("Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."))
+		return renderer.Step(1, 1, "runner status",
+			ui.WarningLine("No RunnerKit-managed runner found"),
+			ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."),
+			ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."),
+			ui.Bullet("Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."),
+			ui.WarningLine("No RunnerKit-managed runner is saved for `"+repo.FullName+"`."),
+			ui.Bullet("Run `runnerkit up --repo "+repo.FullName+" --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine."),
+		)
 	}
 	result := collectStatus(ctx, deps, store.Path(), repoState, true)
 	if jsonOutput {
@@ -128,8 +136,55 @@ func collectStatus(ctx context.Context, deps Dependencies, statePath string, rep
 			observed.Service = ops.ServiceFact{Service: repoState.Machine.ServiceName, Error: "SSH target unavailable"}
 		}
 	}
+	if repoState.Runner.Mode == "ephemeral" {
+		observed.Ephemeral = collectEphemeralFact(ctx, deps, repoState, observed.SSH.Reachable)
+	}
 	health := ops.Classify(observed)
 	return statusResult{Repo: repoState, Observed: observed, Health: health}
+}
+
+// collectEphemeralFact populates the EphemeralFact from saved metadata
+// and, when SSH is reachable, attempts to read the remote sentinel
+// state.json the finalizer writes so RunnerKit can surface the
+// observed finalizer_status (completed/ttl_expired/pending).
+func collectEphemeralFact(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState, sshReachable bool) ops.EphemeralFact {
+	fact := ops.EphemeralFact{
+		Mode:            "ephemeral",
+		TTL:             repoState.Ephemeral.TTL,
+		LogArchivePath:  repoState.Ephemeral.LogArchivePath,
+		FinalizerStatus: repoState.Ephemeral.FinalizerStatus,
+		CleanupCommand:  repoState.Ephemeral.CleanupCommand,
+	}
+	if repoState.Ephemeral.ExpiresAt != nil {
+		fact.ExpiresAt = repoState.Ephemeral.ExpiresAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	fact.State = strings.ToLower(repoState.Ephemeral.FinalizerStatus)
+	if sshReachable && deps.RemoteExecutor != nil {
+		target, err := targetFromState(repoState)
+		if err == nil {
+			parent := strings.TrimSuffix(repoState.Ephemeral.LogArchivePath, "/logs")
+			if parent == "" || parent == repoState.Ephemeral.LogArchivePath {
+				return fact
+			}
+			result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "status.ephemeral.state", Script: "test -f " + shellQuote(parent+"/state.json") + " && cat " + shellQuote(parent+"/state.json") + " || true", Timeout: 5 * time.Second})
+			if err == nil && result.ExitCode == 0 {
+				if status := parseFinalizerStatus(result.Stdout); status != "" {
+					fact.FinalizerStatus = status
+					fact.State = status
+				}
+			}
+		}
+	}
+	return fact
+}
+
+func parseFinalizerStatus(stdout string) string {
+	for _, candidate := range []string{"completed", "ttl_expired", "pending"} {
+		if strings.Contains(stdout, `"finalizer_status":"`+candidate+`"`) || strings.Contains(stdout, `"finalizer_status": "`+candidate+`"`) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func collectProviderFact(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState) ops.ProviderFact {
@@ -271,9 +326,23 @@ func renderStatusHuman(renderer *ui.Renderer, statePath string, result statusRes
 		ui.Bullet("    SSH        " + sshSourceText(observed.SSH)),
 		ui.Bullet("    Service    " + serviceSourceText(observed.Service)),
 		ui.Bullet("    Labels     " + labelsSourceText(observed.Labels)),
+	}
+	if repoState.Runner.Mode == "ephemeral" {
+		lines = append(lines, ui.Bullet("Mode: ephemeral"))
+		if profile := repoState.Safety.SafetyProfile; profile != "" {
+			lines = append(lines, ui.Bullet("Safety profile: "+profile))
+		}
+		if archive := repoState.Ephemeral.LogArchivePath; archive != "" {
+			lines = append(lines, ui.Bullet("Log archive: "+archive))
+		}
+		if cleanup := repoState.Ephemeral.CleanupCommand; cleanup != "" {
+			lines = append(lines, ui.Bullet("Cleanup after the job: "+cleanup))
+		}
+	}
+	lines = append(lines,
 		ui.Bullet(repoState.Runner.WorkflowSnippet),
 		ui.WarningLine(labels.SelfHostedAloneWarning),
-	}
+	)
 	if len(result.Health.NextActions) > 0 && result.Health.State != ops.HealthReady {
 		lines = append(lines, ui.Next("Next: "+result.Health.NextActions[0].Command))
 	}
@@ -395,6 +464,25 @@ func statusJSONPayload(scope string, statePath string, observed ops.ObservedRunn
 	if observed.State != nil {
 		runner = map[string]any{"name": observed.State.Runner.Name, "labels": observed.State.Runner.Labels, "workflow_snippet": observed.State.Runner.WorkflowSnippet}
 	}
+	sources := map[string]any{
+		"state":    map[string]any{"present": observed.StatePresent},
+		"provider": providerJSONSource(observed.Provider),
+		"github":   map[string]any{"found": observed.GitHub.Found, "id": observed.GitHub.ID, "status": observed.GitHub.Status, "busy": observed.GitHub.Busy, "labels": observed.GitHub.Labels},
+		"ssh":      map[string]any{"reachable": observed.SSH.Reachable, "host_key": observed.SSH.HostKey},
+		"systemd":  map[string]any{"service": observed.Service.Service, "active_state": observed.Service.ActiveState, "sub_state": observed.Service.SubState},
+		"labels":   map[string]any{"match": observed.Labels.Match, "missing": observed.Labels.Missing, "extra": observed.Labels.Extra},
+	}
+	if observed.State != nil && observed.State.Runner.Mode == "ephemeral" {
+		sources["ephemeral"] = map[string]any{
+			"mode":             observed.Ephemeral.Mode,
+			"state":            observed.Ephemeral.State,
+			"ttl":              observed.Ephemeral.TTL,
+			"expires_at":       observed.Ephemeral.ExpiresAt,
+			"log_archive_path": observed.Ephemeral.LogArchivePath,
+			"finalizer_status": observed.Ephemeral.FinalizerStatus,
+			"cleanup_command":  observed.Ephemeral.CleanupCommand,
+		}
+	}
 	return map[string]any{
 		"ok":         true,
 		"command":    "status",
@@ -403,13 +491,6 @@ func statusJSONPayload(scope string, statePath string, observed ops.ObservedRunn
 		"state_path": statePath,
 		"health":     health,
 		"runner":     runner,
-		"sources": map[string]any{
-			"state":    map[string]any{"present": observed.StatePresent},
-			"provider": providerJSONSource(observed.Provider),
-			"github":   map[string]any{"found": observed.GitHub.Found, "id": observed.GitHub.ID, "status": observed.GitHub.Status, "busy": observed.GitHub.Busy, "labels": observed.GitHub.Labels},
-			"ssh":      map[string]any{"reachable": observed.SSH.Reachable, "host_key": observed.SSH.HostKey},
-			"systemd":  map[string]any{"service": observed.Service.Service, "active_state": observed.Service.ActiveState, "sub_state": observed.Service.SubState},
-			"labels":   map[string]any{"match": observed.Labels.Match, "missing": observed.Labels.Missing, "extra": observed.Labels.Extra},
-		},
+		"sources":    sources,
 	}
 }

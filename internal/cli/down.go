@@ -257,6 +257,22 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 		results = append(results, cleanupResult{Artifact: string(ops.ArtifactSystemdService), Status: statusFromRemoteResult(result, err), Message: idempotentMessage(result)})
 	}
 	if selected[ops.ArtifactRunnerFiles] && targetErr == nil {
+		// Preserve ephemeral _diag and journal logs to the host archive
+		// directory before removing the install path. We never block
+		// file removal on the preservation step; failures are recorded
+		// as a pending checkpoint via Cleanup.Notes/Operations below.
+		if repoState.Runner.Mode == "ephemeral" {
+			preserveResult, preserveErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{
+				ID:      "ephemeral.logs.preserve",
+				Script:  bootstrap.RenderEphemeralLogPreservationScript(repoState.Machine.InstallPath, repoState.Ephemeral.LogArchivePath, repoState.Machine.ServiceName),
+				Sudo:    true,
+				Timeout: 60 * time.Second,
+			})
+			if preserveErr != nil || preserveResult.ExitCode != 0 {
+				partial = true
+				pending = appendUnique(pending, "ephemeral_log_preservation_pending")
+			}
+		}
 		installPath, workDir, blocked, reason := ops.SafeRunnerPaths(repoState)
 		if blocked {
 			results = append(results, cleanupResult{Artifact: string(ops.ArtifactRunnerFiles), Status: "blocked", Message: reason})

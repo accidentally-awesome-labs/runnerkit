@@ -24,19 +24,21 @@ type destroyOptions struct {
 }
 
 const (
-	destroyConfirmTemplate        = "Destroy cloud runner: type `destroy %s` to remove the GitHub runner registration and RunnerKit-created Hetzner resources."
-	destroyInputRequiredRemedy    = "Pass --yes to apply the cloud destroy plan non-interactively, or pass --dry-run to preview only."
-	destroyBillingImpactCopy      = "Future billing stops only after provider resources are deleted or verified non-billable."
-	destroyIncompleteCopyTemplate = "Cleanup incomplete. RunnerKit kept state with pending cleanup checkpoints so you can rerun runnerkit destroy --repo %s."
-	destroyCompleteCopy           = "Cloud runner destroyed. GitHub runner is absent and RunnerKit-created Hetzner resources are deleted or verified non-billable."
+	destroyConfirmTemplate          = "Destroy cloud runner: type `destroy %s` to remove the GitHub runner registration and RunnerKit-created Hetzner resources."
+	destroyEphemeralConfirmTemplate = "Destroy ephemeral cloud runner: type `destroy %s` to remove the GitHub runner registration and RunnerKit-created Hetzner resources."
+	destroyInputRequiredRemedy      = "Pass --yes to apply the cloud destroy plan non-interactively, or pass --dry-run to preview only."
+	destroyBillingImpactCopy        = "Future billing stops only after provider resources are deleted or verified non-billable."
+	destroyIncompleteCopyTemplate   = "Cleanup incomplete. RunnerKit kept state with pending cleanup checkpoints so you can rerun runnerkit destroy --repo %s."
+	destroyCompleteCopy             = "Cloud runner destroyed. GitHub runner is absent and RunnerKit-created Hetzner resources are deleted or verified non-billable."
 
-	pendingGitHubCleanup        = "github_cleanup_pending"
-	pendingRemoteCleanup        = "remote_cleanup_pending"
-	pendingProviderServer       = "provider_server_pending"
-	pendingProviderSSHKey       = "provider_ssh_key_pending"
-	pendingProviderFirewall     = "provider_firewall_pending"
-	pendingProviderPrimaryIP    = "provider_primary_ip_pending"
-	pendingProviderVerification = "provider_verification_pending"
+	pendingGitHubCleanup              = "github_cleanup_pending"
+	pendingRemoteCleanup              = "remote_cleanup_pending"
+	pendingProviderServer             = "provider_server_pending"
+	pendingProviderSSHKey             = "provider_ssh_key_pending"
+	pendingProviderFirewall           = "provider_firewall_pending"
+	pendingProviderPrimaryIP          = "provider_primary_ip_pending"
+	pendingProviderVerification       = "provider_verification_pending"
+	pendingEphemeralLogPreservation   = "ephemeral_log_preservation_pending"
 )
 
 func newDestroyCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
@@ -80,7 +82,7 @@ func runDestroy(deps Dependencies, jsonOutput bool, noColor bool, opts *destroyO
 		}
 		return renderCloudDestroyPlanHuman(renderer, plan)
 	}
-	if err := confirmCloudDestroy(ctx, deps, renderer, opts, jsonOutput, repo.FullName); err != nil {
+	if err := confirmCloudDestroy(ctx, deps, renderer, opts, jsonOutput, repo.FullName, repoState.Runner.Mode == "ephemeral"); err != nil {
 		return err
 	}
 	results, verification, partial, pending, stateRemoved, err := applyCloudDestroy(ctx, deps, renderer, store, repoState)
@@ -93,7 +95,7 @@ func runDestroy(deps Dependencies, jsonOutput bool, noColor bool, opts *destroyO
 	return renderCloudDestroyResultHuman(renderer, repo.FullName, results, partial, pending)
 }
 
-func confirmCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *destroyOptions, jsonOutput bool, fullName string) error {
+func confirmCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *destroyOptions, jsonOutput bool, fullName string, ephemeral bool) error {
 	if opts.yes {
 		return nil
 	}
@@ -110,8 +112,12 @@ func confirmCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Re
 		_ = renderer.Error("input_required", message, []string{destroyInputRequiredRemedy})
 		return NewExitError(ExitInputRequired, errors.New(message))
 	}
+	template := destroyConfirmTemplate
+	if ephemeral {
+		template = destroyEphemeralConfirmTemplate
+	}
 	want := "destroy " + fullName
-	got, err := inputPrompter.Input(ctx, ui.Prompt{Message: fmt.Sprintf(destroyConfirmTemplate, fullName)})
+	got, err := inputPrompter.Input(ctx, ui.Prompt{Message: fmt.Sprintf(template, fullName)})
 	if err != nil {
 		return err
 	}
@@ -148,6 +154,21 @@ func applyCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Rend
 	sshReachable := status.Observed.SSH.Reachable
 	target, targetErr := targetFromState(repoState)
 
+	// Ephemeral cloud runners preserve _diag and journal logs to the
+	// host log archive before file removal so cloud destroy never
+	// silently discards troubleshooting evidence.
+	if repoState.Runner.Mode == "ephemeral" && sshReachable && targetErr == nil {
+		preserveResult, preserveErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{
+			ID:      "ephemeral.logs.preserve",
+			Script:  bootstrap.RenderEphemeralLogPreservationScript(repoState.Machine.InstallPath, repoState.Ephemeral.LogArchivePath, repoState.Machine.ServiceName),
+			Sudo:    true,
+			Timeout: 60 * time.Second,
+		})
+		if preserveErr != nil || preserveResult.ExitCode != 0 {
+			partial = true
+			pending = appendUnique(pending, pendingEphemeralLogPreservation)
+		}
+	}
 	if sshReachable && targetErr == nil {
 		removal, err := deps.GitHub.CreateRemovalToken(ctx, repoState.Repo)
 		if err != nil {

@@ -144,8 +144,8 @@ func TestStatusEphemeralCompletedTreatsMissingGitHubRunnerAsTerminal(t *testing.
 		t.Fatalf("expected ephemeral_completed summary in:\n%s", out)
 	}
 	for _, want := range []string{"Mode: ephemeral", "Safety profile: ephemeral-byo", "Log archive: /var/lib/runnerkit/ephemeral/", "Cleanup after the job: runnerkit down --repo owner/repo"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("ephemeral status missing %q:\n%s", want, out)
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ephemeral status missing %q (flattened):\n%s", want, out)
 		}
 	}
 	if strings.Contains(flat, "github_runner_missing") {
@@ -158,12 +158,13 @@ func TestStatusMissingStateRendersUISpecEmptyCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing state status returned error: %v", err)
 	}
+	flat := strings.Join(strings.Fields(out), " ")
 	for _, want := range []string{
 		"No RunnerKit-managed runner is saved for `owner/repo`.",
 		"Run `runnerkit up --repo owner/repo --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine.",
 	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("ui-spec empty state missing %q:\n%s", want, out)
+		if !strings.Contains(flat, want) {
+			t.Fatalf("ui-spec empty state missing %q (flattened):\n%s", want, out)
 		}
 	}
 }

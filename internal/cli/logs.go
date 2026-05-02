@@ -88,6 +88,9 @@ func renderLogsHuman(renderer *ui.Renderer, repoState rkstate.RepositoryState, b
 			ui.Bullet("Billable resources: "+strings.Join(repoState.Cleanup.ProviderResourceIDs, ", ")),
 		)
 	}
+	if repoState.Runner.Mode == "ephemeral" && strings.TrimSpace(repoState.Ephemeral.LogArchivePath) != "" {
+		lines = append(lines, ui.Bullet("Log archive: "+repoState.Ephemeral.LogArchivePath))
+	}
 	for _, section := range bundle.Sections {
 		lines = append(lines, ui.Bullet(section.Title))
 		if section.Metadata != "" {
@@ -101,6 +104,9 @@ func renderLogsHuman(renderer *ui.Renderer, repoState rkstate.RepositoryState, b
 		}
 	}
 	lines = append(lines, ui.WarningLine("Review logs before sharing; redaction is best-effort for workflow-produced secrets."))
+	if repoState.Runner.Mode == "ephemeral" {
+		lines = append(lines, ui.WarningLine("RunnerKit preserves best-effort logs only; configure external log forwarding for production-grade ephemeral troubleshooting."))
+	}
 	if len(bundle.Warnings) > 0 {
 		lines = append(lines, ui.Bullet("collection warnings"))
 		for _, warning := range bundle.Warnings {
