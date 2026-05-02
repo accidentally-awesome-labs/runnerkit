@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-05-02T15:43:26.892Z"
+status: verifying
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-05-02T16:04:26.861Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 
 Phase: 05 (scoped-ephemeral-mode-and-safety-profiles) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-02
 
 Milestone Progress: [███████░░░] 67%
@@ -56,6 +56,7 @@ Milestone Progress: [███████░░░] 67%
 _Updated after each plan completion_
 | Phase 05 P01 | 16 | 3 tasks | 11 files |
 | Phase 05-scoped-ephemeral-mode-and-safety-profiles P02 | 23 min | 3 tasks | 24 files |
+| Phase 05-scoped-ephemeral-mode-and-safety-profiles P03 | 16 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,10 @@ Recent decisions affecting current work:
 - [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: bootstrap.ApplyEphemeral mirrors Apply's command shape but replaces svc.sh install/start with finalizer/service/TTL-timer/verify steps; ServiceNotActiveError surfaces only for ephemeral install/verify failures.
 - [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: ephemeral.logs.preserve runs before file/provider mutation in down/destroy and never blocks cleanup; failures record ephemeral_log_preservation_pending and surface via ephemeral_cleanup_pending classification.
 - [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: provider.ProvisionInput.Mode drives HetznerOwnershipTags mode=ephemeral and ephemeral cloud resource names; persistent default unchanged.
+- [Phase 05]: Plan 05-03: docs/safety.md owns canonical Phase 5 safety copy; README/BYO/cloud quickstarts link to it and only repeat sentences required by docs grep contract.
+- [Phase 05]: Plan 05-03: Mode-decision warnings (notably the public/fork ephemeral cloud recommendation) merge into ephemeral BYO/cloud completion via mergeWarnings with de-duplication so safety guidance flows to user-visible output.
+- [Phase 05]: Plan 05-03: classifyEphemeral prefers observed remote sentinel finalizer status over saved RepositoryState so freshly-completed/TTL-expired ephemeral runners classify as terminal even when state on disk records 'pending'.
+- [Phase 05]: Plan 05-03: EphemeralBYO/Cloud RepositoryState fixtures share the deterministic ephemeral runner name runnerkit-owner-repo-ephemeral-20260501t183000 so status/logs/doctor/down/destroy regressions assert exact ephemeral artifact paths.
 
 ### Pending Todos
 
@@ -125,6 +130,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T15:43:26.889Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-05-02T16:04:26.857Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
