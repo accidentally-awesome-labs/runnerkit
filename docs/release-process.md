@@ -116,3 +116,49 @@ subsequent releases follow the same template.
 
 The `06-VERIFICATION.md` file (created by `/gsd:verify-work` for Phase 6)
 holds the v1.0.0 baseline as the reference for future releases.
+
+## Stopwatch Checklist (D-13)
+
+This is the 10-minute reliable-runner promise from PROJECT.md Core Value.
+Run this on a CLEAN machine (fresh laptop, fresh VM, clean
+`$HOME/.local/state/runnerkit/`) before tagging each release. The
+maintainer's wall-clock numbers go into `RELEASE-NOTES-vX.Y.Z.md`.
+
+### BYO path (target: ≤ 10 minutes)
+
+| Step | Description                                                       | T0  | T_now | Δ   |
+| ---- | ----------------------------------------------------------------- | --- | ----- | --- |
+| 1    | `gh auth login` (if not already authed)                           |     |       |     |
+| 2    | `runnerkit up --repo $REPO --host user@host --mode persistent`    |     |       |     |
+| 3    | Trigger a workflow targeting the `runnerkit-...` label            |     |       |     |
+| 4    | Observe job runs on the new runner                                |     |       |     |
+| 5    | `runnerkit down --repo $REPO --yes`                               |     |       |     |
+
+Total wall-clock: __ minutes __ seconds.
+
+### Hetzner cloud path (target: ≤ 10 minutes)
+
+| Step | Description                                                       | T0  | T_now | Δ   |
+| ---- | ----------------------------------------------------------------- | --- | ----- | --- |
+| 1    | `gh auth login` (if not already authed)                           |     |       |     |
+| 2    | `export HCLOUD_TOKEN=...` (one-time)                              |     |       |     |
+| 3    | `runnerkit up --repo $REPO --cloud hetzner --mode persistent`     |     |       |     |
+| 4    | Trigger a workflow targeting the `runnerkit-...` label            |     |       |     |
+| 5    | Observe job runs on the new runner                                |     |       |     |
+| 6    | `runnerkit destroy --repo $REPO --yes`                            |     |       |     |
+| 7    | Verify Hetzner Console shows 0 `runnerkit-*` resources            |     |       |     |
+
+Total wall-clock: __ minutes __ seconds.
+Hetzner cost (from project billing dashboard): __ EUR.
+
+### Recording
+
+After running both paths, copy the totals into:
+
+1. `RELEASE-NOTES-v$VERSION.md` (per-release file, committed at tag time).
+2. `.planning/phases/06-release-upgrade-docs-and-v1-validation/06-VERIFICATION.md`
+   for the v1.0.0 baseline (ONE-TIME — overwritten only if the baseline
+   methodology changes).
+
+If either path exceeds 10 minutes, do NOT tag the release. Investigate the
+slow step, fix it, and re-run the stopwatch.
