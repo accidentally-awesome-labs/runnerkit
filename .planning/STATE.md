@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Plan 06-01 closed (Task 5 resolved 'tap-ready'); ready for Plan 06-04 v1 validation and live smoke
-last_updated: "2026-05-04T15:39:38.455Z"
+stopped_at: Plan 06-04 Tasks 1-3 complete; Task 4 awaiting maintainer human-action checkpoint (make smoke-live + fill 06-VERIFICATION.md + RELEASE-NOTES-v1.0.0.md)
+last_updated: "2026-05-04T15:55:52.249Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -60,6 +60,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P02 | 12 min | 3 tasks tasks | 12 files files |
 | Phase 06-release-upgrade-docs-and-v1-validation P03 | 14m | 4 tasks tasks | 20 files files |
 | Phase 06-release-upgrade-docs-and-v1-validation P01 | 5m | 4 tasks (5 planned; Task 5 is human-action checkpoint) tasks | 6 files files |
+| Phase 06-release-upgrade-docs-and-v1-validation P04 | 8m | 3 of 4 tasks (Task 4 is checkpoint:human-action awaiting maintainer) tasks | 11 created + 2 modified files |
 
 ## Accumulated Context
 
@@ -133,6 +134,11 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Homebrew Cask publishing requires cross-repo PAT (HOMEBREW_TAP_GITHUB_TOKEN) because default GITHUB_TOKEN cannot push outside the workflow's own repo. Tap repo (salar/homebrew-runnerkit) and PAT secret are documented in docs/release-process.md as one-time maintainer prerequisites; Task 5 is a human-action checkpoint pending external resolution.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01 Task 5 closure: org migrated from 'salar' to 'accidentally-awesome-labs' (commit c359831). All release artifacts, Go module path, 79 source files, troubleshooting docs, and update/errcodes URL constants renamed in one atomic commit. Tap repo accidentally-awesome-labs/homebrew-runnerkit created (public, main, Casks/.gitkeep) and HOMEBREW_TAP_GITHUB_TOKEN PAT secret stored in accidentally-awesome-labs/runnerkit settings. Task 5 resolved 'tap-ready'.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01 Task 5 closure: HOMEBREW_TAP_GITHUB_TOKEN PAT was pasted into chat during external resolution. Maintainer advised to rotate the token (revoke pasted PAT, generate new one, replace secret) before the public v1.0.0 tag push. PAT value is NOT recorded in any committed file or planning doc.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: cmd/_smokebin/ pattern — Go binaries excluded from default builds via _ directory prefix; invoked by shell scripts with go run. Tests still execute when targeted directly.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: D-12 gate 1 (empty-project precheck) is a HARD gate before any runnerkit up; refuses if any Server/SSHKey/PrimaryIP/Firewall has a runnerkit- Name prefix. D-12 gate 2 (destroy-verify) polls every 500ms via hcloud.IsError(err, hcloud.ErrorCodeNotFound) until every saved cloud ID returns 404 or RUNNERKIT_SMOKE_TIMEOUT (default 300s) elapses.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: scripts/smoke/cloud-end-to-end.sh installs trap cleanup EXIT INT TERM that runs runnerkit destroy --yes if state.json exists (Pitfall 7). State.json is snapshotted to state-after-destroy.json before destroy executes so the verifier can recover IDs even after destroy removes the repo entry. EXIT trap is disarmed on success but INT/TERM stays armed for the verify phase.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: hcloud-go v1.59.2 IDs are int (not int64). cloudIDs struct + verifierClient interface use plain int, matching internal/provider/hetzner/client.go and the upstream module surface. Plan body suggested int64; auto-fixed to int.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: D-11 enforced by absence — make smoke-live targets are NOT referenced by any .github/workflows/*.yml file. Maintainer must run them manually before tagging; CI environment never holds real PAT or HCLOUD_TOKEN secrets.
 
 ### Pending Todos
 
@@ -150,6 +156,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-04T15:39:38.450Z
-Stopped at: Plan 06-01 closed (Task 5 resolved 'tap-ready'); ready for Plan 06-04 v1 validation and live smoke
+Last session: 2026-05-04T15:55:52.066Z
+Stopped at: Plan 06-04 Tasks 1-3 complete; Task 4 awaiting maintainer human-action checkpoint (make smoke-live + fill 06-VERIFICATION.md + RELEASE-NOTES-v1.0.0.md)
 Resume file: None
