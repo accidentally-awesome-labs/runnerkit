@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
 type recordingExecutor struct{ commands []remote.Command }

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 func TestModeAndProfileConstants(t *testing.T) {

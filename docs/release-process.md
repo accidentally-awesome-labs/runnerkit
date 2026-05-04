@@ -14,7 +14,7 @@ Both are one-time and outside CI.
 GoReleaser publishes the Cask formula update to a separate repo on every
 tag. That repo must exist before the first release.
 
-1. Create a public GitHub repo named `salar/homebrew-runnerkit`.
+1. Create a public GitHub repo named `accidentally-awesome-labs/homebrew-runnerkit`.
 2. Initialize with a `Casks/` directory (empty file is fine: `Casks/.gitkeep`).
 3. The default branch must be `main` (matches `.goreleaser.yaml`
    `homebrew_casks[].repository.branch: main`).
@@ -22,15 +22,15 @@ tag. That repo must exist before the first release.
 ### 2. Create the HOMEBREW_TAP_GITHUB_TOKEN repo secret
 
 The default `GITHUB_TOKEN` issued to a workflow can only push to the workflow's
-own repo. Pushing the formula update to `salar/homebrew-runnerkit` requires a
+own repo. Pushing the formula update to `accidentally-awesome-labs/homebrew-runnerkit` requires a
 PAT scoped to that repo.
 
 1. On <https://github.com/settings/tokens?type=beta> create a fine-grained personal access token with:
-   - Resource owner: `salar`
-   - Repository access: only `salar/homebrew-runnerkit`
+   - Resource owner: `accidentally-awesome-labs`
+   - Repository access: only `accidentally-awesome-labs/homebrew-runnerkit`
    - Repository permissions: `Contents: Read and write`
    - Expiration: 1 year (rotate before expiry).
-2. In `salar/runnerkit` repo settings → Secrets and variables → Actions, add:
+2. In `accidentally-awesome-labs/runnerkit` repo settings → Secrets and variables → Actions, add:
    - Name: `HOMEBREW_TAP_GITHUB_TOKEN`
    - Value: (paste the PAT)
 
@@ -77,7 +77,7 @@ The release workflow will:
 2. Generate `runnerkit_v1.0.0_checksums.txt`.
 3. Sign the checksums file with cosign keyless (OIDC) → `runnerkit_v1.0.0_checksums.txt.sigstore.json`.
 4. Publish the GitHub Release with all assets.
-5. Push the Cask formula update to `salar/homebrew-runnerkit`.
+5. Push the Cask formula update to `accidentally-awesome-labs/homebrew-runnerkit`.
 
 ### Post-tag verification
 
@@ -86,12 +86,12 @@ After the workflow completes, verify the release end-to-end as a user would:
 ```bash
 # From a clean directory
 TAG=v1.0.0
-curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
-curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
+curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
+curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
 
 cosign verify-blob \
   --bundle  runnerkit_${TAG#v}_checksums.txt.sigstore.json \
-  --certificate-identity   "https://github.com/salar/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-identity   "https://github.com/accidentally-awesome-labs/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   runnerkit_${TAG#v}_checksums.txt
 ```

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 type GitHubService struct {

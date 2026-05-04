@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/salar/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 )
 
 // ServiceOptions configures the real GitHub service used by production CLI defaults.

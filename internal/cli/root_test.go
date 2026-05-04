@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/labels"
-	"github.com/salar/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/labels"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
 func executeForTest(t *testing.T, args ...string) (string, string, error) {

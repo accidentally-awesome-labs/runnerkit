@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-const defaultDocsBase = "https://github.com/salar/runnerkit/blob/main/docs"
+const defaultDocsBase = "https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs"
 
 // URL returns the canonical troubleshooting URL for a Code. Honors
 // $RUNNERKIT_DOCS_BASE for static-site hosting (e.g., runnerkit.dev/docs).
 //
 // GitHub blob URLs need the ".md" suffix BEFORE the anchor:
 //
-//	https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001
+//	https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001
 //
 // Static site URLs typically strip the suffix:
 //

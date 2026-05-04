@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
 type fakePreflightExecutor struct{ probe remote.ProbeResult }

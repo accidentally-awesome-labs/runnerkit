@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 type CleanupArtifact string

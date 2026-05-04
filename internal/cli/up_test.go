@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 func TestUpDryRunDisplaysBYOPreflightAndPlan(t *testing.T) {

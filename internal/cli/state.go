@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	gh "github.com/salar/runnerkit/internal/github"
-	rkstate "github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/ui"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 

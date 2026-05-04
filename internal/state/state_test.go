@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 func TestStoreSavesVersionedSecretFreeStateAtomically(t *testing.T) {

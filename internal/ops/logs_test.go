@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/remote"
-	"github.com/salar/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 func TestCollectLogsCollectsEphemeralArchiveLogsForEphemeralRunner(t *testing.T) {

@@ -18,7 +18,7 @@ command fails with:
 
 ```
 RKD-SSH-001: SSH host key fingerprint mismatch
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-001
 ```
 
 ### Diagnosis
@@ -58,7 +58,7 @@ trusted channel (phone, in-person, signed message).
 
 ```
 RKD-SSH-002: SSH host unreachable
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-002
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-002
 ```
 
 ### Diagnosis
@@ -95,7 +95,7 @@ Then re-run `runnerkit doctor --repo owner/repo` to confirm the fix.
 
 ```
 RKD-SSH-003: SSH private key file not found
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-003
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-003
 ```
 
 ### Diagnosis
@@ -131,7 +131,7 @@ runnerkit up --repo owner/repo --host user@host --ssh-key "$HOME/.ssh/runnerkit_
 
 ```
 RKD-SSH-004: SSH port unreachable
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-004
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/ssh.md#rkd-ssh-004
 ```
 
 ### Diagnosis

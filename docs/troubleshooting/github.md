@@ -17,7 +17,7 @@ stable across renames (D-15).
 
 ```
 RKD-GH-001: GitHub reports runner offline
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-001
 ```
 
 ### Diagnosis
@@ -51,7 +51,7 @@ unreachable) tells you the underlying cause.
 
 ```
 RKD-GH-002: Multiple RunnerKit runner candidates found in GitHub
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-002
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-002
 ```
 
 ### Diagnosis
@@ -86,7 +86,7 @@ registrations from the GitHub UI:
 
 ```
 RKD-GH-003: Saved labels drift from GitHub-reported labels
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-003
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-003
 ```
 
 ### Diagnosis
@@ -118,7 +118,7 @@ This re-registers the runner with the canonical RunnerKit labels.
 
 ```
 RKD-GH-004: Failed to create runner registration token
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-004
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-004
 ```
 
 ### Diagnosis
@@ -152,7 +152,7 @@ the required permissions and regenerate.
 
 ```
 RKD-GH-005: Runner registration failed
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-005
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-005
 ```
 
 ### Diagnosis
@@ -186,7 +186,7 @@ run), `runnerkit down` clears it as part of its cleanup contract.
 
 ```
 RKD-GH-006: Stale GitHub runner deregistration failed
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-006
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-006
 ```
 
 ### Diagnosis
@@ -217,7 +217,7 @@ runnerkit down --repo owner/repo --github-runner-id <id> --yes
 
 ```
 RKD-GH-007: recover --reregister failed
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-007
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/github.md#rkd-gh-007
 ```
 
 ### Diagnosis

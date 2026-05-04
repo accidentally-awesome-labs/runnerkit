@@ -6,7 +6,7 @@ import (
 	"time"
 
 	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
-	"github.com/salar/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 )
 
 var readinessPollInterval = 500 * time.Millisecond

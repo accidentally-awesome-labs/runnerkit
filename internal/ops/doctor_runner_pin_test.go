@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/bootstrap"
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 // TestDoctor_StaleRunnerVersion: when RunnerTemplateVersion is older than

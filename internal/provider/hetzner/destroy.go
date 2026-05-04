@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/provider"
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 const (

@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/provider"
-	"github.com/salar/runnerkit/internal/provider/hetzner"
-	"github.com/salar/runnerkit/internal/remote"
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider/hetzner"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 func TestUpMissingCloudIntentWithYesFailsBeforeMutation(t *testing.T) {

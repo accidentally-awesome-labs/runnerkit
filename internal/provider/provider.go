@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/salar/runnerkit/internal/remote"
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 // Provider defines the cloud lifecycle boundary used by RunnerKit.

@@ -95,7 +95,7 @@ func TestURL_RespectsEnvOverride(t *testing.T) {
 		t.Fatalf("unsetenv: %v", err)
 	}
 	got = URL(AuthPublicRepoBlocked)
-	want = "https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001"
+	want = "https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001"
 	if got != want {
 		t.Fatalf("URL(AuthPublicRepoBlocked) default = %q, want %q", got, want)
 	}

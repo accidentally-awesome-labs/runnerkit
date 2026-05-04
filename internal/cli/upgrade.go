@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/update"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -59,7 +59,7 @@ func runUpgrade(deps Dependencies, jsonOutput bool, noColor bool) error {
 		report.Commands = []string{"brew upgrade runnerkit"}
 	case "binary":
 		report.Commands = []string{
-			"Download the latest release: https://github.com/salar/runnerkit/releases/latest",
+			"Download the latest release: https://github.com/accidentally-awesome-labs/runnerkit/releases/latest",
 			"Verify the cosign signature and SHA256 checksum before installing — see docs/troubleshooting/README.md.",
 			"Replace the existing runnerkit binary on PATH with the new one.",
 		}

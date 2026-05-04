@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/testsupport"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 func TestClassifyHealthStates(t *testing.T) {

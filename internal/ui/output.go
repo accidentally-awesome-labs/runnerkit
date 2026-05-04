@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 )
 
 type Format string

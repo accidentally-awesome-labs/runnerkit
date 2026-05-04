@@ -16,7 +16,7 @@ downloaded archive is NOT the upstream release. Do NOT install it.
 TAG=v1.0.0
 cosign verify-blob \
   --bundle  runnerkit_${TAG#v}_checksums.txt.sigstore.json \
-  --certificate-identity   "https://github.com/salar/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-identity   "https://github.com/accidentally-awesome-labs/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   runnerkit_${TAG#v}_checksums.txt
 ```

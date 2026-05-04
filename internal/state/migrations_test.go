@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 // fixtureV1Bytes returns a populated v1 state.json byte payload used across

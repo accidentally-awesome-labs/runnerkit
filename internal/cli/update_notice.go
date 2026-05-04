@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/update"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/update"
 )
 
 // maybeShowUpdateNotice is invoked via deferred call from runUp,

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/state"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 type HealthState string

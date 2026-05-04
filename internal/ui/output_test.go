@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 )
 
 func TestJSONOutputIsMachineOnlyAndRedacted(t *testing.T) {

@@ -17,7 +17,7 @@ are stable across renames (D-15).
 
 ```
 RKD-PROV-001: Hetzner provider returned error during status
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-001
 ```
 
 ### Diagnosis
@@ -103,7 +103,7 @@ runnerkit up --repo owner/repo --cloud hetzner
 
 ```
 RKD-PROV-004: HCLOUD_TOKEN environment variable not set
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-004
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-004
 ```
 
 ### Diagnosis
@@ -141,7 +141,7 @@ provisioning.
 
 ```
 RKD-PROV-005: Hetzner project quota exceeded
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-005
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-005
 ```
 
 ### Diagnosis
@@ -176,7 +176,7 @@ runnerkit up --repo owner/repo --cloud hetzner --cloud-region nbg1
 
 ```
 RKD-PROV-006: Hetzner partial destroy — resources remain
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-006
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-006
 ```
 
 ### Diagnosis
@@ -210,7 +210,7 @@ verification (D-12 gate 2) with:
 
 ```
 RKD-PROV-007: Hetzner resource still billable after destroy
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-007
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/provider.md#rkd-prov-007
 ```
 
 after a resource ID that should be 404 still returns 200 from the Hetzner

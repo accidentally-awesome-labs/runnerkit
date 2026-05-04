@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/salar/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 )
 
 const (

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/preflight"
-	"github.com/salar/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/preflight"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 func TestBuildDoctorReportFindingsAndRemediations(t *testing.T) {

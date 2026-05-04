@@ -4,9 +4,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/salar/runnerkit/internal/cli"
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/cli"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 var version = "dev"

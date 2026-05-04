@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 // Canonical mode and safety profile values surfaced to users in

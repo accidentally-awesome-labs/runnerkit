@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/ops"
-	"github.com/salar/runnerkit/internal/remote"
-	"github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ops"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 func logsRemoteWithSecrets() *testsupport.RemoteExecutor {

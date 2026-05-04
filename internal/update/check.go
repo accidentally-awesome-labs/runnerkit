@@ -23,7 +23,7 @@ type CheckedRelease struct {
 const (
 	cacheFileName = "update-check.json"
 	cacheTTL      = 24 * time.Hour
-	defaultAPIURL = "https://api.github.com/repos/salar/runnerkit/releases/latest"
+	defaultAPIURL = "https://api.github.com/repos/accidentally-awesome-labs/runnerkit/releases/latest"
 	httpTimeout   = 5 * time.Second
 )
 

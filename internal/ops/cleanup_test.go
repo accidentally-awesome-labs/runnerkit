@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 func TestBuildCleanupPlanAndSafeRunnerPaths(t *testing.T) {

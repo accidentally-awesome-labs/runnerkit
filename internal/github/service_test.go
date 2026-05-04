@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 )
 
 type missingServiceCommandRunner struct{}

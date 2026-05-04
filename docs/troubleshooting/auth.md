@@ -17,7 +17,7 @@ stable across renames (D-15).
 
 ```
 RKD-AUTH-001: Persistent runner on public repository is blocked
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001
 ```
 
 ### Diagnosis
@@ -56,7 +56,7 @@ Read [docs/safety.md](../safety.md) before allowing.
 
 ```
 RKD-AUTH-002: Cannot reach github.com / api.github.com
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-002
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-002
 ```
 
 ### Diagnosis
@@ -94,7 +94,7 @@ with:
 
 ```
 RKD-AUTH-003: Ephemeral BYO on public/fork repo requires acknowledgment
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-003
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-003
 ```
 
 ### Diagnosis
@@ -132,7 +132,7 @@ runnerkit up --repo owner/public-repo --mode ephemeral --cloud hetzner
 
 ```
 RKD-AUTH-004: Token lacks runner-management permission
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-004
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-004
 ```
 
 ### Diagnosis

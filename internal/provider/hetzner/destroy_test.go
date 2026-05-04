@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 type destroyFakeClient struct {

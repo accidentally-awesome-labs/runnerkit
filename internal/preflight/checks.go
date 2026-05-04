@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
 const (

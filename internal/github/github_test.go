@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/redact"
-	"github.com/salar/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 func TestParseRepoExplicitOwnerName(t *testing.T) {

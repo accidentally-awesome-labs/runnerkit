@@ -22,7 +22,7 @@ Anchors are stable across renames (D-15).
 
 ```
 RKD-CLEAN-001: Cleanup checkpoints or notes are pending
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-clean-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-clean-001
 ```
 
 ### Diagnosis
@@ -93,7 +93,7 @@ scp user@host:/tmp/_diag.tar.gz ./
 
 ```
 RKD-CLEAN-003: down: file removal failed
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-clean-003
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-clean-003
 ```
 
 ### Diagnosis
@@ -167,7 +167,7 @@ keeps failing, copy them manually before forcing cleanup (see
 
 ```
 RKD-CLEAN-005: destroy: partial cleanup, checkpoints retained
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-clean-005
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-clean-005
 ```
 
 ### Diagnosis
@@ -201,7 +201,7 @@ Any `runnerkit` command that reads state fails with:
 
 ```
 RKD-STATE-001: state.json is not valid JSON
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-001
 ```
 
 ### Diagnosis
@@ -273,7 +273,7 @@ A state load fails with:
 
 ```
 RKD-STATE-003: state migration failed
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-003
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-003
 ```
 
 ### Diagnosis
@@ -304,7 +304,7 @@ A state load fails with:
 
 ```
 RKD-STATE-004: state schema_version newer than this CLI knows
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-004
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-004
 ```
 
 ### Diagnosis
@@ -344,7 +344,7 @@ runnerkit up --repo owner/repo --host user@host
 
 ```
 RKD-CORE-001: Input required for non-interactive flow
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-core-001
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-core-001
 ```
 
 ### Diagnosis

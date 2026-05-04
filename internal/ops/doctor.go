@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/bootstrap"
-	"github.com/salar/runnerkit/internal/errcodes"
-	"github.com/salar/runnerkit/internal/preflight"
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/errcodes"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/preflight"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 type Finding struct {

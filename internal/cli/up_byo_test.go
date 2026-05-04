@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/remote"
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 func TestUpNonInteractiveRequiresExplicitBYOHostOrCloudIntent(t *testing.T) {

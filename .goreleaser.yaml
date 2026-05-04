@@ -38,12 +38,12 @@ homebrew_casks:
   - name: runnerkit
     binary: runnerkit
     repository:
-      owner: salar
+      owner: accidentally-awesome-labs
       name: homebrew-runnerkit
       branch: main
       token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
     directory: Casks
-    homepage: https://github.com/salar/runnerkit
+    homepage: https://github.com/accidentally-awesome-labs/runnerkit
     description: Reliable GitHub Actions self-hosted runners for solo developers
     commit_author:
       name: runnerkit-release-bot
@@ -52,7 +52,7 @@ homebrew_casks:
 
 release:
   github:
-    owner: salar
+    owner: accidentally-awesome-labs
     name: runnerkit
   draft: false
   prerelease: auto

@@ -18,7 +18,7 @@ renames (D-15).
 
 ```
 RKD-BOOT-002: Bundled runner pin is newer than installed runner
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-002
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-002
 ```
 
 with evidence like `installed runner version 2.330.0 is older than bundled pin 2.334.0`.
@@ -302,7 +302,7 @@ you exactly what to fix.
 
 ```
 RKD-BOOT-012: runnerkit-runner user creation failed
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-012
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-012
 ```
 
 ### Diagnosis
@@ -370,7 +370,7 @@ out:
 
 ```
 RKD-BOOT-014: Runner did not report online before timeout
-See: https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-014
+See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-014
 ```
 
 ### Diagnosis

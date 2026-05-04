@@ -3,7 +3,7 @@ package provider
 import (
 	"context"
 
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 type FakeProvider struct {

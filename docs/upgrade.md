@@ -15,7 +15,7 @@ This prints the right command for your install channel.
 
 | Install method                                          | Upgrade command                                                                                                                                                                          |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Homebrew tap (`brew install salar/runnerkit/runnerkit`) | `brew upgrade runnerkit`                                                                                                                                                                 |
+| Homebrew tap (`brew install accidentally-awesome-labs/runnerkit/runnerkit`) | `brew upgrade runnerkit`                                                                                                                                                                 |
 | GitHub Releases binary                                  | Download the latest release, verify the cosign signature and SHA256 checksum, then replace the binary on your `PATH`. See [README install section](../README.md) for the exact commands. |
 
 `runnerkit upgrade` does NOT replace its own binary (per RunnerKit decision
@@ -91,10 +91,10 @@ Before installing a downloaded release binary, verify integrity:
 
 ```
 # Download the release binary, the checksums file, and the cosign signature.
-curl -fLO https://github.com/salar/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_linux_amd64.tar.gz
-curl -fLO https://github.com/salar/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt
-curl -fLO https://github.com/salar/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt.sig
-curl -fLO https://github.com/salar/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt.pem
+curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_linux_amd64.tar.gz
+curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt
+curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt.sig
+curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt.pem
 
 # Verify SHA256 checksum.
 sha256sum -c runnerkit_vX.Y.Z_checksums.txt --ignore-missing
@@ -103,7 +103,7 @@ sha256sum -c runnerkit_vX.Y.Z_checksums.txt --ignore-missing
 cosign verify-blob \
   --certificate runnerkit_vX.Y.Z_checksums.txt.pem \
   --signature runnerkit_vX.Y.Z_checksums.txt.sig \
-  --certificate-identity-regexp "https://github.com/salar/runnerkit" \
+  --certificate-identity-regexp "https://github.com/accidentally-awesome-labs/runnerkit" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   runnerkit_vX.Y.Z_checksums.txt
 ```

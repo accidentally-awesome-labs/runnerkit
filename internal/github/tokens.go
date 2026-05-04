@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/salar/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 )
 
 type RunnerToken struct {

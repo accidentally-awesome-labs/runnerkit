@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/provider"
-	"github.com/salar/runnerkit/internal/provider/hetzner"
-	"github.com/salar/runnerkit/internal/redact"
-	"github.com/salar/runnerkit/internal/remote"
-	"github.com/salar/runnerkit/internal/ui"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider/hetzner"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 

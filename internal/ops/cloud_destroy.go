@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/salar/runnerkit/internal/state"
+import "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 
 type CloudDestroyArtifact string
 

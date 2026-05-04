@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/labels"
-	"github.com/salar/runnerkit/internal/ops"
-	"github.com/salar/runnerkit/internal/provider"
-	"github.com/salar/runnerkit/internal/remote"
-	rkstate "github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/ui"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/labels"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ops"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 

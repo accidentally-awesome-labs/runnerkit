@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 func TestBuildOwnerRepoDefaultLabelsAndSnippet(t *testing.T) {

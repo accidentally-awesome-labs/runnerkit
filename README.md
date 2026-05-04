@@ -9,10 +9,10 @@ RunnerKit is distributed via two channels (D-01).
 ### Homebrew (macOS, Linux)
 
 ```bash
-brew install salar/runnerkit/runnerkit
+brew install accidentally-awesome-labs/runnerkit/runnerkit
 ```
 
-This taps the official cask repo (`salar/homebrew-runnerkit`) and installs the
+This taps the official cask repo (`accidentally-awesome-labs/homebrew-runnerkit`) and installs the
 latest release. Upgrade with `brew upgrade runnerkit`.
 
 ### GitHub Releases (all supported platforms)
@@ -28,7 +28,7 @@ Supported CLI host platforms (D-02):
 
 Linux 386 and 32-bit ARM are not supported.
 
-Download from <https://github.com/salar/runnerkit/releases/latest>:
+Download from <https://github.com/accidentally-awesome-labs/runnerkit/releases/latest>:
 
 ```bash
 # Replace v1.0.0 with the desired tag
@@ -36,9 +36,9 @@ TAG=v1.0.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')      # darwin or linux
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
-curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_${OS}_${ARCH}.tar.gz"
-curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
-curl -fsSL -O "https://github.com/salar/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
+curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_${OS}_${ARCH}.tar.gz"
+curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
+curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
 ```
 
 ### Verify the release (D-05)
@@ -53,7 +53,7 @@ TAG=v1.0.0
 
 cosign verify-blob \
   --bundle  runnerkit_${TAG#v}_checksums.txt.sigstore.json \
-  --certificate-identity   "https://github.com/salar/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-identity   "https://github.com/accidentally-awesome-labs/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   runnerkit_${TAG#v}_checksums.txt
 

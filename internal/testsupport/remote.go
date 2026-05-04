@@ -3,7 +3,7 @@ package testsupport
 import (
 	"context"
 
-	"github.com/salar/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
 type RemoteExecutor struct {

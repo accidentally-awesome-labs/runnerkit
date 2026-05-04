@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/errcodes"
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/errcodes"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 // TestErrcodesEmit_PublicRepoBlocked is the regression gate for D-15:
@@ -62,7 +62,7 @@ func TestErrcodesEmit_PublicRepoBlocked(t *testing.T) {
 	if !strings.Contains(combined, "rkd-auth-001") {
 		t.Fatalf("remediation missing rkd-auth-001 anchor in URL: %s", combined)
 	}
-	if !strings.Contains(combined, "https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001") {
+	if !strings.Contains(combined, "https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/auth.md#rkd-auth-001") {
 		t.Fatalf("remediation missing default docs URL: %s", combined)
 	}
 }
@@ -75,7 +75,7 @@ func TestErrcodesEmit_StateSchemaTooNew_IncludesRKDCode(t *testing.T) {
 	if !strings.Contains(msg, "RKD-STATE-004:") {
 		t.Fatalf("ErrSchemaTooNew message missing RKD-STATE-004 prefix: %q", msg)
 	}
-	if !strings.Contains(msg, "https://github.com/salar/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-004") {
+	if !strings.Contains(msg, "https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/cleanup.md#rkd-state-004") {
 		t.Fatalf("ErrSchemaTooNew message missing default docs URL: %q", msg)
 	}
 	// Sanity: the URL builder produces the same default URL.

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/github"
-	"github.com/salar/runnerkit/internal/provider"
-	"github.com/salar/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 // recordingModePrompter captures the prompt message and option labels of

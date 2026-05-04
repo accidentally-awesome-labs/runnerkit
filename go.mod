@@ -1,4 +1,4 @@
-module github.com/salar/runnerkit
+module github.com/accidentally-awesome-labs/runnerkit
 
 go 1.22
 

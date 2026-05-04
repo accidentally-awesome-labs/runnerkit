@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/salar/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 func TestExitCodeStateSchemaTooNew(t *testing.T) {

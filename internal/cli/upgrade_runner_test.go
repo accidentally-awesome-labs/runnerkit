@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/salar/runnerkit/internal/bootstrap"
-	rkstate "github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
+	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
 // seedRepoState writes a single repository state to a fresh state dir and

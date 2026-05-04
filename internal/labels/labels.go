@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	gh "github.com/salar/runnerkit/internal/github"
+	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 )
 
 const (

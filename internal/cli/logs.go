@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/salar/runnerkit/internal/ops"
-	"github.com/salar/runnerkit/internal/redact"
-	rkstate "github.com/salar/runnerkit/internal/state"
-	"github.com/salar/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ops"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
+	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 
