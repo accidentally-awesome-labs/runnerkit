@@ -8,3 +8,10 @@ dist/
 cmd/_smokebin/empty_precheck/empty_precheck
 cmd/_smokebin/destroy_verify/destroy_verify
 
+# Local secrets for live smoke runs (HCLOUD_TOKEN, RUNNERKIT_SMOKE_BYO_HOST).
+# .env.example is the public template; .env and .env.local hold real
+# values and must NEVER be committed. If you pasted a secret into either
+# file by mistake, rotate it immediately.
+.env
+.env.local
+.env.*.local
