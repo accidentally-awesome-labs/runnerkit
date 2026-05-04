@@ -1,1 +1,10 @@
 dist/
+
+# Live smoke artifacts (Plan 06-04). Smoke runs should be ephemeral; any
+# state, log, or per-resource trace these flows write should never be
+# committed.
+.smoke-state/
+*.smoke.log
+cmd/_smokebin/empty_precheck/empty_precheck
+cmd/_smokebin/destroy_verify/destroy_verify
+
