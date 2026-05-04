@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-01-release-packaging-PLAN.md (Tasks 1-4); Task 5 awaiting human-action checkpoint (maintainer creates salar/homebrew-runnerkit + HOMEBREW_TAP_GITHUB_TOKEN secret)
-last_updated: "2026-05-02T21:04:04.606Z"
+stopped_at: Plan 06-01 closed (Task 5 resolved 'tap-ready'); ready for Plan 06-04 v1 validation and live smoke
+last_updated: "2026-05-04T15:39:38.455Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 6
@@ -131,6 +131,8 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Tag-only trigger (on: push: tags: ['v*']) with no pull_request/workflow_dispatch sidesteps fork-PR OIDC strip (Pitfall 1). PR validation runs goreleaser check + snapshot build + 4-arch dist assertion + go test ./... on a separate workflow with no signing.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: README install verification cert-identity URL is string-equal to the workflow file path (.github/workflows/release.yml@refs/tags/${TAG}) embedded in cosign keyless cert; OIDC issuer is locked to https://token.actions.githubusercontent.com (NOT the user-OAuth issuer).
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Homebrew Cask publishing requires cross-repo PAT (HOMEBREW_TAP_GITHUB_TOKEN) because default GITHUB_TOKEN cannot push outside the workflow's own repo. Tap repo (salar/homebrew-runnerkit) and PAT secret are documented in docs/release-process.md as one-time maintainer prerequisites; Task 5 is a human-action checkpoint pending external resolution.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01 Task 5 closure: org migrated from 'salar' to 'accidentally-awesome-labs' (commit c359831). All release artifacts, Go module path, 79 source files, troubleshooting docs, and update/errcodes URL constants renamed in one atomic commit. Tap repo accidentally-awesome-labs/homebrew-runnerkit created (public, main, Casks/.gitkeep) and HOMEBREW_TAP_GITHUB_TOKEN PAT secret stored in accidentally-awesome-labs/runnerkit settings. Task 5 resolved 'tap-ready'.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01 Task 5 closure: HOMEBREW_TAP_GITHUB_TOKEN PAT was pasted into chat during external resolution. Maintainer advised to rotate the token (revoke pasted PAT, generate new one, replace secret) before the public v1.0.0 tag push. PAT value is NOT recorded in any committed file or planning doc.
 
 ### Pending Todos
 
@@ -148,6 +150,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T21:04:04.602Z
-Stopped at: Completed 06-01-release-packaging-PLAN.md (Tasks 1-4); Task 5 awaiting human-action checkpoint (maintainer creates salar/homebrew-runnerkit + HOMEBREW_TAP_GITHUB_TOKEN secret)
+Last session: 2026-05-04T15:39:38.450Z
+Stopped at: Plan 06-01 closed (Task 5 resolved 'tap-ready'); ready for Plan 06-04 v1 validation and live smoke
 Resume file: None
