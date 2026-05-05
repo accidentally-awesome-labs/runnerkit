@@ -134,7 +134,7 @@ Plans:
 2. RunnerKit can migrate versioned state safely across supported releases or clearly block with recovery guidance.
 3. Developer can read cleanup and troubleshooting guidance for common setup, runner, GitHub, SSH, provider, and cleanup failures.
 4. A fresh user can complete at least one supported setup path in about 10 minutes, run a GitHub Actions job on RunnerKit labels, and clean up confidently.
-   **Plans**: 7 plans (4 original + 3 gap closure for BYO bootstrap)
+   **Plans**: 8 plans (4 original + 4 gap closure for BYO bootstrap)
 
 Plans:
 
@@ -145,6 +145,7 @@ Plans:
 - [x] 06-05-byo-bootstrap-blocker-fixes-PLAN.md — gap closure (Tasks A + E from 06-GAP-byo-sudo-handling.md): preflight `sudo -n true` probe (Bug 1) + sudo-prefixed download_runner curl/sha256sum/tar (Bug 2) + redacted-stderr surfacing on bootstrap_failed + RKD-BOOT-015 docs entry + build-tag-guarded integration test + smoke script config.sh assertion.
 - [x] 06-06-byo-prepare-and-sudo-prompt-PLAN.md — gap closure (Tasks B + C + D): Path B interactive sudo password fallback in `runnerkit up` + `redact.SudoPassword` + `runnerkit byo-prepare` command with scoped sudoers template + visudo validation + atomic rename + `--remove` + `byo_host_prepared` doctor finding + docs/byo-quickstart Sudo Setup section + README link.
 - [ ] 06-07-live-smoke-rerun-and-baseline-fillin-PLAN.md — maintainer human-action checkpoint: re-run `make smoke-live` end-to-end against fresh BYO + real Hetzner project (no manual sudoers workaround), fill 06-VERIFICATION baseline + RELEASE-NOTES-v1.0.0.md stopwatch numbers, signal smoke-green for v1.0.0 tag push.
+- [ ] 06-08-byo-register-runner-runas-fix-PLAN.md — gap closure (Task F from 06-GAP-byo-sudo-handling.md): replace `sudo -u runnerkit-runner ./config.sh` with `sudo su -s /bin/bash - runnerkit-runner -c` in RenderInstallScript + RenderEphemeralInstallScript so register_runner runs from a root sudo context (closes Bug 3 register_runner runas mismatch); script_test.go presence/absence assertions; install_integration_test.go no-(ALL)-runas sub-case; smoke harness .runner sentinel assertion. Unblocks Plan 06-07 attempt-2.
 
 ## Progress
 
@@ -158,4 +159,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Operations, Diagnostics, and BYO Cleanup    | 4/4            | Complete    | 2026-04-29 |
 | 4. Recommended Cloud Path and Billable Cleanup | 4/4            | Complete    | 2026-05-01 |
 | 5. Scoped Ephemeral Mode and Safety Profiles   | 3/3            | Complete    | 2026-05-02 |
-| 6. Release, Upgrade, Docs, and v1 Validation   | 4/7            | Gap closure planned (06-05/06/07) | -          |
+| 6. Release, Upgrade, Docs, and v1 Validation   | 6/8            | Gap closure planned (06-05/06/07/08) | -          |
