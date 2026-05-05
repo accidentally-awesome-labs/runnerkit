@@ -134,7 +134,7 @@ Plans:
 2. RunnerKit can migrate versioned state safely across supported releases or clearly block with recovery guidance.
 3. Developer can read cleanup and troubleshooting guidance for common setup, runner, GitHub, SSH, provider, and cleanup failures.
 4. A fresh user can complete at least one supported setup path in about 10 minutes, run a GitHub Actions job on RunnerKit labels, and clean up confidently.
-   **Plans**: 4 plans
+   **Plans**: 7 plans (4 original + 3 gap closure for BYO bootstrap)
 
 Plans:
 
@@ -142,6 +142,9 @@ Plans:
 - [x] 06-02-upgrade-and-state-migration-PLAN.md — Lazy 24h-cached update notice + runnerkit upgrade (channel detect, print-only) + runnerkit upgrade-runner (re-Apply with bundled pin) + forward-only state migration with side-by-side backup + ExitStateSchemaTooNew + doctor stale-runner finding.
 - [x] 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md — internal/errcodes/ stable RKD-<COMPONENT>-NNN registry + RUNNERKIT_DOCS_BASE override + 6 docs/troubleshooting/ component files with explicit anchors and Symptom/Diagnosis/Fix structure + CLI emit-site wiring.
 - [x] 06-04-v1-validation-and-live-smoke-PLAN.md — make smoke-live targets + cmd/_smokebin/empty_precheck + destroy_verify (D-12 gates 1+2) + 10-min stopwatch checklist + 06-VERIFICATION.md baseline + RELEASE-NOTES-v1.0.0.md.
+- [ ] 06-05-byo-bootstrap-blocker-fixes-PLAN.md — gap closure (Tasks A + E from 06-GAP-byo-sudo-handling.md): preflight `sudo -n true` probe (Bug 1) + sudo-prefixed download_runner curl/sha256sum/tar (Bug 2) + redacted-stderr surfacing on bootstrap_failed + RKD-BOOT-015 docs entry + build-tag-guarded integration test + smoke script config.sh assertion.
+- [ ] 06-06-byo-prepare-and-sudo-prompt-PLAN.md — gap closure (Tasks B + C + D): Path B interactive sudo password fallback in `runnerkit up` + `redact.SudoPassword` + `runnerkit byo-prepare` command with scoped sudoers template + visudo validation + atomic rename + `--remove` + `byo_host_prepared` doctor finding + docs/byo-quickstart Sudo Setup section + README link.
+- [ ] 06-07-live-smoke-rerun-and-baseline-fillin-PLAN.md — maintainer human-action checkpoint: re-run `make smoke-live` end-to-end against fresh BYO + real Hetzner project (no manual sudoers workaround), fill 06-VERIFICATION baseline + RELEASE-NOTES-v1.0.0.md stopwatch numbers, signal smoke-green for v1.0.0 tag push.
 
 ## Progress
 
@@ -155,4 +158,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Operations, Diagnostics, and BYO Cleanup    | 4/4            | Complete    | 2026-04-29 |
 | 4. Recommended Cloud Path and Billable Cleanup | 4/4            | Complete    | 2026-05-01 |
 | 5. Scoped Ephemeral Mode and Safety Profiles   | 3/3            | Complete    | 2026-05-02 |
-| 6. Release, Upgrade, Docs, and v1 Validation   | 4/4 (pending)  | Pending v1 smoke | -          |
+| 6. Release, Upgrade, Docs, and v1 Validation   | 4/7            | Gap closure planned (06-05/06/07) | -          |
