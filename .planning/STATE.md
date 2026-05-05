@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Plan 06-04 Tasks 1-3 complete; Task 4 awaiting maintainer human-action checkpoint (make smoke-live + fill 06-VERIFICATION.md + RELEASE-NOTES-v1.0.0.md)
-last_updated: "2026-05-04T15:55:52.249Z"
-last_activity: 2026-05-02
+stopped_at: Plan 06-05 complete; resume at Plan 06-06 byo-prepare-and-sudo-prompt (Path B + Path C user-facing features)
+last_updated: "2026-05-05T02:03:42.788Z"
+last_activity: 2026-05-05
 progress:
   total_phases: 6
-  completed_phases: 6
-  total_plans: 23
-  completed_plans: 23
+  completed_phases: 5
+  total_plans: 26
+  completed_plans: 24
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 4 of 4
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-05-02
+Last activity: 2026-05-05
 
 Milestone Progress: [███████░░░] 67%
 
@@ -61,6 +61,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P03 | 14m | 4 tasks tasks | 20 files files |
 | Phase 06-release-upgrade-docs-and-v1-validation P01 | 5m | 4 tasks (5 planned; Task 5 is human-action checkpoint) tasks | 6 files files |
 | Phase 06-release-upgrade-docs-and-v1-validation P04 | 8m | 3 of 4 tasks (Task 4 is checkpoint:human-action awaiting maintainer) tasks | 11 created + 2 modified files |
+| Phase 06-release-upgrade-docs-and-v1-validation P05 | 8m | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,10 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: scripts/smoke/cloud-end-to-end.sh installs trap cleanup EXIT INT TERM that runs runnerkit destroy --yes if state.json exists (Pitfall 7). State.json is snapshotted to state-after-destroy.json before destroy executes so the verifier can recover IDs even after destroy removes the repo entry. EXIT trap is disarmed on success but INT/TERM stays armed for the verify phase.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: hcloud-go v1.59.2 IDs are int (not int64). cloudIDs struct + verifierClient interface use plain int, matching internal/provider/hetzner/client.go and the upstream module surface. Plan body suggested int64; auto-fixed to int.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: D-11 enforced by absence — make smoke-live targets are NOT referenced by any .github/workflows/*.yml file. Maintainer must run them manually before tagging; CI environment never holds real PAT or HCLOUD_TOKEN secrets.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: host.privilege.password_required preflight result is SeverityWarning (not Failure) so report.Passed() stays true; this preserves Path B fallback reachability (Plan 06-06) without short-circuiting the existing happy path.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: download_runner is factored into a shared downloadRunnerCommand(opts) helper consumed by Apply, ApplyEphemeral, AND the integration test, so production drift physically cannot bypass the real-shell test.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: bootstrap_failed surfaces 'Remote stderr (commandID): ...' through renderer.Redactor().String(); CommandID extracted from remote.RemoteError via errors.As, fallback 'unknown' when error path predates wrapping.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: integration test double-gated by //go:build integration AND RUNNERKIT_INTEGRATION=1 env var so go test ./... and CI ignore it; only make test-integration runs the real-shell path.
 
 ### Pending Todos
 
@@ -156,6 +161,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-04T15:55:52.066Z
-Stopped at: Plan 06-04 Tasks 1-3 complete; Task 4 awaiting maintainer human-action checkpoint (make smoke-live + fill 06-VERIFICATION.md + RELEASE-NOTES-v1.0.0.md)
+Last session: 2026-05-05T02:03:42.783Z
+Stopped at: Plan 06-05 complete; resume at Plan 06-06 byo-prepare-and-sudo-prompt (Path B + Path C user-facing features)
 Resume file: None
