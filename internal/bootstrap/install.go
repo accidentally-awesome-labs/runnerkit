@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
@@ -95,7 +94,7 @@ func wrapSudoCommand(c remote.Command, opts Options) remote.Command {
 	if opts.SudoPassword == "" || !c.Sudo {
 		return c
 	}
-	rewritten := strings.ReplaceAll(c.Script, "sudo ", "sudo -S ")
+	rewritten := RewriteSudoForPasswordPipe(c.Script)
 	c.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | { " + rewritten + " }"
 	if c.Env == nil {
 		c.Env = map[string]string{}

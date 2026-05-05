@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5 + Tasks G,H — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6 + Tasks G,H,I — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -545,6 +545,86 @@ Subsequent `sudo tee/visudo/chmod/mv` operations then succeed end-to-end.
 3. Run full repo `go test ./... -count=1 -race` to confirm no regression
    in any sibling package.
 
+## Bug 6 — naive `strings.ReplaceAll("sudo ", "sudo -S ")` mangles `visudo ` (discovered 2026-05-05)
+
+After Bug 5 (Plan 06-09 commit 62cdd2a) made the staging tempfile
+root-owned, Plan 06-07 attempt-4 against `salar@mckee-small-desktop`
+got past `sudo mktemp` and `sudo tee` and aborted at the `visudo`
+validation step:
+
+```
+✗ RunnerKit could not install the scoped sudoers entry.
+→ Remote stderr: visudo: invalid option -- 'S'
+                 usage: visudo [-chqsV] [[-f] sudoers ]
+                 visudo -S validation failed; sudoers entry not installed
+```
+
+Root cause: both `internal/bootstrap/install.go::wrapSudoCommand`
+(line 98) and `internal/cli/byo_prepare.go::runByoPrepareInstall`
+(line 99) call `strings.ReplaceAll(script, "sudo ", "sudo -S ")` —
+which is naive and matches anywhere in the string, including the
+trailing 5 chars of `visudo `. After the rewrite,
+`sudo visudo -cf "$TMP"` becomes
+`sudo -S visudo -S -cf "$TMP"`, and visudo rejects `-S` as an
+unknown option.
+
+The same naive substitution also mangles the in-script error message
+`echo "visudo validation failed..."` into
+`echo "visudo -S validation failed..."` — visible in the stderr quoted
+above as `visudo -S validation failed; sudoers entry not installed`.
+
+The bug went undetected because (a) the unit test asserts that
+`visudo -cf` appears before `mv` in the un-rewritten script — but it
+does not exercise the wrapper path; and (b) the bootstrap install
+scripts (cmd/runnerkit `up`) happen not to contain any embedded
+`sudo` substrings (no `visudo`, no `pseudo-something`), so the latent
+mangling bug never triggered there.
+
+### Why cloud is unaffected
+
+Hetzner cloud-init configures `(ALL) NOPASSWD: ALL` so neither
+`runnerkit up` Path B nor `runnerkit byo-prepare` is invoked on the
+cloud path. The wrapper is never engaged → the buggy substitution
+never runs → cloud bootstrap is unaffected.
+
+### Bug 6 fix
+
+Introduce a single source of truth for the sudo rewrite that uses a
+word-boundary regex (`\bsudo `) so embedded substrings are preserved.
+Add `internal/bootstrap/sudo_rewrite.go` exporting
+`RewriteSudoForPasswordPipe(script string) string`. Replace both
+naive `strings.ReplaceAll` callsites with calls to the helper.
+
+### Bug 6 acceptance
+
+- `runnerkit byo-prepare --host user@host` against an Ubuntu 24.04 LTS
+  host with password-protected sudo lands `/etc/sudoers.d/runnerkit-installer`
+  end-to-end (no `visudo: invalid option` error).
+- Unit test `TestRewriteSudoForPasswordPipe_VisudoIsNotMangled` asserts
+  the rewriter leaves `visudo ` intact while still upgrading
+  standalone `sudo ` to `sudo -S `.
+- Plan 06-07 attempt-5 against `salar@mckee-small-desktop` proceeds
+  past byo-prepare into the smoke proper.
+
+### Task I — Word-boundary sudo rewrite (Bug 6)
+
+1. Create `internal/bootstrap/sudo_rewrite.go` with
+   `RewriteSudoForPasswordPipe(script string) string` using
+   `regexp.MustCompile(\`\bsudo \`)`.
+2. Add `internal/bootstrap/sudo_rewrite_test.go` covering: standalone
+   sudo at line start / after newline / after semicolon all
+   rewritten; `visudo ` and `sudoers` substrings preserved; full
+   `RemoteVisudoCheckScript()` round-trip preserves visudo.
+3. Replace `strings.ReplaceAll(c.Script, "sudo ", "sudo -S ")` in
+   `internal/bootstrap/install.go::wrapSudoCommand` with
+   `RewriteSudoForPasswordPipe(c.Script)`. Drop the now-unused
+   `"strings"` import.
+4. Replace `strings.ReplaceAll(bootstrap.RemoteVisudoCheckScript(), ...)`
+   in `internal/cli/byo_prepare.go::runByoPrepareInstall` with
+   `bootstrap.RewriteSudoForPasswordPipe(bootstrap.RemoteVisudoCheckScript())`.
+5. Run full repo `go test ./... -count=1 -race` — no regression in any
+   sibling package.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -575,9 +655,19 @@ Subsequent `sudo tee/visudo/chmod/mv` operations then succeed end-to-end.
   writes sudoers.d directly, never uses the staging tempfile). Bundled
   with Bug 4 in Plan 06-09 closure since the smoke can't make end-to-end
   forward progress without both fixes.
-- Once Bug 5 closed: byo-prepare runs to completion; Plan 06-07 attempt-3
-  proceeds to the actual smoke (BYO bootstrap → register_runner → status
-  → doctor → down → Hetzner empty_precheck → cloud-end-to-end → destroy_verify).
+- Once Bug 5 closed: byo-prepare progressed past mktemp/tee/chmod and
+  reached the visudo gate, where Bug 6 surfaced.
+- Bug 6 discovered 2026-05-05 during Plan 06-07 attempt-4 against the
+  same host AFTER the Bug 5 fix landed. Affects both `runnerkit
+  byo-prepare` (live trigger) and `runnerkit up` Path B install
+  scripts (latent — happens not to contain any "Xsudo " sequences in
+  the existing bootstrap scripts). Bundled with Bugs 4 + 5 in the Plan
+  06-09 closure since the smoke can't make end-to-end forward progress
+  without all three fixes.
+- Once Bug 6 closed: byo-prepare runs to completion; Plan 06-07
+  attempt-5 proceeds to the actual smoke (BYO bootstrap → register_runner
+  → status → doctor → down → Hetzner empty_precheck → cloud-end-to-end
+  → destroy_verify).
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

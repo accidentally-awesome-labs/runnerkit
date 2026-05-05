@@ -96,7 +96,7 @@ func runByoPrepareInstall(ctx context.Context, deps Dependencies, renderer *ui.R
 	// Each `sudo` invocation in the script uses `sudo -S` and reads the
 	// password from $RUNNERKIT_SUDO_PASSWORD via the prefix command.
 	content := bootstrap.RenderSudoersEntry(target.User)
-	innerScript := strings.ReplaceAll(bootstrap.RemoteVisudoCheckScript(), "sudo ", "sudo -S ")
+	innerScript := bootstrap.RewriteSudoForPasswordPipe(bootstrap.RemoteVisudoCheckScript())
 	wrapper := "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | sudo -S -v\n"
 	script := wrapper + innerScript
 
