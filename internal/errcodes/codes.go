@@ -70,6 +70,7 @@ var (
 	BootRunnerUserCreateFailed     = Code{ID: "RKD-BOOT-012", Severity: SeverityError, Title: "runnerkit-runner user creation failed", File: "bootstrap.md", Anchor: "rkd-boot-012"}
 	BootRunnerPackageInstallFailed = Code{ID: "RKD-BOOT-013", Severity: SeverityError, Title: "Runner tarball install failed", File: "bootstrap.md", Anchor: "rkd-boot-013"}
 	BootRunnerOnlineVerifyTimeout  = Code{ID: "RKD-BOOT-014", Severity: SeverityError, Title: "Runner did not report online before timeout", File: "bootstrap.md", Anchor: "rkd-boot-014"}
+	BootSudoPasswordRequired       = Code{ID: "RKD-BOOT-015", Severity: SeverityWarning, Title: "Remote sudo requires password — bootstrap needs scoped sudoers or interactive prompt", File: "bootstrap.md", Anchor: "rkd-boot-015"}
 
 	// GH
 	GHRunnerOffline                 = Code{ID: "RKD-GH-001", Severity: SeverityWarning, Title: "GitHub reports runner offline", File: "github.md", Anchor: "rkd-gh-001"}
@@ -116,7 +117,7 @@ var Registry = []Code{
 	SSHHostKeyMismatch, SSHUnreachable, SSHKeyPathNotFound, SSHPortUnreachable,
 	BootRunnerVersionStale, BootServiceFailed, BootServiceMissing, BootInstallPathMissing, BootWorkDirMissing,
 	BootDiskLow, BootToolsMissing, BootTimeUnsynchronized, BootPreflightUnsupportedDistro, BootPreflightFailed,
-	BootRunnerUserCreateFailed, BootRunnerPackageInstallFailed, BootRunnerOnlineVerifyTimeout,
+	BootRunnerUserCreateFailed, BootRunnerPackageInstallFailed, BootRunnerOnlineVerifyTimeout, BootSudoPasswordRequired,
 	GHRunnerOffline, GHDuplicateCandidates, GHLabelDrift, GHRegistrationTokenCreateFailed, GHRunnerRegisterFailed,
 	GHDeregisterStaleFailed, GHRecoverReregisterFailed,
 	ProvProviderError, ProvResourceMissing, ProvDrift, ProvHCloudTokenMissing, ProvHCloudQuotaExceeded,

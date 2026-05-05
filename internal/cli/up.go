@@ -205,23 +205,31 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
 	bootstrapOpts.RunnerToken = token.Token
 	if modeDecision.Mode == runmode.ModeEphemeral {
-		if _, err := bootstrap.ApplyEphemeral(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
+		if result, err := bootstrap.ApplyEphemeral(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
 			var serviceErr bootstrap.ServiceNotActiveError
 			if errors.As(err, &serviceErr) {
 				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the ephemeral runner but the service is not active.", []string{"Run systemctl status " + bootstrapOpts.EphemeralServiceName + " on the host or re-run runnerkit up after fixing the service."})
 				return NewExitError(ExitSafetyGate, err)
 			}
-			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the ephemeral runner install plan.", []string{"Review the remote host output, fix the issue, and re-run runnerkit up."})
+			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
+			if cmdID, stderr := lastCommandFailureContext(result, err); stderr != "" {
+				remediation = append(remediation, "Remote stderr ("+cmdID+"): "+renderer.Redactor().String(stderr))
+			}
+			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the ephemeral runner install plan.", remediation)
 			return NewExitError(ExitSafetyGate, err)
 		}
 	} else {
-		if _, err := bootstrap.Apply(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
+		if result, err := bootstrap.Apply(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
 			var serviceErr bootstrap.ServiceNotActiveError
 			if errors.As(err, &serviceErr) {
 				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service."})
 				return NewExitError(ExitSafetyGate, err)
 			}
-			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the BYO runner install plan.", []string{"Review the remote host output, fix the issue, and re-run runnerkit up."})
+			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
+			if cmdID, stderr := lastCommandFailureContext(result, err); stderr != "" {
+				remediation = append(remediation, "Remote stderr ("+cmdID+"): "+renderer.Redactor().String(stderr))
+			}
+			_ = renderer.Error("bootstrap_failed", "RunnerKit could not apply the BYO runner install plan.", remediation)
 			return NewExitError(ExitSafetyGate, err)
 		}
 	}
@@ -1976,4 +1984,27 @@ func defaultString(value, fallback string) string {
 
 func runnerServiceName(runnerName string) string {
 	return "actions.runner." + runnerName + ".service"
+}
+
+// lastCommandFailureContext extracts the failing command's ID and
+// stderr from a bootstrap.Result + the err returned by Apply /
+// ApplyEphemeral so callers can surface remote diagnostics in
+// bootstrap_failed messages. The CommandID comes from
+// remote.RemoteError when present (the typical exit-code path);
+// stderr comes from the trailing entry of result.Commands. Returns
+// empty strings if no useful context is available.
+func lastCommandFailureContext(result bootstrap.Result, err error) (string, string) {
+	var stderr string
+	if len(result.Commands) > 0 {
+		stderr = strings.TrimSpace(result.Commands[len(result.Commands)-1].Stderr)
+	}
+	commandID := ""
+	var remoteErr remote.RemoteError
+	if errors.As(err, &remoteErr) {
+		commandID = remoteErr.CommandID
+	}
+	if commandID == "" {
+		commandID = "unknown"
+	}
+	return commandID, stderr
 }

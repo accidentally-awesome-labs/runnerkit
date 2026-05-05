@@ -1,6 +1,6 @@
 # Troubleshooting: Bootstrap and Service
 
-Stable codes for this component: `RKD-BOOT-002`..`RKD-BOOT-014`.
+Stable codes for this component: `RKD-BOOT-002`..`RKD-BOOT-015`.
 `RKD-BOOT-001` is reserved for future use; numbering is stable across
 renames (D-15).
 
@@ -389,3 +389,51 @@ runnerkit doctor --repo owner/repo
 
 If `doctor` reports a more specific code (RKD-BOOT-003, RKD-BOOT-009,
 RKD-AUTH-002), follow that fix first, then re-run `runnerkit up`.
+
+***
+
+<a name="rkd-boot-015"></a>
+## RKD-BOOT-015: Remote sudo requires password
+
+**Severity:** warning
+**Component:** bootstrap
+
+### Symptom
+
+`runnerkit up --host user@host` warns during preflight:
+
+```
+[warning] host.privilege.password_required: sudo requires a password — RunnerKit will prompt or use byo-prepare
+```
+
+Or the bootstrap step fails with `bootstrap_failed` and the surfaced
+remote stderr contains `sudo: a password is required` /
+`sudo: a terminal is required`.
+
+### Diagnosis
+
+The SSH user can run `sudo` but only after entering their password.
+RunnerKit's bootstrap commands run over a non-interactive SSH channel
+and cannot answer a sudo prompt, so the very first sudo-prefixed
+command fails.
+
+### Fix
+
+Two recommended paths (Plan 06-06 lands the CLI surface for both):
+
+1. **Recommended — `runnerkit byo-prepare`** (one-time scoped sudoers entry):
+   ```bash
+   runnerkit byo-prepare --host user@host
+   ```
+2. **Fallback — interactive password prompt** (no host-side preconfiguration):
+   ```bash
+   runnerkit up --repo owner/name --host user@host
+   # RunnerKit prompts for the host's sudo password locally; never logged or stored.
+   ```
+
+Until Plan 06-06 lands, the v1.0.0 documented workaround is to add a
+NOPASSWD sudoers entry for the SSH user manually:
+
+```bash
+ssh user@host 'echo "user ALL=(root) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/runnerkit-temporary && sudo chmod 0440 /etc/sudoers.d/runnerkit-temporary'
+```

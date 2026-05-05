@@ -15,6 +15,19 @@ const (
 	CheckArch            = "host.arch"
 	CheckSystemd         = "host.systemd"
 	CheckPrivilege       = "host.privilege"
+	// CheckPrivilegePasswordReq is emitted when the SSH user can run
+	// sudo but only after entering a password. RunnerKit's bootstrap
+	// commands run over a non-interactive SSH channel and cannot
+	// answer a sudo prompt, so this case must be surfaced separately
+	// from the bare "sudo missing" failure. Severity is warning so
+	// report.Passed() stays true and the bootstrap path remains
+	// reachable for Path B fallback (Plan 06-06).
+	CheckPrivilegePasswordReq = "host.privilege.password_required"
+	// CheckPrivilegeNoSudo is emitted when the SSH user is not
+	// listed in sudoers on the remote host. Severity is failure;
+	// remediation points the maintainer at adding the user to
+	// sudoers or picking a host where they already are.
+	CheckPrivilegeNoSudo = "host.privilege.no_sudo"
 	CheckDisk            = "host.disk"
 	CheckTools           = "host.tools"
 	CheckNetworkGitHub   = "host.network.github"
@@ -124,10 +137,32 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 	} else {
 		report.Results = append(report.Results, failure(CheckSystemd, "systemd is required for the Phase 2 managed service.", "Use a systemd Linux host."))
 	}
-	if probe.Commands["sudo"] {
-		report.Results = append(report.Results, pass(CheckPrivilege, "sudo is available for setup commands."))
-	} else {
+	if !probe.Commands["sudo"] {
 		report.Results = append(report.Results, failure(CheckPrivilege, "sudo is required for setup commands.", "Grant sudo for installation or use a host where sudo is available."))
+	} else {
+		// Probe whether the SSH user can run sudo non-interactively. The
+		// bootstrap path runs over a non-interactive channel and cannot
+		// answer a sudo password prompt, so a host with sudo-binary present
+		// but a password requirement must NOT pass preflight as if it were
+		// passwordless. See gap doc 06-GAP-byo-sudo-handling.md Task A.
+		probeResult, probeErr := executor.Run(ctx, target, remote.Command{ID: "probe_sudo_n", Script: "sudo -n true"})
+		switch {
+		case probeErr == nil && probeResult.ExitCode == 0:
+			report.Results = append(report.Results, pass(CheckPrivilege, "Passwordless sudo available for setup commands."))
+		case probeErr == nil && (strings.Contains(probeResult.Stderr, "password is required") || strings.Contains(probeResult.Stderr, "a terminal is required")):
+			report.Results = append(report.Results, warning(CheckPrivilegePasswordReq, "sudo requires a password — RunnerKit will prompt or use byo-prepare.", "Run `runnerkit byo-prepare --host user@host` to install a scoped sudoers entry, or re-run `runnerkit up` interactively to be prompted for the sudo password."))
+		case probeErr == nil && strings.Contains(probeResult.Stderr, "may not run sudo"):
+			report.Results = append(report.Results, failure(CheckPrivilegeNoSudo, "User is not in sudoers on the remote host.", "Add the SSH user to sudoers or pick a host where they are."))
+		default:
+			stderr := strings.TrimSpace(probeResult.Stderr)
+			if stderr == "" && probeErr != nil {
+				stderr = probeErr.Error()
+			}
+			if stderr == "" {
+				stderr = fmt.Sprintf("exit %d", probeResult.ExitCode)
+			}
+			report.Results = append(report.Results, failure(CheckPrivilege, "sudo probe failed: "+stderr, "Verify SSH access and that sudo is installed on the host."))
+		}
 	}
 	if probe.DiskAvailableBytes >= MinimumDiskBytes {
 		report.Results = append(report.Results, pass(CheckDisk, "At least 2 GiB is available."))
