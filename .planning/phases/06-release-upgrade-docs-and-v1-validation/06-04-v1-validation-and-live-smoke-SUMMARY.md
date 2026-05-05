@@ -1,8 +1,12 @@
 ---
+status: partial-blocked
 phase: 06-release-upgrade-docs-and-v1-validation
 plan: 04
 subsystem: v1-validation-and-live-smoke
-tags: [live-smoke, hetzner-billable, byo-permission, d-12-gates, stopwatch-checklist, makefile, smokebin, hcloud-go, release-notes, verification-baseline]
+blocked_on: 06-GAP-byo-sudo-handling.md (Bug 1 + Bug 2 — BYO bootstrap unusable in v1)
+tasks_complete: 3
+tasks_total: 4
+tags: [live-smoke, hetzner-billable, byo-permission, d-12-gates, stopwatch-checklist, makefile, smokebin, hcloud-go, release-notes, verification-baseline, gap-blocked]
 
 requires:
   - phase: 06-release-upgrade-docs-and-v1-validation/01
@@ -223,7 +227,47 @@ Both are documented in `<how-to-verify>` of the Task 4 plan body. Maintainer res
 8. Verify Hetzner project is empty AGAIN (post-smoke; belt-and-suspenders).
 9. Commit both files. Resume signal `smoke-green` triggers `/gsd:verify-work` for Phase 6 sign-off; then push `git tag -a v1.0.0` per `docs/release-process.md`.
 
-## Self-Check: PASSED
+## Live Smoke Attempt 1 (2026-05-04 to 2026-05-05) — BLOCKED
+
+The orchestrator drove Task 4 against `accidentally-awesome-labs/dat0`
+(private repo) with the maintainer's `salar@mckee-small-desktop` BYO
+host and a real Hetzner project token. The smoke surfaced two real
+v1.0.0 BYO blockers documented in
+`06-GAP-byo-sudo-handling.md`:
+
+- **Bug 1 (preflight):** `internal/preflight/checks.go::CheckPrivilege`
+  passes when `sudo` binary exists, even when sudo prompts for a
+  password. Bootstrap then fails opaquely with `bootstrap_failed`
+  while the actual remote stderr is swallowed by the executor. Worked
+  around for this attempt by adding a temporary
+  `/etc/sudoers.d/runnerkit-smoke-temp NOPASSWD ALL` entry on the BYO
+  host.
+- **Bug 2 (download_runner permission):** even with NOPASSWD sudo, the
+  `download_runner` step in `internal/bootstrap/install.go::Apply`
+  (and `RenderInstallScript` / `RenderEphemeralInstallScript` in
+  `script.go`) creates the install dir owned by `runnerkit-runner`
+  (mode 0755), then runs plain `curl`/`sha256sum`/`tar` as the SSH
+  user — which has no write access to a directory owned by another
+  user. `curl: (23) Failure writing output to destination, Permission
+  denied`. The bug went undetected from Plan 02-02 onward because every
+  bootstrap test uses fakeExecutor that records commands but never
+  executes them. **BYO is non-functional in v1 without a fix.**
+
+Smoke attempt was paused before any `runnerkit destroy` ran on the BYO
+host, so no host state was changed beyond the `runnerkit-runner` user
+account (manually creatable by the bootstrap and reusable on the next
+attempt) and the temporary sudoers entry (to be removed when smoke
+resumes). No Hetzner resources were created — the smoke failed at the
+BYO step before reaching cloud-end-to-end. Hetzner project state is
+unchanged (zero `runnerkit-*` resources confirmed).
+
+Resolution path: the user accepted the recommendation to pause Plan
+06-04, run `/gsd:verify-work 6` to surface gaps, then `/gsd:plan-phase
+06 --gaps` to plan a closure (Tasks A-E in the gap doc), then
+`/gsd:execute-phase 06 --gaps-only` to implement, then re-run Plan
+06-04 Task 4 against fixed code.
+
+## Self-Check: PARTIAL — Tasks 1-3 PASSED, Task 4 BLOCKED ON GAP
 
 - All 11 created files exist on disk.
 - All 4 task commits exist in git log: `fa2d5b8`, `956cb2c`, `8f59a40`, `140cb06`.
