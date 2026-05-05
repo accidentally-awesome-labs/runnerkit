@@ -77,6 +77,80 @@ func TestRenderEphemeralInstallScriptUsesSudoForCurlSha256SumTar(t *testing.T) {
 	}
 }
 
+// TestRenderInstallScriptUsesSuForRegisterRunner asserts the
+// renderer-side fix for Bug 3 of gap doc 06-GAP-byo-sudo-handling.md:
+// register_runner must invoke config.sh via `sudo su -s /bin/bash -
+// runnerkit-runner -c '...'` instead of `sudo -u runnerkit-runner
+// ./config.sh ...`. The su form runs from a root sudo context so the
+// host's sudoers needs only (root) NOPASSWD — no (ALL) runas required.
+// See gap doc lines 122-199 (Bug 3 description) and lines 338-365
+// (Task F) for the rationale.
+func TestRenderInstallScriptUsesSuForRegisterRunner(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo-local",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"},
+		InstallPath: "/opt/actions-runner/runnerkit-owner-repo-local",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-owner-repo-local",
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "registration-token-secret-bug3-12345",
+		Package:     RunnerPackage{Filename: "actions-runner-linux-x64-2.334.0.tar.gz", URL: "https://example.invalid/runner.tgz", SHA256: "abc123"},
+	}
+	script := RenderInstallScript(opts)
+	// PRESENCE assertion: the new su form must be in the rendered script.
+	if !strings.Contains(script, "sudo su -s /bin/bash - runnerkit-runner -c") {
+		t.Fatalf("RenderInstallScript missing sudo su -s /bin/bash - runnerkit-runner -c form for register_runner:\n%s", script)
+	}
+	// NEGATIVE assertion: the buggy `sudo -u runnerkit-runner ./config.sh` form must be GONE.
+	for _, forbidden := range []string{
+		"sudo -u runnerkit-runner ./config.sh",
+		"sudo -u runnerkit-runner RUNNERKIT_REGISTRATION_TOKEN",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("RenderInstallScript still contains buggy %q (Bug 3 not closed):\n%s", forbidden, script)
+		}
+	}
+	// Token-leak invariant: $RUNNERKIT_REGISTRATION_TOKEN must remain the env-var reference; the literal token must NOT appear.
+	if strings.Contains(script, opts.RunnerToken) {
+		t.Fatalf("RenderInstallScript leaked registration token literal (Bug 3 fix must preserve redaction invariant):\n%s", script)
+	}
+}
+
+// TestRenderEphemeralInstallScriptUsesSuForRegisterRunner is the
+// parallel assertion for the ephemeral renderer.
+func TestRenderEphemeralInstallScriptUsesSuForRegisterRunner(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo-ephemeral-bug3test",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "ephemeral"},
+		InstallPath: "/opt/actions-runner/runnerkit-owner-repo-ephemeral-bug3test",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-owner-repo-ephemeral-bug3test",
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "registration-token-ephemeral-bug3-secret",
+		Mode:        "ephemeral",
+		Package:     RunnerPackage{Filename: "actions-runner-linux-x64-2.334.0.tar.gz", URL: "https://example.invalid/runner.tgz", SHA256: "abc123"},
+	}
+	script := RenderEphemeralInstallScript(opts)
+	if !strings.Contains(script, "sudo su -s /bin/bash - runnerkit-runner -c") {
+		t.Fatalf("RenderEphemeralInstallScript missing sudo su -s /bin/bash - runnerkit-runner -c form for register_runner:\n%s", script)
+	}
+	for _, forbidden := range []string{
+		"sudo -u runnerkit-runner ./config.sh",
+		"sudo -u runnerkit-runner RUNNERKIT_REGISTRATION_TOKEN",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("RenderEphemeralInstallScript still contains buggy %q (Bug 3 not closed):\n%s", forbidden, script)
+		}
+	}
+	// Ephemeral-specific: --ephemeral flag must remain at the end of the wrapped command.
+	if !strings.Contains(script, "--replace --ephemeral") {
+		t.Fatalf("RenderEphemeralInstallScript missing --replace --ephemeral flag tail in wrapped command:\n%s", script)
+	}
+	if strings.Contains(script, opts.RunnerToken) {
+		t.Fatalf("RenderEphemeralInstallScript leaked registration token literal:\n%s", script)
+	}
+}
+
 func TestRenderDependencyFixScript(t *testing.T) {
 	script := RenderDependencyFixScript([]string{"curl", "tar"})
 	if !strings.Contains(script, "sudo apt-get install -y curl tar") || !strings.Contains(script, "sudo dnf install -y curl tar") {

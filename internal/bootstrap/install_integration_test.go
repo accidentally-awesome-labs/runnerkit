@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
@@ -149,4 +150,73 @@ func buildFakeRunnerTarball(t *testing.T, path string) string {
 		t.Fatalf("hash: %v", err)
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// TestApply_RegisterRunner_RootOnlyNopasswd asserts that the
+// rendered register_runner shell form is acceptable to a sudoers
+// configuration consisting only of `(root) NOPASSWD: ALL` — i.e. the
+// byo-prepare scoped sudoers entry alone is sufficient with no `(ALL)`
+// runas required. This closes the test gap that hid Bug 3 from Plans
+// 06-05 + 06-06 verification (gap doc 06-GAP-byo-sudo-handling.md
+// lines 122-199 + 338-365).
+//
+// Strategy: render the install script via RenderInstallScript, extract
+// the register_runner line, and assert (a) absence of `sudo -u
+// <non-root>` (Bug 3 pattern), (b) presence of `sudo su -s /bin/bash`
+// (Task F fix). The real-shell harness (shellExecutor +
+// buildFakeRunnerTarball + httptest) is set up so future extensions
+// can exercise the full sequence; this test stops at the shell-form
+// assertion because a real registration call requires a real GitHub
+// runner registration token.
+func TestApply_RegisterRunner_RootOnlyNopasswd(t *testing.T) {
+	if os.Getenv("RUNNERKIT_INTEGRATION") == "" {
+		t.Skip("set RUNNERKIT_INTEGRATION=1 to run; mirrors TestApply_DownloadRunner_RealShell skip pattern")
+	}
+
+	// Reuse the Plan 06-05 fake-tarball harness so the install dir
+	// structure is realistic — we don't ACTUALLY register, but the
+	// setup exercises the full path leading up to register_runner.
+	tmp := t.TempDir()
+	tarballPath := filepath.Join(tmp, "fake-runner.tgz")
+	_ = buildFakeRunnerTarball(t, tarballPath)
+	server := httptest.NewServer(http.FileServer(http.Dir(tmp)))
+	defer server.Close()
+
+	installPath := filepath.Join(tmp, "install")
+	currentUser := os.Getenv("USER")
+	if currentUser == "" {
+		currentUser = "runnerkit-runner"
+	}
+	opts := Options{
+		RunnerName:  "runnerkit-it-bug3test",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"self-hosted"},
+		InstallPath: installPath,
+		WorkDir:     filepath.Join(tmp, "work"),
+		ServiceUser: currentUser,
+		RunnerToken: "registration-token-itest-bug3",
+		Package:     RunnerPackage{Filename: "fake-runner.tgz", URL: server.URL + "/fake-runner.tgz", SHA256: "ignored-shape-only-test"},
+	}
+
+	script := RenderInstallScript(opts)
+	// Extract the line containing `config.sh --unattended` — the register_runner invocation.
+	var registerLine string
+	for _, line := range strings.Split(script, "\n") {
+		if strings.Contains(line, "config.sh --unattended") {
+			registerLine = line
+			break
+		}
+	}
+	if registerLine == "" {
+		t.Fatalf("rendered install script does not contain config.sh --unattended invocation:\n%s", script)
+	}
+
+	// NEGATIVE: Bug 3 pattern absent.
+	if strings.Contains(registerLine, "sudo -u "+currentUser) || strings.Contains(registerLine, "sudo -u runnerkit-runner") {
+		t.Fatalf("register_runner line still uses sudo -u <non-root> (Bug 3 not closed): %q\nfull script:\n%s", registerLine, script)
+	}
+	// POSITIVE: Task F fix present.
+	if !strings.Contains(registerLine, "sudo su -s /bin/bash") {
+		t.Fatalf("register_runner line missing sudo su -s /bin/bash form (Task F): %q\nfull script:\n%s", registerLine, script)
+	}
 }
