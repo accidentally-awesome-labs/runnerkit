@@ -146,12 +146,20 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 		// but a password requirement must NOT pass preflight as if it were
 		// passwordless. See gap doc 06-GAP-byo-sudo-handling.md Task A.
 		probeResult, probeErr := executor.Run(ctx, target, remote.Command{ID: "probe_sudo_n", Script: "sudo -n true"})
+		// Bug 7 fix: classify based on the remote stderr regardless of
+		// whether the executor returns a non-nil err. internal/remote/system.go::SystemExecutor.Run
+		// surfaces *exec.ExitError for any non-zero remote exit, so a
+		// real probe with stderr "sudo: a password is required" lands
+		// here with probeErr != nil. The discriminator is the stderr
+		// content, NOT the err type — so we ignore probeErr in the
+		// classification branches and only use it as a last-resort
+		// signal in the default case.
 		switch {
 		case probeErr == nil && probeResult.ExitCode == 0:
 			report.Results = append(report.Results, pass(CheckPrivilege, "Passwordless sudo available for setup commands."))
-		case probeErr == nil && (strings.Contains(probeResult.Stderr, "password is required") || strings.Contains(probeResult.Stderr, "a terminal is required")):
+		case strings.Contains(probeResult.Stderr, "password is required") || strings.Contains(probeResult.Stderr, "a terminal is required"):
 			report.Results = append(report.Results, warning(CheckPrivilegePasswordReq, "sudo requires a password — RunnerKit will prompt or use byo-prepare.", "Run `runnerkit byo-prepare --host user@host` to install a scoped sudoers entry, or re-run `runnerkit up` interactively to be prompted for the sudo password."))
-		case probeErr == nil && strings.Contains(probeResult.Stderr, "may not run sudo"):
+		case strings.Contains(probeResult.Stderr, "may not run sudo"):
 			report.Results = append(report.Results, failure(CheckPrivilegeNoSudo, "User is not in sudoers on the remote host.", "Add the SSH user to sudoers or pick a host where they are."))
 		default:
 			stderr := strings.TrimSpace(probeResult.Stderr)
@@ -176,8 +184,14 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 		report.FixableTools = missing
 		report.Results = append(report.Results, Result{Check: check(CheckTools), ID: CheckTools, Severity: SeverityWarning, Message: "Missing tools: " + strings.Join(missing, ", "), Remediation: "RunnerKit can install missing tools after you approve the bootstrap plan.", Fixable: true})
 	}
-	githubOK := runNetworkCheck(ctx, executor, target, "host.network.github.github", "curl -fsS https://github.com >/dev/null")
-	apiOK := runNetworkCheck(ctx, executor, target, "host.network.github.api", "curl -fsS https://api.github.com >/dev/null")
+	// Bug 8 fix: drop -f so HTTP-level errors (e.g. 403 from
+	// api.github.com when the host IP exhausts the 60-req/hr anonymous
+	// rate limit) do not masquerade as connectivity failures. Use
+	// --max-time + --connect-timeout to keep the probe bounded; rely
+	// on curl's exit code (0 means request completed at the HTTP
+	// layer, regardless of HTTP status) to signal reachability.
+	githubOK := runNetworkCheck(ctx, executor, target, "host.network.github.github", "curl -sS --connect-timeout 5 --max-time 10 -o /dev/null https://github.com")
+	apiOK := runNetworkCheck(ctx, executor, target, "host.network.github.api", "curl -sS --connect-timeout 5 --max-time 10 -o /dev/null https://api.github.com")
 	if githubOK && apiOK {
 		report.Results = append(report.Results, pass(CheckNetworkGitHub, "Outbound HTTPS to GitHub and api.github.com works."))
 	} else {

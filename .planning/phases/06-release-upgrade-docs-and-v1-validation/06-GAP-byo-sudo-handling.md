@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6 + Tasks G,H,I — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8 + Tasks G,H,I,J,K — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -625,6 +625,109 @@ naive `strings.ReplaceAll` callsites with calls to the helper.
 5. Run full repo `go test ./... -count=1 -race` — no regression in any
    sibling package.
 
+## Bug 7 — preflight `sudo -n true` switch ignores `*exec.ExitError` (discovered 2026-05-05)
+
+After Bug 6 (Plan 06-09 commit b1ce1c1) closed the visudo mangling,
+Plan 06-07 attempt-5 against `salar@mckee-small-desktop` got past
+byo-prepare and aborted at preflight:
+
+```
+ERROR host.privilege: sudo probe failed: sudo: a password is required
+```
+
+Root cause: `internal/preflight/checks.go::Run` (lines 148-165) probes
+`sudo -n true` and classifies the result with a switch where every
+case requires `probeErr == nil`. The real `internal/remote/system.go::SystemExecutor.Run`
+returns `*exec.ExitError` for any non-zero remote exit (line 81-90),
+so the probe with stderr "sudo: a password is required" lands here
+with `probeErr != nil` and falls through to the default
+"sudo probe failed: …" branch — emitting FAILURE instead of the
+intended WARNING.
+
+The gap-classifier was added in Plan 06-05 Task A but only tested
+against `fakePreflightExecutor` (`internal/preflight/checks_test.go:21`)
+which returns nil err for canned results. The fake doesn't reflect
+the production executor's err semantics → tests passed against an
+unrealistic prod model. Same family of "test fake masks prod bug"
+issue as Bug 4.
+
+### Bug 7 fix
+
+Drop the `probeErr == nil` guard from the password/no-sudo cases; use
+the stderr content as the discriminator. Keep `probeErr` as a
+last-resort signal in the default branch (so genuine SSH transport
+failures still produce a useful "sudo probe failed: …" message).
+
+### Bug 7 acceptance
+
+- `runnerkit up --host user@host` against an Ubuntu host with
+  password-protected sudo correctly emits `host.privilege.password_required`
+  WARNING and proceeds to the Path B prompt (rather than aborting at
+  preflight with FAILURE).
+- Two unit tests assert the WARNING/no-sudoers branches fire even when
+  the executor returns a non-nil err alongside the matching stderr.
+
+### Task J — Stderr-based privilege classification (Bug 7)
+
+1. Edit `internal/preflight/checks.go::Run` switch (lines 148-165):
+   drop `probeErr == nil` from the password/no-sudo cases. Add a
+   doc comment recording the exec.ExitError discriminator decision.
+2. Add tests in `internal/preflight/checks_bugfix_test.go` covering
+   ExitError + matching stderr → WARNING; ExitError + "may not run
+   sudo" stderr → FAILURE (no_sudo).
+3. Run full repo suite — no regression.
+
+## Bug 8 — `curl -fsS` misclassifies anonymous github API rate-limit as connectivity failure (discovered 2026-05-05)
+
+Plan 06-07 attempt-5 simultaneously surfaced:
+
+```
+ERROR host.network.github: Outbound HTTPS to GitHub failed.
+NEXT  Allow HTTPS egress to https://github.com and https://api.github.com.
+```
+
+Root cause: `runNetworkCheck` calls
+`curl -fsS https://api.github.com >/dev/null`. The `-f` flag makes
+curl exit 22 on HTTP 4xx/5xx. `mckee-small-desktop`'s outbound IP
+(99.241.162.100) had exhausted GitHub's anonymous API rate limit
+(`x-ratelimit-remaining=0` → HTTP 403). The host's network IS
+reachable; only the unauthenticated probe is rate-limited. The
+preflight then misreports a connectivity problem.
+
+The remediation message is also misleading — it tells the user to
+"allow HTTPS egress" when egress is fine.
+
+### Why cloud is unaffected
+
+Hetzner cloud-init runs against a freshly-provisioned cloud server
+whose IP has never hit GitHub's anonymous rate limit (each provision
+gets a clean Hetzner IP). The bug is residential-network-specific.
+
+### Bug 8 fix
+
+Drop `-f` so `curl` exits 0 whenever the request completes at the
+HTTP layer — distinguishing "network reachable" (any HTTP response)
+from "transport error" (DNS, TLS, connection refused). Add `--max-time`
+and `--connect-timeout` to keep the probe bounded.
+
+### Bug 8 acceptance
+
+- Preflight `host.network.github` PASSES against a host whose IP
+  has hit the anonymous GitHub API rate limit (HTTP 403 response).
+- Preflight still FAILS against a genuinely unreachable host (DNS
+  failure, no route to host, TLS error).
+- Regression test asserts the github + api probe scripts do NOT
+  contain `-fsS` and DO contain `--connect-timeout`.
+
+### Task K — Drop `-fsS` from network probes (Bug 8)
+
+1. Edit `internal/preflight/checks.go` lines 179-180: change
+   `curl -fsS` → `curl -sS --connect-timeout 5 --max-time 10 -o /dev/null`
+   for both github.com and api.github.com probes. Add a doc comment.
+2. Add `TestRunNetworkCheck_Script_DoesNotUseFailFlag` in
+   `checks_bugfix_test.go` asserting the new flag set is in place.
+3. Run full repo suite — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -665,9 +768,17 @@ naive `strings.ReplaceAll` callsites with calls to the helper.
   06-09 closure since the smoke can't make end-to-end forward progress
   without all three fixes.
 - Once Bug 6 closed: byo-prepare runs to completion; Plan 06-07
-  attempt-5 proceeds to the actual smoke (BYO bootstrap → register_runner
-  → status → doctor → down → Hetzner empty_precheck → cloud-end-to-end
-  → destroy_verify).
+  attempt-5 progressed to runnerkit up preflight where Bugs 7 + 8
+  surfaced.
+- Bugs 7 + 8 discovered 2026-05-05 during Plan 06-07 attempt-5 against
+  the same host AFTER Bug 6 fix landed. Bug 7 was masked by an
+  unrealistic test fake; Bug 8 is residential-network-specific
+  (cloud paths see clean IPs and never trip the anonymous rate
+  limit). Bundled with Bugs 4-6 in Plan 06-09 closure.
+- Once Bugs 7 + 8 closed: preflight passes on byo-prepared Ubuntu 24.04
+  hosts; Plan 06-07 attempt-6 proceeds to the actual smoke (BYO
+  bootstrap → register_runner → status → doctor → down → Hetzner
+  empty_precheck → cloud-end-to-end → destroy_verify).
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned
