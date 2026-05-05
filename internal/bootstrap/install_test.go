@@ -70,6 +70,60 @@ func TestApplyEphemeralRunsCommandsInOrderRedactsTokenAndAvoidsSvcSh(t *testing.
 	}
 }
 
+// TestApplyDownloadRunnerCommandUsesSudoForCurlSha256SumTar asserts the
+// fix for Bug 2 of gap doc 06-GAP-byo-sudo-handling.md: the
+// download_runner step in Apply must prefix curl, sha256sum -c -, and
+// tar xzf with sudo so the install dir owned by serviceUser receives
+// the tarball without `Permission denied` failures when the SSH user
+// differs from the service user.
+func TestApplyDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testing.T) {
+	exec := &recordingExecutor{}
+	opts := Options{RunnerName: "runnerkit-owner-repo", RepoURL: "https://github.com/owner/repo", Labels: []string{"x"}, ServiceUser: "runnerkit-runner", RunnerToken: "registration-token-x", Package: RunnerPackage{Filename: "runner.tgz", URL: "https://example.invalid/runner.tgz", SHA256: "abc"}}
+	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	var dl remote.Command
+	for _, c := range exec.commands {
+		if c.ID == "download_runner" {
+			dl = c
+			break
+		}
+	}
+	if dl.ID == "" {
+		t.Fatalf("download_runner command not found in recorded commands")
+	}
+	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf"} {
+		if !strings.Contains(dl.Script, want) {
+			t.Fatalf("download_runner script missing %q:\n%s", want, dl.Script)
+		}
+	}
+}
+
+// TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar
+// is the parallel assertion for ApplyEphemeral.
+func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testing.T) {
+	exec := &recordingExecutor{}
+	opts := Options{RunnerName: "runnerkit-owner-repo-ephemeral", RepoURL: "https://github.com/owner/repo", Labels: []string{"x"}, ServiceUser: "runnerkit-runner", RunnerToken: "registration-token-x", Mode: "ephemeral", Package: RunnerPackage{Filename: "runner.tgz", URL: "https://example.invalid/runner.tgz", SHA256: "abc"}}
+	if _, err := ApplyEphemeral(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("ApplyEphemeral returned error: %v", err)
+	}
+	var dl remote.Command
+	for _, c := range exec.commands {
+		if c.ID == "download_runner" {
+			dl = c
+			break
+		}
+	}
+	if dl.ID == "" {
+		t.Fatalf("download_runner command not found in recorded ephemeral commands")
+	}
+	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf"} {
+		if !strings.Contains(dl.Script, want) {
+			t.Fatalf("ephemeral download_runner script missing %q:\n%s", want, dl.Script)
+		}
+	}
+}
+
 func TestApplyRunsBootstrapCommandsInOrderAndRedactsToken(t *testing.T) {
 	token := "registration-token-secret-12345"
 	exec := &recordingExecutor{}

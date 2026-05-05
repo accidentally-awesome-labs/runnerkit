@@ -31,6 +31,52 @@ func TestRenderInstallAndServiceScripts(t *testing.T) {
 	}
 }
 
+// TestRenderInstallScriptUsesSudoForCurlSha256SumTar asserts the
+// renderer-side fix for Bug 2 of gap doc 06-GAP-byo-sudo-handling.md:
+// curl, sha256sum -c -, and tar xzf must be prefixed with sudo so the
+// install dir (owned by serviceUser) receives the tarball without
+// `Permission denied` failures.
+func TestRenderInstallScriptUsesSudoForCurlSha256SumTar(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo-local",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"},
+		InstallPath: "/opt/actions-runner/runnerkit-owner-repo-local",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-owner-repo-local",
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "registration-token-secret-12345",
+		Package:     RunnerPackage{Filename: "actions-runner-linux-x64-2.334.0.tar.gz", URL: "https://example.invalid/runner.tgz", SHA256: "abc123"},
+	}
+	script := RenderInstallScript(opts)
+	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("RenderInstallScript missing %q:\n%s", want, script)
+		}
+	}
+}
+
+// TestRenderEphemeralInstallScriptUsesSudoForCurlSha256SumTar is the
+// parallel assertion for the ephemeral renderer.
+func TestRenderEphemeralInstallScriptUsesSudoForCurlSha256SumTar(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo-ephemeral-abc123",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "ephemeral"},
+		InstallPath: "/opt/actions-runner/runnerkit-owner-repo-ephemeral-abc123",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-owner-repo-ephemeral-abc123",
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "registration-token-ephemeral-secret-12345",
+		Mode:        "ephemeral",
+		Package:     RunnerPackage{Filename: "actions-runner-linux-x64-2.334.0.tar.gz", URL: "https://example.invalid/runner.tgz", SHA256: "abc123"},
+	}
+	script := RenderEphemeralInstallScript(opts)
+	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("RenderEphemeralInstallScript missing %q:\n%s", want, script)
+		}
+	}
+}
+
 func TestRenderDependencyFixScript(t *testing.T) {
 	script := RenderDependencyFixScript([]string{"curl", "tar"})
 	if !strings.Contains(script, "sudo apt-get install -y curl tar") || !strings.Contains(script, "sudo dnf install -y curl tar") {
