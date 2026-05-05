@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ops"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/preflight"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
@@ -72,7 +73,11 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 	workResult, workErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.path.work", Script: workScript, Timeout: 10 * time.Second})
 	_, _ = deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.preflight", Script: "true", Timeout: 5 * time.Second})
 	report, _ := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{RunnerName: repoState.Runner.Name, AllowUnknownLinux: true})
-	checks := ops.DeepChecks{InstallPathOK: installErr == nil && installResult.ExitCode == 0, WorkDirOK: workErr == nil && workResult.ExitCode == 0, Preflight: report}
+	// Plan 06-06: probe whether `runnerkit byo-prepare` was applied
+	// (Path C) — the presence of /etc/sudoers.d/runnerkit-installer
+	// is enough to emit the informational `byo_host_prepared` finding.
+	byoResult, byoErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.byo_host_prepared", Script: "test -f " + bootstrap.SudoersFilePath, Timeout: 5 * time.Second})
+	checks := ops.DeepChecks{InstallPathOK: installErr == nil && installResult.ExitCode == 0, WorkDirOK: workErr == nil && workResult.ExitCode == 0, Preflight: report, BYOHostPrepared: byoErr == nil && byoResult.ExitCode == 0}
 	if !checks.InstallPathOK {
 		checks.InstallPathError = strings.TrimSpace(installResult.Stderr + " " + installResult.Stdout)
 		if checks.InstallPathError == "" && installErr != nil {

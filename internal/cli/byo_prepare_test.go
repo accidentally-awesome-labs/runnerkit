@@ -109,8 +109,14 @@ func TestByoPrepare_VisudoValidationFails_DoesNotMoveFile(t *testing.T) {
 		}
 	}
 	combined := out.String() + errOut.String()
-	if !strings.Contains(combined, "byo_prepare_failed") {
-		t.Fatalf("error code byo_prepare_failed missing from output:\n%s", combined)
+	// Human renderer prints the message; JSON renderer prints the code.
+	// Either way the user-facing copy must reference the install failure.
+	if !strings.Contains(combined, "could not install the scoped sudoers entry") && !strings.Contains(combined, "byo_prepare_failed") {
+		t.Fatalf("error message missing from output:\n%s", combined)
+	}
+	// The remote stderr must surface so users can self-diagnose.
+	if !strings.Contains(combined, "parse error") {
+		t.Fatalf("remote visudo stderr missing from output:\n%s", combined)
 	}
 }
 

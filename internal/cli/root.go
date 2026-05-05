@@ -124,6 +124,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newStateCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpgradeCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpgradeRunnerCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newByoPrepareCommand(deps, &jsonOutput, &noColor))
 
 	return root
 }
