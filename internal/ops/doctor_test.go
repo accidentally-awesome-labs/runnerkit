@@ -40,3 +40,37 @@ func TestBuildDoctorReportSSHUnreachable(t *testing.T) {
 		t.Fatalf("ssh_unreachable finding missing: %#v", report.Findings)
 	}
 }
+
+// TestDoctor_ByoHostPreparedFinding asserts that when DeepChecks
+// reports the remote host has /etc/sudoers.d/runnerkit-installer
+// (i.e. `runnerkit byo-prepare` was previously applied), the doctor
+// report emits a `byo_host_prepared` finding with informational
+// severity. When BYOHostPrepared is false, no such finding is added.
+func TestDoctor_ByoHostPreparedFinding(t *testing.T) {
+	repo := testsupport.HealthyRepositoryState()
+	observed := ObservedRunner{Repo: repo.Repo.FullName, StatePath: "/state.json", StatePresent: true, State: &repo, GitHub: GitHubFact{Found: true, ID: 123, Name: repo.Runner.Name, Status: "online", Labels: repo.Runner.Labels}, SSH: SSHFact{Reachable: true, HostKey: "matched"}, Service: ServiceFact{Service: repo.Machine.ServiceName, ActiveState: "active"}, Labels: CompareLabels(repo.Runner.Labels, repo.Runner.Labels)}
+
+	preparedReport := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true, BYOHostPrepared: true})
+	foundPrepared := false
+	for _, finding := range preparedReport.Findings {
+		if finding.ID == "byo_host_prepared" {
+			foundPrepared = true
+			if finding.Severity != string(SeverityPass) {
+				t.Fatalf("byo_host_prepared severity = %q, want pass (informational)", finding.Severity)
+			}
+			if !strings.Contains(finding.Evidence, "/etc/sudoers.d/runnerkit-installer") {
+				t.Fatalf("byo_host_prepared evidence missing canonical path: %s", finding.Evidence)
+			}
+		}
+	}
+	if !foundPrepared {
+		t.Fatal("byo_host_prepared finding missing when BYOHostPrepared=true")
+	}
+
+	unpreparedReport := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true, BYOHostPrepared: false})
+	for _, finding := range unpreparedReport.Findings {
+		if finding.ID == "byo_host_prepared" {
+			t.Fatalf("byo_host_prepared finding emitted when BYOHostPrepared=false: %#v", finding)
+		}
+	}
+}
