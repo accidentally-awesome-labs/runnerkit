@@ -419,21 +419,30 @@ command fails.
 
 ### Fix
 
-Two recommended paths (Plan 06-06 lands the CLI surface for both):
-
-1. **Recommended — `runnerkit byo-prepare`** (one-time scoped sudoers entry):
-   ```bash
-   runnerkit byo-prepare --host user@host
-   ```
-2. **Fallback — interactive password prompt** (no host-side preconfiguration):
-   ```bash
-   runnerkit up --repo owner/name --host user@host
-   # RunnerKit prompts for the host's sudo password locally; never logged or stored.
-   ```
-
-Until Plan 06-06 lands, the v1.0.0 documented workaround is to add a
-NOPASSWD sudoers entry for the SSH user manually:
+**Recommended — `runnerkit byo-prepare`** (one-time scoped sudoers entry):
 
 ```bash
-ssh user@host 'echo "user ALL=(root) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/runnerkit-temporary && sudo chmod 0440 /etc/sudoers.d/runnerkit-temporary'
+runnerkit byo-prepare --host user@host
 ```
+
+Installs `/etc/sudoers.d/runnerkit-installer` (mode 0440) with NOPASSWD only
+for the bootstrap command set (`apt-get`/`dnf`/`yum`, `useradd`, `install`,
+`tar`, `systemctl`, `svc.sh`). Validated with `visudo -c` before atomic
+rename — a malformed sudoers file can never be persisted. Idempotent — safe
+to re-run. Use `--remove` to revert.
+
+**Fallback — interactive password prompt** (no host-side preconfiguration):
+
+```bash
+runnerkit up --repo owner/name --host user@host
+# RunnerKit: "Sudo password for user@host:" → type password → bootstrap proceeds
+```
+
+RunnerKit prompts locally for the sudo password during preflight. The
+password is registered with the redactor immediately so it never leaks into
+logs, JSON output, or error messages, and is zeroed from process memory
+after bootstrap returns. `--non-interactive` (or piping stdin) disables
+this fallback — use `runnerkit byo-prepare` for non-TTY contexts.
+
+See [docs/byo-quickstart.md#sudo-setup](../byo-quickstart.md#sudo-setup)
+for the full Path C → Path B decision tree.

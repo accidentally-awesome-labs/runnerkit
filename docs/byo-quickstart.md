@@ -20,6 +20,46 @@ Do not use this persistent BYO path for public pull requests or untrusted workfl
 
 For full guidance see the [Self-hosted Runner Safety Guide](safety.md).
 
+## Sudo Setup
+
+RunnerKit's bootstrap commands run as the SSH user with sudo. RunnerKit supports two paths so the SSH user does NOT need to manually edit `/etc/sudoers.d/`:
+
+### Recommended: `runnerkit byo-prepare` (one-time, persistent)
+
+Run this once per BYO host. RunnerKit prompts locally for the sudo password, installs a SCOPED `/etc/sudoers.d/runnerkit-installer` entry granting NOPASSWD only for the bootstrap commands (`apt-get`/`dnf`/`yum`, `useradd`, `install`, `tar`, `systemctl`, `svc.sh`), validates with `visudo -c` before atomically renaming into place, and verifies passwordless sudo works:
+
+```bash
+runnerkit byo-prepare --host user@host
+```
+
+After this completes, every subsequent `runnerkit up --host user@host` runs passwordlessly.
+
+To revert:
+
+```bash
+runnerkit byo-prepare --host user@host --remove
+```
+
+### Fallback: interactive password prompt during `runnerkit up`
+
+If you have NOT run `runnerkit byo-prepare`, `runnerkit up` detects the password requirement during preflight and prompts you locally for the sudo password. The password is registered with RunnerKit's redactor immediately so it never leaks into logs, JSON output, or error messages, and is zeroed from process memory after bootstrap returns:
+
+```bash
+runnerkit up --repo owner/name --host user@host
+# RunnerKit: "Sudo password for user@host:" → type password → bootstrap proceeds
+```
+
+`--non-interactive` (or piping stdin) disables this fallback. In that case, `runnerkit up` exits with `RKD-BOOT-015` and remediation pointing at `runnerkit byo-prepare`. See [docs/troubleshooting/bootstrap.md#rkd-boot-015](troubleshooting/bootstrap.md#rkd-boot-015).
+
+### Decision tree
+
+| Scenario | Recommended path |
+| --- | --- |
+| One-time setup; want passwordless from now on | `runnerkit byo-prepare --host user@host` |
+| Don't want host-side state changes; happy to type password | `runnerkit up --host user@host` (prompts) |
+| CI / automation / no TTY | `runnerkit byo-prepare` first, then `runnerkit up --non-interactive` |
+| Already configured `/etc/sudoers.d/` manually with NOPASSWD ALL | `runnerkit up` works without prompt (but prefer scoped `byo-prepare`) |
+
 ## Run setup
 
 ```bash

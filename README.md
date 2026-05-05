@@ -115,6 +115,8 @@ runnerkit up --repo owner/name --host user@host
 
 See [docs/byo-quickstart.md](docs/byo-quickstart.md) for prerequisites, safety notes, the workflow label snippet, and troubleshooting.
 
+First-time BYO setup against a sudo-with-password host? See [Sudo Setup](docs/byo-quickstart.md#sudo-setup) — `runnerkit byo-prepare --host user@host` installs a scoped sudoers entry once, then every `runnerkit up` runs passwordlessly.
+
 ## Recommended cloud runner quickstart
 
 Use the recommended cloud runner quickstart when you do not already have a Linux machine and want RunnerKit to provision the Hetzner cloud path:
