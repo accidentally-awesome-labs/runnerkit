@@ -1,9 +1,10 @@
 ---
 status: open
-source: live BYO smoke (Plan 06-04 Task 4)
+source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
+updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (mandatory before v1.0.0 tag — v1 BYO is unusable as-is)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -117,6 +118,85 @@ Either way the fix needs:
 - A scripted shell smoke (`scripts/smoke/byo-permission.sh` is the
   obvious extension point) that validates `download_runner` lands the
   tarball and the extraction succeeds, before the configure step.
+
+## Bug 3 — `register_runner` runas mismatch (discovered 2026-05-05)
+
+After Plans 06-05 + 06-06 landed (Bug 1 + Bug 2 + Tasks A-E closed), the
+Plan 06-07 re-smoke against `salar@mckee-small-desktop` failed at the
+`register_runner` step with:
+
+```
+Remote stderr (unknown): sudo: a terminal is required to read the password;
+either use the -S option to read from standard input or configure an
+askpass helper sudo: a password is required
+```
+
+The smoke host had system-wide sudoers:
+
+```
+salar ALL=(ALL : ALL) ALL          # password required
+salar ALL=(root) NOPASSWD: ALL     # runas=root only
+```
+
+The bootstrap got past `download_runner` (Bug 2 fix verified — `config.sh`
+extracted to `/opt/actions-runner/runnerkit-<owner>-<repo>-local/`), then
+failed at `register_runner` because `internal/bootstrap/script.go:47, 83`
+runs:
+
+```bash
+sudo -u runnerkit-runner RUNNERKIT_REGISTRATION_TOKEN="..." ./config.sh \
+  --unattended --url ... --token ... --name ... --labels ... --work ... --replace
+```
+
+`sudo -u runnerkit-runner` runs as a **non-root** user. With `(root) NOPASSWD: ALL`,
+only runas=root is passwordless; runas=runnerkit-runner matches `(ALL:ALL) ALL`
+(password required). Same problem with the `byo-prepare` scoped sudoers
+template (`internal/bootstrap/sudoers.go:23`) which uses `ALL=(root) NOPASSWD:`
+— even with `byo-prepare` run, `register_runner` still requires a password.
+
+### Why cloud is unaffected
+
+Hetzner cloud-init (`internal/provider/hetzner/provision.go:241`) configures
+`runnerkit-admin` with `sudo: ALL=(ALL) NOPASSWD:ALL` — `(ALL)` runas covers
+runas=runnerkit-runner. Cloud path works; BYO path does not. v1.0.0 cannot
+ship with BYO non-functional.
+
+### Bug 3 fix options
+
+**Option 2 (preferred — minimal blast radius):** drop the `sudo -u runnerkit-runner`
+prefix from `register_runner`. Run `config.sh` via `su -s /bin/bash - runnerkit-runner -c '<cmd>'`
+inside an existing `sudo` context. `su` runs from root → no `(ALL)` runas
+needed → works on BYO host with only root NOPASSWD AND on cloud host with
+broader NOPASSWD. The byo-prepare scoped sudoers entry needs no change.
+Forms:
+
+```bash
+sudo su -s /bin/bash - runnerkit-runner -c \
+  "RUNNERKIT_REGISTRATION_TOKEN='...' ./config.sh --unattended ..."
+```
+
+**Option 1 (rejected — high complexity):** expand byo-prepare scoped sudoers
+to `(ALL) NOPASSWD:` runas plus a per-repo allowlist that includes the
+runtime-derived install dir's `config.sh`. Path is repo-derived (`runnerkit-<owner>-<repo>-local`)
+so the allowlist must be regenerated per `runnerkit up` invocation, defeating
+the "one-time prepare" promise.
+
+**Option 3 (rejected — semantics drift):** run `config.sh` as root with
+`HOME=/home/runnerkit-runner`. Risk: GitHub runner registration may write
+user-specific files (e.g. `.runner` ownership) differently when invoked
+from root vs the target user. Untested upstream.
+
+### Bug 3 acceptance
+
+- `register_runner` step succeeds against a BYO host whose user has ONLY
+  `(root) NOPASSWD: ALL` (or only the byo-prepare scoped sudoers entry).
+- Cloud path remains green — same `register_runner` script path works on
+  cloud where `runnerkit-admin` has broader `(ALL) NOPASSWD: ALL`.
+- A bootstrap unit test asserts the new shell form does NOT contain the
+  literal token `sudo -u`. Closes the regression-detection gap.
+- The integration test from Task E is extended (or paralleled) with a
+  fixture that simulates `runnerkit-runner` not being root → asserts the
+  new approach works without `(ALL)` runas in the host's sudoers.
 
 ## Required work
 
@@ -255,6 +335,35 @@ Files affected:
 - `scripts/smoke/byo-permission.sh` (additional assertion)
 - `internal/bootstrap/script_test.go` (substring assertions updated to include `sudo curl`/`sudo tar` if Option 1 chosen)
 
+### Task F — Fix register_runner runas mismatch (Bug 3)
+
+`internal/bootstrap/script.go::RenderInstallScript` and
+`RenderEphemeralInstallScript` (lines 47, 83):
+
+- Replace `sudo -u runnerkit-runner ./config.sh ...` with
+  `sudo su -s /bin/bash - runnerkit-runner -c '...'` so the registration
+  call runs from a root sudo context with no `(ALL)` runas requirement.
+- Update `internal/bootstrap/script_test.go` substring assertions: assert
+  presence of `su -s /bin/bash` and absence of `sudo -u`.
+- Extend the Task E integration test (`install_integration_test.go`) with
+  a sub-case that asserts the new shell form succeeds when the SSH user's
+  sudoers has only `(root) NOPASSWD: ALL` — i.e. byo-prepare scoped entry
+  alone is sufficient with no `(ALL)` runas.
+- Re-run the Plan 06-07 BYO smoke against the same `salar@mckee-small-desktop`
+  host that exposed the bug; assert the registration step lands a runner
+  ID before destroy.
+
+Files affected:
+- `internal/bootstrap/script.go` (RenderInstallScript + RenderEphemeralInstallScript registration line)
+- `internal/bootstrap/script_test.go` (substring assertions)
+- `internal/bootstrap/install_integration_test.go` (extend with no-ALL-runas fixture)
+- `scripts/smoke/byo-permission.sh` (optional: assert runner ID file exists post-bootstrap)
+
+Cloud path note: `internal/provider/hetzner/provision.go:241` cloud-init
+keeps `(ALL) NOPASSWD: ALL` — broader than needed but harmless. Optional
+downscope: tighten to match the byo-prepare scoped set + `su` form, but
+out of scope for Bug 3 closure (no observed impact, no v1.0.0 blocker).
+
 ## Acceptance
 
 - [ ] Preflight rejects "sudo binary present but password required"
@@ -281,15 +390,28 @@ Files affected:
       actual install scripts against a real shell — the
       fakeExecutor-only test suite gap that hid this bug since 02-02
       is closed.
+- [ ] (Bug 3) `register_runner` step succeeds against a BYO host whose
+      user has ONLY `(root) NOPASSWD: ALL` (or only the byo-prepare
+      scoped sudoers entry). No `(ALL)` runas required in host sudoers.
+- [ ] (Bug 3) Bootstrap script unit test asserts absence of `sudo -u`
+      in `register_runner` shell form; presence of `su -s /bin/bash`.
+- [ ] (Bug 3) Plan 06-07 re-smoke against `salar@mckee-small-desktop`
+      lands a GitHub runner ID before destroy.
 
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
   workaround for v1.0.0: maintainer manually adds NOPASSWD on the test
   host. This is the documented v1.0.0 contract until this gap closes.
-- Once closed: the Plan 06-04 BYO smoke can be re-run end-to-end without
-  any host-side preconfiguration (Path B will prompt automatically), and
-  the v1.0.0 preflight bug stops biting first-time BYO users.
+- Bug 3 discovered 2026-05-05 during Plan 06-07 attempt 1 against the
+  same `salar@mckee-small-desktop` host AFTER Plans 06-05 + 06-06 landed.
+  Cloud path unaffected because Hetzner cloud-init configures `(ALL) NOPASSWD: ALL`
+  which covers `runas=runnerkit-runner`. BYO non-functional in v1 until
+  Task F lands.
+- Once closed: the Plan 06-07 BYO + Hetzner smoke can re-run end-to-end
+  without any host-side preconfiguration AND `register_runner` no longer
+  requires `(ALL)` runas in host sudoers. Plan 06-08 is the gap-closure
+  target.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

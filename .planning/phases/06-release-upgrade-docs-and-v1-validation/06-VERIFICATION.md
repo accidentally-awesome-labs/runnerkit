@@ -3,13 +3,14 @@ phase: 06-release-upgrade-docs-and-v1-validation
 type: verification
 status: gaps_found
 verified: 2026-05-02T00:00:00Z
-score: 3/4 plans verified (06-04 partial-blocked)
+score: 6/7 plans verified (06-07 partial-blocked by Bug 3)
 created: 2026-05-04
+updated: 2026-05-05
 re_verification: false
 gaps:
   - truth: "BYO bootstrap completes end-to-end against a real host without manual sudoers preconfiguration."
-    status: failed
-    reason: "Two latent bugs in the BYO bootstrap path block live smoke and make BYO unshippable in v1.0.0. Source of truth: 06-GAP-byo-sudo-handling.md (Tasks A-E)."
+    status: partial
+    reason: "Two of three latent bugs in the BYO bootstrap path closed by Plans 06-05 + 06-06 (commits ee5c0a2 + 08b8708). Plan 06-07 attempt 1 re-smoke against salar@mckee-small-desktop on 2026-05-05 surfaced Bug 3 (`register_runner` runas mismatch — see Bug 3 entry below). BYO still non-functional in v1.0.0 until Task F lands. Source of truth: 06-GAP-byo-sudo-handling.md (Tasks A-E CLOSED; Task F OPEN)."
     artifacts:
       - path: "internal/preflight/checks.go"
         issue: "CheckPrivilege only tests `probe.Commands[\"sudo\"]` (binary present); never probes `sudo -n true`. Falsely passes when sudo requires a password, so bootstrap then fails opaquely with `bootstrap_failed` while remote stderr is swallowed."
@@ -25,16 +26,31 @@ gaps:
       - "Task C: Path C — new `runnerkit byo-prepare --host user@host` command (idempotent scoped sudoers entry under /etc/sudoers.d/runnerkit-installer, `visudo -c` validation, --remove inverse, doctor integration finding `byo_host_prepared`)."
       - "Task D: docs/byo-quickstart.md Sudo Setup section (Path C → Path B decision tree); docs/troubleshooting/bootstrap.md new RKD-BOOT-NNN entry for sudo password required; README.md one-liner under BYO install."
       - "Task E: prefix `curl`, `sha256sum -c`, `tar xzf` in download_runner with sudo (Option 1 — minimal diff), apply same fix in RenderInstallScript and RenderEphemeralInstallScript; add integration test exercising real shell with tmpfs sandbox to close the fakeExecutor-only test gap that hid this bug since Plan 02-02; extend scripts/smoke/byo-permission.sh to assert install dir contains config.sh after bootstrap apply."
+  - truth: "BYO `register_runner` step succeeds without `(ALL)` runas in host sudoers (i.e., scoped sudoers entry from byo-prepare alone is sufficient)."
+    status: failed
+    reason: "Bug 3 (discovered 2026-05-05 during Plan 06-07 re-smoke attempt 1). `internal/bootstrap/script.go:47, 83` invokes `sudo -u runnerkit-runner ./config.sh ...` to register the GitHub runner as the unprivileged service user. Linux sudoers semantics: `(root) NOPASSWD: ALL` only covers runas=root. Running as a non-root user matches a different rule and triggers password prompt. BYO host with system-wide `(root) NOPASSWD: ALL` (or with the byo-prepare scoped sudoers `ALL=(root) NOPASSWD:` template) cannot run `sudo -u runnerkit-runner` without a password. Cloud path unaffected because `internal/provider/hetzner/provision.go:241` cloud-init configures runnerkit-admin with `sudo: ALL=(ALL) NOPASSWD:ALL` — `(ALL)` runas covers runnerkit-runner. v1.0.0 cannot ship with BYO non-functional."
+    artifacts:
+      - path: "internal/bootstrap/script.go"
+        issue: "Line 47 (RenderInstallScript) and line 83 (RenderEphemeralInstallScript) use `sudo -u runnerkit-runner ./config.sh ...` for runner registration. `sudo -u <non-root>` requires `(ALL)` runas in sudoers; both system-wide `(root) NOPASSWD: ALL` and the byo-prepare scoped template `ALL=(root) NOPASSWD:` cover only runas=root."
+      - path: "internal/bootstrap/sudoers.go"
+        issue: "RenderSudoersEntry (line 23) writes `<user> ALL=(root) NOPASSWD: <commands>`. Even after byo-prepare runs successfully, register_runner still hits the runas mismatch."
+      - path: "internal/bootstrap/script_test.go"
+        issue: "Substring assertions in script_test.go cover `sudo curl|sha256sum|tar` from Bug 2 fix but never asserted absence of `sudo -u <non-root>` patterns. Bug 3 lived undetected since Plan 02-02 because every bootstrap test uses fakeExecutor that records commands but never executes them — no integration test covers the case of an SSH user with only root NOPASSWD."
+    missing:
+      - "Task F: replace `sudo -u runnerkit-runner ./config.sh ...` in RenderInstallScript and RenderEphemeralInstallScript with `sudo su -s /bin/bash - runnerkit-runner -c '<config.sh ...>'`. `su` runs from root → no `(ALL)` runas needed → works on BYO host with only root NOPASSWD AND on cloud host with broader NOPASSWD."
+      - "Task F: extend script_test.go with assertion that `sudo -u` is absent and `su -s /bin/bash` is present in the rendered script."
+      - "Task F: extend install_integration_test.go with a sub-case that simulates an SSH user whose sudoers has only `(root) NOPASSWD: ALL` and asserts the registration command line is acceptable (root-only NOPASSWD sufficient)."
+      - "Task F: re-run Plan 06-07 BYO smoke against salar@mckee-small-desktop and assert a GitHub runner ID lands before destroy."
   - truth: "10-minute stopwatch durations + Hetzner cost + Hetzner resource IDs are recorded in 06-VERIFICATION.md and RELEASE-NOTES-v1.0.0.md from a real maintainer run on a clean machine."
     status: failed
-    reason: "Plan 06-04 Task 4 (live smoke + maintainer stopwatch fill-in) is blocked by the BYO bugs above. Live smoke attempt 1 (2026-05-04 to 2026-05-05) failed at the BYO step before reaching cloud-end-to-end. No Hetzner resources were created. Once 06-GAP-byo-sudo-handling.md closes, Task 4 can re-run end-to-end without host-side preconfiguration."
+    reason: "Plan 06-07 Task 1 (live smoke re-run + maintainer stopwatch fill-in) blocked by Bug 3 above. Re-smoke attempt 1 (2026-05-05) failed at register_runner before reaching cloud-end-to-end. No Hetzner resources created. Once Task F (Plan 06-08) closes, Plan 06-07 can re-run end-to-end without host-side preconfiguration."
     artifacts:
       - path: ".planning/phases/06-release-upgrade-docs-and-v1-validation/06-VERIFICATION.md"
-        issue: "Maintainer fill-in fields (BYO host, repo, duration, runner ID; Hetzner repo, project, duration, cost EUR, 5 resource IDs, gate 1/2 PASS, stopwatch totals, sign-off) remain blank. Skeleton baseline is in place from Task 3 commit 140cb06; numbers await closure of the BYO blockers."
+        issue: "Maintainer fill-in fields (BYO host, repo, duration, runner ID; Hetzner repo, project, duration, cost EUR, 5 resource IDs, gate 1/2 PASS, stopwatch totals, sign-off) remain blank. Skeleton baseline is in place from Plan 06-04 Task 3 commit 140cb06; numbers await closure of Bug 3."
       - path: "RELEASE-NOTES-v1.0.0.md"
         issue: "10-minute stopwatch wall-clock numbers are still placeholders. Awaits the same maintainer run."
     missing:
-      - "Re-run `make smoke-live` against a fresh BYO host AND a real Hetzner project AFTER Tasks A-E land. Fill BYO + Hetzner duration / runner ID / 5 resource IDs / cost / gate-1 PASS / gate-2 PASS / stopwatch totals into 06-VERIFICATION.md; fill stopwatch table into RELEASE-NOTES-v1.0.0.md; sign and date the verification baseline; resume signal `smoke-green` triggers Phase 6 sign-off and v1.0.0 tag push."
+      - "Re-run `make smoke-live` against a fresh BYO host AND a real Hetzner project AFTER Task F (Plan 06-08) lands. Fill BYO + Hetzner duration / runner ID / 5 resource IDs / cost / gate-1 PASS / gate-2 PASS / stopwatch totals into 06-VERIFICATION.md; fill stopwatch table into RELEASE-NOTES-v1.0.0.md; sign and date the verification baseline; resume signal `smoke-green` triggers Phase 6 sign-off and v1.0.0 tag push."
 gap_source: 06-GAP-byo-sudo-handling.md
 ---
 
@@ -96,9 +112,9 @@ gap_source: 06-GAP-byo-sudo-handling.md
 
 ---
 
-# Verifier Verdict (gsd-verifier, 2026-05-02)
+# Verifier Verdict (gsd-verifier, 2026-05-02; updated 2026-05-05)
 
-**Status: gaps_found** — 3 of 4 plans complete; Plan 06-04 partial-blocked on `06-GAP-byo-sudo-handling.md`.
+**Status: gaps_found** — 6 of 7 plans complete; Plan 06-07 partial-blocked on `06-GAP-byo-sudo-handling.md` Bug 3 / Task F.
 
 ## Goal Achievement
 
@@ -111,7 +127,10 @@ gap_source: 06-GAP-byo-sudo-handling.md
 | 06-01 | release-packaging | VERIFIED | All must-haves present; release pipeline wired (REL-05). |
 | 06-02 | upgrade-and-state-migration | VERIFIED | Forward-only migrations + ExitStateSchemaTooNew + MaybePrint + upgrade/upgrade-runner + runner_version_stale doctor finding all in place (REL-05). |
 | 06-03 | troubleshooting-docs-and-rkd-codes | VERIFIED | RKD code registry + 6 troubleshooting docs + URL builder env override + 5 errcodes tests (DOC-04). |
-| 06-04 | v1-validation-and-live-smoke | PARTIAL-BLOCKED | Tasks 1-3 (harness, smokebin, stopwatch checklist, RELEASE-NOTES template, 06-VERIFICATION skeleton) verified; Task 4 (live smoke + maintainer stopwatch fill-in) blocked on the two BYO bugs in `06-GAP-byo-sudo-handling.md`. |
+| 06-04 | v1-validation-and-live-smoke | PARTIAL-BLOCKED | Tasks 1-3 (harness, smokebin, stopwatch checklist, RELEASE-NOTES template, 06-VERIFICATION skeleton) verified; Task 4 (live smoke + maintainer stopwatch fill-in) blocked on the BYO bugs in `06-GAP-byo-sudo-handling.md`. |
+| 06-05 | byo-bootstrap-blocker-fixes | VERIFIED | Bug 1 (preflight `sudo -n true` probe + redacted remote stderr) + Bug 2 (sudo-prefixed download/verify/extract + integration test) closed. Commit ee5c0a2 2026-05-04. |
+| 06-06 | byo-prepare-and-sudo-prompt | VERIFIED | Path B (interactive sudo password fallback) + Path C (`runnerkit byo-prepare` scoped sudoers + visudo gate) + doctor `byo_host_prepared` finding + DOC-04 byo-quickstart Sudo Setup section closed. Commit 08b8708 2026-05-05. |
+| 06-07 | live-smoke-rerun-and-baseline-fillin | PARTIAL-BLOCKED | Re-smoke attempt 1 (2026-05-05) verified Bugs 1+2 fix landed; surfaced Bug 3 (`register_runner` runas mismatch — `sudo -u runnerkit-runner` requires `(ALL)` runas, not covered by either system-wide `(root) NOPASSWD: ALL` or byo-prepare scoped template). BYO end-to-end blocked at registration step. Cloud smoke + 10-min stopwatch SKIPPED (cannot ship v1 with BYO non-functional regardless of cloud success). |
 
 ### Observable Truths (Plan 06-01 — release-packaging, REL-05)
 
@@ -177,18 +196,21 @@ gap_source: 06-GAP-byo-sudo-handling.md
 | `scripts/smoke/cloud-end-to-end.sh` | VERIFIED | trap EXIT INT TERM + runnerkit destroy --yes guard (Pitfall 7). |
 | `docs/release-process.md` | VERIFIED | Stopwatch Checklist (D-13) section + BYO + Hetzner tables. |
 | `RELEASE-NOTES-v1.0.0.md` | VERIFIED (template) | Title + 2.334.0 runner pin + cosign verify-blob snippet present. Wall-clock numbers placeholder pending Task 4 maintainer fill-in. |
-| `internal/preflight/checks.go` | FAILED (Bug 1) | CheckPrivilege at line 127 only checks binary presence (`probe.Commands["sudo"]`); never probes `sudo -n true`. False-positive on password-required hosts. |
-| `internal/bootstrap/install.go` | FAILED (Bug 2) | `download_runner` step (line 74 in Apply, line 115 in ApplyEphemeral): `sudo install -d -o serviceUser` then plain `curl`/`sha256sum -c`/`tar xzf` without sudo — ownership/permission contradiction. |
-| `internal/bootstrap/script.go` | FAILED (Bug 2) | RenderInstallScript and RenderEphemeralInstallScript reproduce the same buggy pattern. |
+| `internal/preflight/checks.go` | RESOLVED (Bug 1) | CheckPrivilege now executes real `sudo -n true` probe with passwordless / password-required / no-sudo / sudo-missing branches. Plan 06-05 commit 314bf94. |
+| `internal/bootstrap/install.go` | RESOLVED (Bug 2) | `download_runner` step now uses shared `downloadRunnerCommand(opts)` helper with sudo prefixes on curl/sha256sum/tar. Plan 06-05 commit 75c41aa. |
+| `internal/bootstrap/script.go` (download) | RESOLVED (Bug 2) | RenderInstallScript and RenderEphemeralInstallScript both updated with sudo-prefixed download/verify/extract. |
+| `internal/bootstrap/script.go` (register) | FAILED (Bug 3) | RenderInstallScript line 47 and RenderEphemeralInstallScript line 83 invoke `sudo -u runnerkit-runner ./config.sh ...`. `sudo -u <non-root>` requires `(ALL)` runas — neither system-wide `(root) NOPASSWD: ALL` nor byo-prepare scoped template `ALL=(root) NOPASSWD:` cover it. Task F (Plan 06-08) closes by switching to `sudo su -s /bin/bash - runnerkit-runner -c '...'`. |
+| `internal/bootstrap/sudoers.go` | FAILED (Bug 3) | RenderSudoersEntry uses `ALL=(root) NOPASSWD:` runas. Task F closes by keeping the template (after Bug 3 fix the `(root)` runas is sufficient). |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Full Go test suite green | `go test ./... -count=1` | 17/17 packages OK; all errcodes / state / update / upgrade / smokebin tests pass | PASS |
+| Full Go test suite green | `go test ./... -count=1 -race` | 17/17 packages OK after 06-05 + 06-06 land; all errcodes / state / update / upgrade / smokebin / preflight / sudoers / byo-prepare / redact / install / install_integration tests pass | PASS |
 | `make smoke-live` not in workflows (D-11) | `grep -rq smoke-live .github/workflows/` | no match | PASS |
-| Live BYO smoke completes against real host | `make smoke-live-byo` against salar@mckee-small-desktop | ERROR exit status 4 / `bootstrap_failed`; remote stderr swallowed; root cause = Bug 1 (sudo password) + Bug 2 (download_runner permission) | FAIL |
-| Live Hetzner smoke completes against real project | `make smoke-live-cloud` | NOT RUN — blocked by BYO failure earlier in `make smoke-live` chain | SKIP |
+| Live BYO smoke completes against real host (attempt 1, 2026-05-04) | `make smoke-live-byo` against salar@mckee-small-desktop | ERROR exit status 4 / `bootstrap_failed`; remote stderr swallowed; root cause = Bug 1 (sudo password) + Bug 2 (download_runner permission) | FAIL |
+| Live BYO smoke completes against real host (attempt 2, 2026-05-05 — re-smoke after 06-05+06-06 land) | `make smoke-live-byo` against salar@mckee-small-desktop with system-wide `(root) NOPASSWD: ALL` | Bug 1+2 fixes verified (sudo probe surfaced no password prompt; `/opt/actions-runner/runnerkit-<owner>-<repo>-local/config.sh` extracted successfully). FAILED at `register_runner`: `sudo: a terminal is required to read the password` because `sudo -u runnerkit-runner ./config.sh ...` matches `(ALL:ALL) ALL` (password required) instead of `(root) NOPASSWD: ALL`. Bug 3. | FAIL |
+| Live Hetzner smoke completes against real project | `make smoke-live-cloud` | NOT RUN — blocked by BYO failure earlier in `make smoke-live` chain. Cloud path would have succeeded (cloud-init configures `(ALL) NOPASSWD: ALL` on runnerkit-admin which covers `runas=runnerkit-runner`); not run because v1 cannot ship with BYO non-functional, regardless of cloud success. | SKIP |
 | Maintainer 10-minute stopwatch numbers captured into 06-VERIFICATION + RELEASE-NOTES | manual fill-in after live smoke | Skeleton + tables present, numbers blank | FAIL |
 
 ### Requirements Coverage
@@ -204,16 +226,18 @@ No orphaned requirement IDs detected — every ID claimed by Phase 6 plans (REL-
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| `internal/preflight/checks.go` | 127 | Binary-presence check masquerading as capability check (`probe.Commands["sudo"]`) | BLOCKER | Preflight false-positive on password-prompt sudo hosts; surfaces as opaque `bootstrap_failed`. |
-| `internal/bootstrap/install.go` | 74, 115 | `sudo install -d -o serviceUser` followed by plain `curl`/`sha256sum`/`tar` — ownership/permission contradiction | BLOCKER | BYO non-functional in v1 against any non-`runnerkit-runner` SSH user. |
-| `internal/bootstrap/script.go` | RenderInstallScript / RenderEphemeralInstallScript | Same pattern duplicated in script-renderer path | BLOCKER | Same impact as above; both code paths share the bug. |
-| Test gap | `internal/bootstrap/*` | Every bootstrap test uses `fakeExecutor` that records commands but never executes them — no real-shell integration test | WARNING | Latent since Plan 02-02; allowed Bug 2 to escape to live smoke. Closure plan must add real-shell or filesystem-permission-aware test (Task E). |
+| ~~`internal/preflight/checks.go`~~ | ~~127~~ | Binary-presence check masquerading as capability check | RESOLVED | Closed by Plan 06-05 commit 314bf94 (real `sudo -n true` probe with passwordless / password-required / no-sudo / sudo-missing branches). |
+| ~~`internal/bootstrap/install.go`~~ | ~~74, 115~~ | `sudo install -d -o serviceUser` followed by plain `curl`/`sha256sum`/`tar` | RESOLVED | Closed by Plan 06-05 commit 75c41aa (sudo-prefixed download/verify/extract; integration test added). |
+| ~~`internal/bootstrap/script.go`~~ (download_runner) | ~~lines 42-45 / 78-81~~ | Same pattern duplicated in script-renderer path | RESOLVED | Closed by Plan 06-05 commit 75c41aa (same fix applied to both renderer paths). |
+| `internal/bootstrap/script.go` (register_runner) | 47, 83 | `sudo -u runnerkit-runner ./config.sh ...` — runs as non-root user; requires `(ALL)` runas in sudoers; both root NOPASSWD and byo-prepare scoped template only cover runas=root | BLOCKER | Bug 3. BYO non-functional in v1 at registration step despite Plans 06-05 + 06-06 closing Bugs 1+2. Cloud path unaffected (runnerkit-admin has broader `(ALL) NOPASSWD: ALL`). |
+| `internal/bootstrap/sudoers.go` | 23 | RenderSudoersEntry uses `ALL=(root) NOPASSWD:` runas — does not cover `sudo -u runnerkit-runner` | BLOCKER | Even after byo-prepare runs, register_runner still requires password. Same root cause as the register_runner bug above. |
+| Test gap | `internal/bootstrap/script_test.go` | Substring assertions cover `sudo curl|sha256sum|tar` from Bug 2 fix but never asserted absence of `sudo -u <non-root>` patterns. No fixture for SSH user with only root NOPASSWD. | WARNING | Allowed Bug 3 to escape past Plans 06-05 + 06-06 verification into live smoke. Task F closure adds presence/absence assertions + integration test fixture. |
 
 ### Human Verification Required (post-gap-closure)
 
 | Test | Expected | Why Human |
 | ---- | -------- | --------- |
-| `make smoke-live` against real BYO + real Hetzner project after Tasks A-E close | BYO completes end-to-end without manual sudoers preconfiguration; Hetzner D-12 gates 1+2 PASS; total wall-clock ≤ 10 min on each path | Real GitHub PAT + real billable Hetzner resources; Claude cannot exercise the OIDC + billing surfaces. Maintainer fills 06-VERIFICATION + RELEASE-NOTES, types `smoke-green`. |
+| `make smoke-live` against real BYO + real Hetzner project after Task F (Plan 06-08) closes | BYO completes end-to-end without manual sudoers preconfiguration; Hetzner D-12 gates 1+2 PASS; total wall-clock ≤ 10 min on each path | Real GitHub PAT + real billable Hetzner resources; Claude cannot exercise the OIDC + billing surfaces. Maintainer fills 06-VERIFICATION + RELEASE-NOTES, types `smoke-green`. |
 
 ## Gaps Summary
 
@@ -226,17 +250,20 @@ The phase delivers v1.0.0 release readiness almost entirely:
 
 **What's blocking v1.0.0 tag push:**
 
-The live BYO smoke surfaced two real, latent bugs that make BYO non-functional in v1 against any non-NOPASSWD-sudo SSH user:
+Bugs 1 + 2 are CLOSED by Plans 06-05 + 06-06 (commits ee5c0a2 + 08b8708, 2026-05-04/05). Plan 06-07 attempt-1 re-smoke against `salar@mckee-small-desktop` on 2026-05-05 verified those fixes (sudo probe surfaced no false positive; `download_runner` extracted `config.sh` to `/opt/actions-runner/runnerkit-<owner>-<repo>-local/` successfully). Then surfaced a third latent bug:
 
-1. **Preflight false-positive (Bug 1).** `internal/preflight/checks.go::CheckPrivilege` only tests whether the `sudo` binary is installed; it never tests whether the SSH user can run sudo non-interactively. Hosts with sudo-with-password configurations pass preflight, then bootstrap fails opaquely with `bootstrap_failed` while the actual remote stderr is swallowed by the executor.
-2. **Download_runner permission failure (Bug 2).** Even with NOPASSWD sudo configured, the `download_runner` step in `internal/bootstrap/install.go::Apply` (and the same pattern in `ApplyEphemeral` and in `script.go::RenderInstallScript` / `RenderEphemeralInstallScript`) creates the install directory owned by `runnerkit-runner` (mode 0755) via `sudo install -d -o`, then runs plain `curl` / `sha256sum -c` / `tar xzf` *without sudo* as the SSH user. The SSH user cannot write to the directory; the curl fails with `Permission denied`. This bug went undetected from Plan 02-02 forward because every bootstrap unit test uses `fakeExecutor` that records commands but never executes them — no real-shell integration test exists.
+3. **Register_runner runas mismatch (Bug 3).** `internal/bootstrap/script.go:47` (RenderInstallScript) and `:83` (RenderEphemeralInstallScript) invoke `sudo -u runnerkit-runner RUNNERKIT_REGISTRATION_TOKEN=... ./config.sh --unattended --url ... --token ... --name ... --labels ... --work ... --replace` to register the GitHub runner as the unprivileged service user. `sudo -u <non-root>` matches the `(ALL)` runas spec, NOT `(root)`. The byo-prepare scoped sudoers template (`internal/bootstrap/sudoers.go:23`) and typical system-wide configurations of the form `(root) NOPASSWD: ALL` cover runas=root only. Result: `sudo: a terminal is required to read the password sudo: a password is required` from inside the install script; bootstrap fails after `download_runner` succeeds. Cloud path unaffected because `internal/provider/hetzner/provision.go:241` cloud-init configures `runnerkit-admin` with `sudo: ALL=(ALL) NOPASSWD:ALL` — the `(ALL)` runas covers `runas=runnerkit-runner`. Bug went undetected until live smoke because (a) script_test.go substring assertions never asserted absence of `sudo -u <non-root>` patterns, (b) install_integration_test.go from Plan 06-05 only fixtured `download_runner`, not `register_runner`, (c) every other bootstrap test uses fakeExecutor that records commands but never executes them.
 
-`06-GAP-byo-sudo-handling.md` enumerates Tasks A-E that close both bugs comprehensively (preflight `sudo -n true` probe + redacted-stderr surfacing for Bug 1; sudo-prefixed download/verify/extract + real-shell integration test for Bug 2; plus interactive sudo password fallback (Path B) and `runnerkit byo-prepare` command (Path C) per the user's 2026-05-04 decision; plus docs for byo-quickstart and troubleshooting/bootstrap.md). It is the actionable artifact for `/gsd:plan-phase 06 --gaps`.
+`06-GAP-byo-sudo-handling.md` Task F (added 2026-05-05) is the actionable artifact:
+- Replace `sudo -u runnerkit-runner ./config.sh ...` with `sudo su -s /bin/bash - runnerkit-runner -c '<config.sh ...>'`. `su` runs from a root sudo context → no `(ALL)` runas required → works on BYO host with only root NOPASSWD AND on cloud host with broader NOPASSWD. The byo-prepare scoped sudoers template needs no change.
+- Extend `script_test.go` substring assertions: presence of `su -s /bin/bash`, absence of `sudo -u`.
+- Extend `install_integration_test.go` with a fixture that asserts the new shell form is acceptable to a sudoers configuration consisting only of `(root) NOPASSWD: ALL`.
+- Re-run Plan 06-07 BYO smoke; assert a GitHub runner ID lands before destroy.
 
-Once Tasks A-E land, Plan 06-04 Task 4 (live smoke + maintainer stopwatch fill-in) re-runs end-to-end against a fresh BYO host without any sudoers preconfiguration, the maintainer fills the 06-VERIFICATION baseline + RELEASE-NOTES-v1.0.0.md numbers, and Phase 6 closes with a `smoke-green` resume signal that triggers the v1.0.0 tag push per `docs/release-process.md`.
+Plan 06-08 is the gap-closure target. Once Task F lands, Plan 06-07 re-runs end-to-end against `salar@mckee-small-desktop`, the maintainer fills the 06-VERIFICATION baseline + RELEASE-NOTES-v1.0.0.md numbers, and Phase 6 closes with a `smoke-green` resume signal that triggers the v1.0.0 tag push per `docs/release-process.md`.
 
 ---
 
-_Verified: 2026-05-02_
-_Verifier: Claude (gsd-verifier)_
-_Source of truth for the gap: 06-GAP-byo-sudo-handling.md (Tasks A-E)._
+_Verified: 2026-05-02; updated 2026-05-05 with Bug 3 finding from Plan 06-07 attempt-1 re-smoke._
+_Verifier: Claude (gsd-verifier)._
+_Source of truth for the gap: 06-GAP-byo-sudo-handling.md (Tasks A-E CLOSED by 06-05+06-06; Task F OPEN, target Plan 06-08)._
