@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
@@ -46,6 +47,19 @@ type Options struct {
 	EphemeralServiceName    string
 	EphemeralTTLServiceName string
 	EphemeralTTLTimerName   string
+
+	// SudoPassword, when non-empty, causes Apply / ApplyEphemeral to
+	// render sudo-prefixed commands as
+	//   printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | sudo -S <cmd>
+	// The literal password value is passed via remote.Command.Env (NOT
+	// interpolated into Script) and appended to RedactArgs so the
+	// executor scrubs it from any captured stderr. Empty preserves the
+	// existing NOPASSWD-style sudo invocation (Plan 06-05 behavior).
+	// The caller (CLI) MUST register the value with redact.SudoPassword
+	// before passing it here and zero the buffer in a deferred cleanup
+	// after Apply returns. This is Plan 06-06 Path B's transport for
+	// the prompted sudo password.
+	SudoPassword string
 }
 
 type Result struct {
@@ -59,6 +73,36 @@ func (e ServiceNotActiveError) Error() string {
 		return "runner_service_not_active: " + e.Err.Error()
 	}
 	return "runner_service_not_active"
+}
+
+// wrapSudoCommand applies Path B's `sudo -S` wrapping to a single
+// remote.Command when opts.SudoPassword is set. The literal password
+// flows via Env (not Script), so the rendered Script string is safe
+// to log: only the env-var name appears. RedactArgs is extended so the
+// executor scrubs the password from any captured stderr regardless.
+//
+// Behavior is deliberately a no-op when c.Sudo is false or
+// SudoPassword is empty — Path B should never wrap non-sudo commands
+// and Plan 06-05's NOPASSWD-style invocation must be preserved when
+// the host is byo-prepared (no password needed).
+//
+// The shell pattern reads $RUNNERKIT_SUDO_PASSWORD into a local
+// variable inside a brace group then runs the original script. We
+// rewrite `sudo ` → `sudo -S ` in the original script so each sudo
+// call accepts the piped password. Note: this also catches `sudo -u`
+// because `sudo -S -u USER` is the supported form.
+func wrapSudoCommand(c remote.Command, opts Options) remote.Command {
+	if opts.SudoPassword == "" || !c.Sudo {
+		return c
+	}
+	rewritten := strings.ReplaceAll(c.Script, "sudo ", "sudo -S ")
+	c.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | { " + rewritten + " }"
+	if c.Env == nil {
+		c.Env = map[string]string{}
+	}
+	c.Env["RUNNERKIT_SUDO_PASSWORD"] = opts.SudoPassword
+	c.RedactArgs = append(c.RedactArgs, opts.SudoPassword)
+	return c
 }
 
 func Plan(opts Options) workflow.Plan { return workflow.BootstrapPlan() }
@@ -78,6 +122,7 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 	}
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
+		command = wrapSudoCommand(command, opts) // Path B: pipe sudo password via stdin when set.
 		result, err := exec.Run(ctx, target, command)
 		out.Commands = append(out.Commands, result)
 		if err != nil || result.ExitCode != 0 {
@@ -121,6 +166,7 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 	}
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
+		command = wrapSudoCommand(command, opts) // Path B: pipe sudo password via stdin when set.
 		result, err := exec.Run(ctx, target, command)
 		out.Commands = append(out.Commands, result)
 		if err != nil || result.ExitCode != 0 {

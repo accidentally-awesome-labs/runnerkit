@@ -18,6 +18,12 @@ const (
 	SSHPrivateKey           Kind = "ssh-private-key"
 	ProviderCredential      Kind = "provider-credential"
 	MachineRef              Kind = "machine-ref"
+	// SudoPassword is the Kind registered when RunnerKit prompts for a
+	// remote host's sudo password (Plan 06-06 Path B fallback). The
+	// CLI registers the literal value with this Kind immediately on
+	// prompt so it is never logged or written to JSON output, and the
+	// in-process buffer is zeroed after bootstrap returns.
+	SudoPassword Kind = "sudo-password"
 )
 
 type registeredValue struct {
@@ -139,6 +145,9 @@ func sensitiveKindForKey(key string) (Kind, bool) {
 	if strings.Contains(lower, "github") && strings.Contains(lower, "token") {
 		return GitHubToken, true
 	}
+	if strings.Contains(lower, "sudo") && strings.Contains(lower, "password") {
+		return SudoPassword, true
+	}
 	if strings.Contains(lower, "hcloud") || strings.Contains(lower, "provider_credential") || strings.Contains(lower, "credential") || strings.Contains(lower, "secret") || strings.Contains(lower, "password") || strings.Contains(lower, "api_token") || strings.Contains(lower, "api_key") {
 		return ProviderCredential, true
 	}
@@ -165,6 +174,8 @@ func replacement(kind Kind) string {
 		return "<redacted:provider-credential>"
 	case MachineRef:
 		return "<redacted:machine-ref>"
+	case SudoPassword:
+		return "<redacted:sudo-password>"
 	default:
 		return "<redacted>"
 	}

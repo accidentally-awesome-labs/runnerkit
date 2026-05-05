@@ -178,6 +178,27 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 	bootstrapPlan := bootstrap.Plan(bootstrapOpts)
 
+	// Path B (Plan 06-06): preflight reported sudo requires a password.
+	// We can either (a) prompt locally for the password and pipe it
+	// through bootstrap.Options.SudoPassword, or (b) fail fast pointing
+	// at `runnerkit byo-prepare` (Path C) when no TTY / non-interactive.
+	// The prompt is gated on TTY availability and `--non-interactive`,
+	// NOT on `--yes` (per gap doc: --yes is for safe defaults; sudo is
+	// a separate human-input concern).
+	if _, passwordRequired := report.Result(preflight.CheckPrivilegePasswordReq); passwordRequired {
+		password, err := promptSudoPasswordForPathB(ctx, deps, renderer, opts, target)
+		if err != nil {
+			return err
+		}
+		bootstrapOpts.SudoPassword = password
+		defer func() {
+			// Best-effort scrub: zero the in-process password buffer
+			// after Apply returns. The redactor entry stays so any
+			// deferred log writes still scrub it from output.
+			bootstrapOpts.SudoPassword = ""
+		}()
+	}
+
 	if opts.dryRun {
 		if err := renderModeTradeoffs(renderer, jsonOutput, repo, modeDecision, opts.ephemeralTTL); err != nil {
 			return err
@@ -1984,6 +2005,60 @@ func defaultString(value, fallback string) string {
 
 func runnerServiceName(runnerName string) string {
 	return "actions.runner." + runnerName + ".service"
+}
+
+// promptSudoPasswordForPathB implements Plan 06-06's Path B fallback:
+// preflight emitted CheckPrivilegePasswordReq, so this function (a)
+// fails fast with `runnerkit byo-prepare` + RKD-BOOT-015 remediation
+// when --non-interactive or no TTY is available, otherwise (b) prompts
+// the user once for the sudo password, registers it with
+// redact.SudoPassword, and returns the literal value for the caller
+// to thread into bootstrap.Options.SudoPassword.
+//
+// Per gap doc constraint: --yes is NOT considered equivalent to
+// --non-interactive. --yes accepts safe defaults; the sudo password
+// is a separate human-input concern that always requires a TTY prompt
+// unless --non-interactive is set.
+func promptSudoPasswordForPathB(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, target remote.Target) (string, error) {
+	rkdLine := errcodes.FormatLine(errcodes.BootSudoPasswordRequired)
+	if opts.nonInteractive {
+		remediation := []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` to install a scoped sudoers entry, then re-run `runnerkit up`.",
+			rkdLine,
+		}
+		_ = renderer.Error("sudo_password_required", "RunnerKit can't prompt for the host sudo password in non-interactive mode.", remediation)
+		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but --non-interactive set"))
+	}
+	if !deps.TTY.StdinTTY || deps.Prompts == nil {
+		remediation := []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` first; this terminal does not support interactive prompting.",
+			rkdLine,
+		}
+		_ = renderer.Error("sudo_password_required", "RunnerKit needs a sudo password but no TTY is available for prompting.", remediation)
+		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but no TTY"))
+	}
+	passwordPrompter, ok := deps.Prompts.(ui.PasswordPrompter)
+	if !ok {
+		remediation := []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` first; this RunnerKit build's prompter does not support sudo password input.",
+			rkdLine,
+		}
+		_ = renderer.Error("sudo_password_required", "RunnerKit's prompter does not implement password input.", remediation)
+		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but prompter has no Password method"))
+	}
+	password, err := passwordPrompter.Password(ctx, ui.Prompt{Message: "Sudo password for " + target.Display() + ":"})
+	if err != nil {
+		return "", err
+	}
+	if password == "" {
+		_ = renderer.Error("sudo_password_required", "RunnerKit received an empty sudo password.", []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` to install a scoped sudoers entry, or re-run `runnerkit up` and enter the host's sudo password when prompted.",
+			rkdLine,
+		})
+		return "", NewExitError(ExitInputRequired, errors.New("empty sudo password"))
+	}
+	renderer.Redactor().Register(redact.SudoPassword, password)
+	return password, nil
 }
 
 // lastCommandFailureContext extracts the failing command's ID and
