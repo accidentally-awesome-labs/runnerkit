@@ -85,17 +85,31 @@ func (e ServiceNotActiveError) Error() string {
 // and Plan 06-05's NOPASSWD-style invocation must be preserved when
 // the host is byo-prepared (no password needed).
 //
-// The shell pattern reads $RUNNERKIT_SUDO_PASSWORD into a local
-// variable inside a brace group then runs the original script. We
-// rewrite `sudo ` → `sudo -S ` in the original script so each sudo
-// call accepts the piped password. Note: this also catches `sudo -u`
-// because `sudo -S -u USER` is the supported form.
+// Bug 10 fix (Plan 06-07 attempt-7, 2026-05-05): the previous wrapper
+// piped the password into a brace group containing the rewritten
+// script. That structure broke any inner `printf X | sudo Y` pattern
+// (e.g. `printf 'CHECKSUM' | sudo sha256sum -c -` from
+// RenderInstallScript) because the inner pipe overrides sudo's
+// stdin. Ubuntu's sudo defaults (use_pty + tty-scoped timestamp
+// cache) did not reliably cache cred across SSH sessions, so sudo -S
+// re-prompted, read from the inner printf, and treated the checksum
+// string as a wrong password attempt.
+//
+// The fix aligns this wrapper with byo-prepare's proven structure
+// (internal/cli/byo_prepare.go::runByoPrepareInstall): prime sudo's
+// cred cache once with a dedicated `printf | sudo -S -v` invocation,
+// then run the rewritten script WITHOUT an outer brace-group pipe.
+// Each subsequent sudo -S hits the freshly-primed cred and does not
+// read its stdin, so inner pipes reach their intended destination.
+//
+// Note: the rewrite also catches `sudo -u` because `sudo -S -u USER`
+// is the supported form.
 func wrapSudoCommand(c remote.Command, opts Options) remote.Command {
 	if opts.SudoPassword == "" || !c.Sudo {
 		return c
 	}
 	rewritten := RewriteSudoForPasswordPipe(c.Script)
-	c.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | { " + rewritten + " }"
+	c.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | sudo -S -v\n" + rewritten
 	if c.Env == nil {
 		c.Env = map[string]string{}
 	}

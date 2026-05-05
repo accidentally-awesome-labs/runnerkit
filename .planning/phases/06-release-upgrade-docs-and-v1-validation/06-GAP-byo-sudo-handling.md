@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9 + Tasks G,H,I,J,K,L — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10 + Tasks G,H,I,J,K,L,M — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -795,6 +795,94 @@ add sudo invocations to the configure scripts can't regress this.
    `install_test.go`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 10 — `wrapSudoCommand` outer brace-pipe breaks inner `printf | sudo X` patterns (discovered 2026-05-05)
+
+After Bug 9 (Plan 06-09 commit f195a83) closed the configure_runner
+Sudo flag, Plan 06-07 attempt-7 against `salar@mckee-small-desktop`
+got past the Path B prompt and failed at bootstrap with:
+
+```
+Sorry, try again.
+sudo: no password was provided
+sudo: 1 incorrect password attempt
+```
+
+Root cause: `internal/bootstrap/install.go::wrapSudoCommand` rendered
+the wrapped script as:
+
+```bash
+printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | { rewritten_script }
+```
+
+Inside the brace group, `RenderInstallScript` and
+`RenderEphemeralInstallScript` (Plan 06-05 + 06-08) emit the inline
+checksum-verify pattern:
+
+```bash
+printf '%%s  %%s\n' '<sha256>' '<file>' | sudo -S sha256sum -c -
+```
+
+The inner pipe opens its own stdin to `sudo -S`. On Ubuntu 24.04 LTS,
+`/etc/sudoers` defaults include `use_pty` and a tty-scoped timestamp
+cache; cred priming via `sudo -S X` (where X is the previous bootstrap
+command in the same brace) did not reliably cache across the SSH
+session, so the next sudo re-prompted. Without a fresh cache hit,
+sudo's `-S` consumed the inner printf's checksum string as the
+password attempt — emitting "Sorry, try again", then EOF, then
+"no password was provided".
+
+### Why byo-prepare worked but install.go did not
+
+`internal/cli/byo_prepare.go::runByoPrepareInstall` uses a different
+wrapper structure:
+
+```bash
+printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | sudo -S -v
+<rewritten_script>
+```
+
+byo-prepare primes cred ONCE via a dedicated `sudo -S -v` invocation
+that consumes the password line, then runs the rewritten script
+WITHOUT an outer pipe. Each subsequent `sudo -S` in the rewritten
+script hits the freshly-primed cred and does not read its stdin —
+so inner `printf | sudo X` patterns reach X correctly. The structure
+asymmetry between byo-prepare (works) and install.go (fails) was the
+asymmetry that hid Bug 10.
+
+### Why cloud is unaffected
+
+Hetzner cloud-init configures `(ALL) NOPASSWD: ALL`, so SudoPassword
+stays empty, wrapSudoCommand returns commands unchanged, no outer
+pipe is introduced. Cloud bootstrap is unaffected.
+
+### Bug 10 fix
+
+Align `wrapSudoCommand` with byo-prepare's structure: prime cred via
+`printf | sudo -S -v` once, then run the rewritten script directly.
+No outer brace-group pipe. Each subsequent `sudo -S` benefits from
+the freshly-primed cache and does not consume its stdin.
+
+### Bug 10 acceptance
+
+- `runnerkit up --host user@host` against an Ubuntu 24.04 LTS host
+  with password-protected sudo + Plan 06-06 Path B prompt threads
+  the password through configure_runner's checksum verify step (no
+  "Sorry, try again" / "no password was provided" aborts).
+- Unit test asserts: inner `printf | sudo X` pipe preserved
+  end-to-end; no outer brace-group pipe; dedicated `sudo -S -v`
+  cred-priming invocation present.
+- Plan 06-07 attempt-8 against `salar@mckee-small-desktop` lands a
+  GitHub runner ID before destroy.
+
+### Task M — Cred-priming wrap structure (Bug 10)
+
+1. Edit `internal/bootstrap/install.go::wrapSudoCommand` to render
+   the prime-then-run structure that mirrors byo-prepare. Update the
+   doc comment.
+2. Add `TestWrapSudoCommand_InnerStdinPipePreserved` in
+   `install_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -849,7 +937,15 @@ add sudo invocations to the configure scripts can't regress this.
   bootstrap on hosts with password-protected sudo. Cloud path
   unaffected (cloud-init grants full NOPASSWD; SudoPassword stays
   empty; wrapSudoCommand returns commands unchanged).
-- Once Bug 9 closed: Plan 06-07 attempt-7 expected to land a GitHub
+- Once Bug 9 closed: Plan 06-07 attempt-7 progressed to bootstrap
+  configure_runner where Bug 10 surfaced.
+- Bug 10 discovered 2026-05-05 during Plan 06-07 attempt-7 against the
+  same host AFTER Bug 9 fix landed. Affects only Path B bootstrap on
+  hosts where sudo's tty-scoped cache does not persist across SSH
+  sessions (Ubuntu 24 default with use_pty). The asymmetry between
+  byo-prepare's working structure and install.go's broken structure
+  hid Bug 10 from earlier reviews.
+- Once Bug 10 closed: Plan 06-07 attempt-8 expected to land a GitHub
   runner ID and proceed to Hetzner cloud-end-to-end + destroy_verify.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
