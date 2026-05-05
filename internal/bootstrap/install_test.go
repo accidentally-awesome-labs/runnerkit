@@ -209,6 +209,72 @@ func TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605(t *testing.T) {
 	}
 }
 
+// Bug 9 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
+//
+// Plan 06-07 attempt-6 against salar@mckee-small-desktop got past
+// preflight (Bugs 7+8 closed) and aborted at the configure_runner
+// step:
+//
+//   sudo: a terminal is required to read the password; either use
+//   the -S option to read from standard input or configure an
+//   askpass helper
+//   sudo: a password is required
+//
+// Root cause: the configure_runner and configure_ephemeral_runner
+// remote.Command structs in Apply / ApplyEphemeral omit the
+// `Sudo: true` field. wrapSudoCommand bails out early when c.Sudo
+// is false (the gating "Path B should never wrap non-sudo commands"
+// safety), so the rendered script — which DOES contain `sudo curl`,
+// `sudo sha256sum`, `sudo tar`, `sudo chown`, and `sudo su -s` — is
+// dispatched verbatim. Each of those raw sudo invocations then tries
+// to read the password from /dev/tty over a non-tty SSH session and
+// fails.
+
+func TestApplyConfigureRunnerCommand_HasSudoTrue(t *testing.T) {
+	t.Parallel()
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName: "runnerkit-owner-repo", RepoURL: "https://github.com/owner/repo",
+		Labels: []string{"x"}, ServiceUser: "runnerkit-runner", RunnerToken: "tk",
+		Package: RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	for _, c := range exec.commands {
+		if c.ID == "configure_runner" {
+			if !c.Sudo {
+				t.Fatalf("configure_runner must have Sudo: true so wrapSudoCommand wraps `sudo curl/sha256sum/chown/su` for Path B password threading. Got Sudo=%v", c.Sudo)
+			}
+			return
+		}
+	}
+	t.Fatal("configure_runner command not recorded")
+}
+
+func TestApplyEphemeralConfigureCommand_HasSudoTrue(t *testing.T) {
+	t.Parallel()
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName: "runnerkit-owner-repo", RepoURL: "https://github.com/owner/repo",
+		Labels: []string{"x"}, ServiceUser: "runnerkit-runner", RunnerToken: "tk",
+		Package: RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+		Mode:    "ephemeral",
+	}
+	if _, err := ApplyEphemeral(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("ApplyEphemeral returned error: %v", err)
+	}
+	for _, c := range exec.commands {
+		if c.ID == "configure_ephemeral_runner" {
+			if !c.Sudo {
+				t.Fatalf("configure_ephemeral_runner must have Sudo: true (same reason as Bug 9 for Apply). Got Sudo=%v", c.Sudo)
+			}
+			return
+		}
+	}
+	t.Fatal("configure_ephemeral_runner command not recorded")
+}
+
 func TestApplyRunsBootstrapCommandsInOrderAndRedactsToken(t *testing.T) {
 	token := "registration-token-secret-12345"
 	exec := &recordingExecutor{}
