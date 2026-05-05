@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bug 4 + Task G — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -398,6 +398,89 @@ out of scope for Bug 3 closure (no observed impact, no v1.0.0 blocker).
 - [ ] (Bug 3) Plan 06-07 re-smoke against `salar@mckee-small-desktop`
       lands a GitHub runner ID before destroy.
 
+## Bug 4 — `ui.Prompter` interface has no concrete implementation (discovered 2026-05-05)
+
+After Plan 06-08 landed (Bug 3 closed), Plan 06-07 attempt-2 was started
+against `salar@mckee-small-desktop` with the attempt-1 workaround file
+`/etc/sudoers.d/runnerkit-smoke-temp` removed. Both `runnerkit byo-prepare`
+(Path C) and the implicit `runnerkit up` Path B fallback fail immediately
+with the misleading error:
+
+```
+✗ RunnerKit needs a sudo password but no TTY is available.
+→ Run runnerkit byo-prepare from an interactive terminal.
+```
+
+The error fires even on a real native terminal where `os.Stdin` IS a
+TTY. Root cause: `internal/ui/prompt.go` defines only the `Prompter`
+interface and the optional `PasswordPrompter` capability — there is no
+concrete implementation. `cmd/runnerkit/main.go` lines 19-33 wire
+`Dependencies` with `In/Out/Err/TTY/Clock/CommandRunner` but **never set
+the `Prompts` field**, so `deps.Prompts == nil` in production binaries.
+
+The branch at `internal/cli/byo_prepare.go:72` and
+`internal/cli/up.go:2032` is:
+
+```go
+if !deps.TTY.StdinTTY || deps.Prompts == nil {
+    _ = renderer.Error("input_required", "RunnerKit needs a sudo password but no TTY is available.", ...)
+}
+```
+
+The condition triggers because `Prompts == nil`, but the rendered
+message is "no TTY" — leading the user to believe their terminal is
+broken. Both Path B and Path C are unreachable in real binaries; only
+unit tests (which inject a fake `Prompter`) ever exercise these paths.
+
+### Why cloud is unaffected (again)
+
+Hetzner cloud-init configures the cloud host with `(ALL) NOPASSWD: ALL`
+during provisioning, so the `runnerkit up --cloud` flow never triggers
+the Path B preflight branch — `CheckPrivilegePasswordReq` reports the
+host is passwordless and the prompter is never consulted.
+
+### Bug 4 fix
+
+Implement a concrete CLI prompter that satisfies both `ui.Prompter`
+(Confirm/Select) and `ui.PasswordPrompter` (Password with terminal
+echo disabled via `golang.org/x/term`), wire it in `cmd/runnerkit/main.go`,
+and update tests. The package `golang.org/x/term v0.10.0` is already
+present as an indirect dep through `golang.org/x/sys`; promote it to
+direct.
+
+### Bug 4 acceptance
+
+- `runnerkit byo-prepare --host user@host` against a real BYO host with
+  password-protected sudo prompts ONCE for the sudo password and
+  installs `/etc/sudoers.d/runnerkit-installer` on success.
+- `runnerkit up --host user@host` against the same host (after the
+  scoped sudoers entry exists OR with no preconfiguration via Path B)
+  prompts for the sudo password and threads it through to the
+  bootstrap.
+- Unit test asserts `cmd/runnerkit/main.go` wires `Prompts` to a non-nil
+  `ui.Prompter` AND that the implementation also satisfies
+  `ui.PasswordPrompter` (assignable via type assertion).
+- Plan 06-07 attempt-3 against `salar@mckee-small-desktop` lands a
+  GitHub runner ID before destroy.
+
+### Task G — Wire concrete `ui.Prompter` in main.go (Bug 4)
+
+1. Create `internal/ui/cli_prompter.go` with a `CLIPrompter` struct
+   that implements `Confirm` (stdin y/N parsing), `Select` (numbered
+   list with stdin), and `Password` (`golang.org/x/term.ReadPassword`
+   on `os.Stdin`'s fd, with newline restore).
+2. Add `internal/ui/cli_prompter_test.go` covering: empty input → default,
+   y/Y/yes acceptance, n/N/no rejection, Select numeric parsing + bounds,
+   Password echo-suppression precondition (assert `term.IsTerminal` is
+   consulted before reading).
+3. Wire `Prompts: ui.NewCLIPrompter(os.Stdin, os.Stdout)` in
+   `cmd/runnerkit/main.go` Dependencies struct.
+4. Run `go mod tidy` to promote `golang.org/x/term` from indirect to
+   direct.
+5. (Optional polish) Update `byo_prepare.go:73` and `up.go:2037` error
+   message: distinguish "no TTY" vs "prompter unavailable" so future
+   wiring regressions surface a clearer message.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -408,9 +491,18 @@ out of scope for Bug 3 closure (no observed impact, no v1.0.0 blocker).
   Cloud path unaffected because Hetzner cloud-init configures `(ALL) NOPASSWD: ALL`
   which covers `runas=runnerkit-runner`. BYO non-functional in v1 until
   Task F lands.
-- Once closed: the Plan 06-07 BYO + Hetzner smoke can re-run end-to-end
+- Once Bug 3 closed: the Plan 06-07 BYO + Hetzner smoke can re-run end-to-end
   without any host-side preconfiguration AND `register_runner` no longer
   requires `(ALL)` runas in host sudoers. Plan 06-08 is the gap-closure
+  target. (CLOSED 2026-05-05 commit bdef940.)
+- Bug 4 discovered 2026-05-05 during Plan 06-07 attempt 2 against the
+  same host AFTER Plan 06-08 landed. Both `runnerkit byo-prepare` and
+  `runnerkit up` Path B fail immediately because `cmd/runnerkit/main.go`
+  never wires a concrete `ui.Prompter` — the production binary's
+  `deps.Prompts` is always `nil`. Cloud path unaffected (cloud-init
+  bypasses both prompts). BYO non-functional in v1 until Task G lands.
+- Once Bug 4 closed: Plan 06-07 attempt-3 can finally run end-to-end on
+  a host with password-protected sudo. Plan 06-09 is the gap-closure
   target.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
