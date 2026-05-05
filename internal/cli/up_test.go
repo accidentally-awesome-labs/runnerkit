@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
@@ -334,6 +335,84 @@ func TestDefaultGitHubServiceMissingCredentialsFailsClosed(t *testing.T) {
 	}
 	if _, err := os.Stat(state.NewStore(stateDir).Path()); !os.IsNotExist(err) {
 		t.Fatalf("missing-auth default path wrote state or stat failed unexpectedly: %v", err)
+	}
+}
+
+// TestUp_BootstrapFailed_SurfacesRedactedRemoteStderr asserts that when
+// bootstrap.Apply returns an error AND the bootstrap.Result.Commands
+// slice contains a failing entry with non-empty Stderr, the
+// bootstrap_failed CLI error message includes the redacted form of
+// that stderr in its remediation slice. This proves Bug 1 surfacing
+// fix from gap doc 06-GAP-byo-sudo-handling.md (Task A surface remote
+// stderr requirement) AND that the redactor invariant is preserved
+// (raw token never appears in user-facing output).
+func TestUp_BootstrapFailed_SurfacesRedactedRemoteStderr(t *testing.T) {
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	remoteExec := newFakeRemoteExecutor()
+	// Force the configure_runner step to fail with a stderr that
+	// contains a token-shaped string. The redactor's GitHubToken
+	// pattern matches `ghp_*` prefixes and replaces with the
+	// `<redacted:github-token>` sentinel.
+	rawToken := "ghp_secrettoken12345abc"
+	remoteExec.runResults["configure_runner"] = remote.Result{
+		ExitCode: 1,
+		Stderr:   "configure_runner failed: cannot use token " + rawToken + " on this host",
+	}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		StateBaseDir:   stateDir,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/repo", "--host", "alice@example.com", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected bootstrap_failed exit")
+	}
+	if got := ExitCode(err); got != ExitSafetyGate {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitSafetyGate)
+	}
+	// Parse the JSON error payload.
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json output: %v\n%s", err, out.String())
+	}
+	errorObject, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload missing error object: %#v", payload)
+	}
+	if errorObject["code"] != "bootstrap_failed" {
+		t.Fatalf("error code = %v, want bootstrap_failed: %#v", errorObject["code"], payload)
+	}
+	remediationAny, ok := errorObject["remediation"].([]any)
+	if !ok {
+		t.Fatalf("remediation missing/not a list: %#v", errorObject)
+	}
+	var remediation []string
+	for _, r := range remediationAny {
+		remediation = append(remediation, r.(string))
+	}
+	combined := strings.Join(remediation, "\n")
+	// Surfacing assertion: at least one remediation line must contain
+	// the redacted sentinel for the leaked token.
+	if !strings.Contains(combined, "<redacted:github-token>") {
+		t.Fatalf("expected redacted sentinel in remediation; remediation=%v", remediation)
+	}
+	// Redaction invariant: the raw token MUST NOT appear anywhere in
+	// the captured output (json payload combined with stderr).
+	combinedAll := out.String() + errOut.String()
+	if strings.Contains(combinedAll, rawToken) {
+		t.Fatalf("output leaked raw token %q:\n%s", rawToken, combinedAll)
+	}
+	// Surfacing should also reference the failing command ID so
+	// users can self-diagnose.
+	if !strings.Contains(combined, "configure_runner") {
+		t.Fatalf("remediation does not reference failing command ID; remediation=%v", remediation)
 	}
 }
 
