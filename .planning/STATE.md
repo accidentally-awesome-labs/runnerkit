@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Plan 06-05 complete; resume at Plan 06-06 byo-prepare-and-sudo-prompt (Path B + Path C user-facing features)
-last_updated: "2026-05-05T02:03:42.788Z"
+stopped_at: Completed 06-06-byo-prepare-and-sudo-prompt-PLAN.md
+last_updated: "2026-05-05T02:22:38.993Z"
 last_activity: 2026-05-05
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 26
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-05-05
 
@@ -62,6 +62,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P01 | 5m | 4 tasks (5 planned; Task 5 is human-action checkpoint) tasks | 6 files files |
 | Phase 06-release-upgrade-docs-and-v1-validation P04 | 8m | 3 of 4 tasks (Task 4 is checkpoint:human-action awaiting maintainer) tasks | 11 created + 2 modified files |
 | Phase 06-release-upgrade-docs-and-v1-validation P05 | 8m | 2 tasks | 12 files |
+| Phase 06-release-upgrade-docs-and-v1-validation P06 | 11m | 3 tasks tasks | 15 files (4 created, 11 modified) files |
 
 ## Accumulated Context
 
@@ -144,6 +145,11 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: download_runner is factored into a shared downloadRunnerCommand(opts) helper consumed by Apply, ApplyEphemeral, AND the integration test, so production drift physically cannot bypass the real-shell test.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: bootstrap_failed surfaces 'Remote stderr (commandID): ...' through renderer.Redactor().String(); CommandID extracted from remote.RemoteError via errors.As, fallback 'unknown' when error path predates wrapping.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: integration test double-gated by //go:build integration AND RUNNERKIT_INTEGRATION=1 env var so go test ./... and CI ignore it; only make test-integration runs the real-shell path.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: sudo password flows via remote.Command.Env['RUNNERKIT_SUDO_PASSWORD'] + RedactArgs append, NOT a new SudoPassword field on remote.Command. Script wrapper reads env via printf|sudo -S so the literal never appears in rendered Script string.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: ui.PasswordPrompter is an OPTIONAL capability interface, not a required Prompter method. Callers type-assert via deps.Prompts.(ui.PasswordPrompter), so all existing fake Prompter implementations remain compatible.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: byo_host_prepared doctor finding uses ops.SeverityPass (informational/positive) since ops.Severity has only pass/warning/error — no SeverityInfo. Pass is the closest analog and renders correctly via ui.Success in renderDoctorHuman.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: visudo runs on the REMOTE host inside RemoteVisudoCheckScript, NOT locally. Atomic-rename pattern (tmp → visudo -cf → mv on success only, exit 21 otherwise) guarantees /etc/sudoers.d/runnerkit-installer is never persisted with malformed content — locks out are physically impossible.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: --yes does NOT imply --non-interactive for sudo password input. --yes accepts safe defaults; sudo password is a separate human-input concern that always requires a TTY prompt unless --non-interactive is explicitly set. Locked in by TestUp_SudoPasswordPrompt_YesDoesNotImplyNonInteractive.
 
 ### Pending Todos
 
@@ -161,6 +167,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-05T02:03:42.783Z
-Stopped at: Plan 06-05 complete; resume at Plan 06-06 byo-prepare-and-sudo-prompt (Path B + Path C user-facing features)
+Last session: 2026-05-05T02:22:38.989Z
+Stopped at: Completed 06-06-byo-prepare-and-sudo-prompt-PLAN.md
 Resume file: None
