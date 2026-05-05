@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8 + Tasks G,H,I,J,K — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9 + Tasks G,H,I,J,K,L — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -728,6 +728,73 @@ and `--connect-timeout` to keep the probe bounded.
    `checks_bugfix_test.go` asserting the new flag set is in place.
 3. Run full repo suite — no regression.
 
+## Bug 9 — `configure_runner` + `configure_ephemeral_runner` missing `Sudo: true` (discovered 2026-05-05)
+
+After Bugs 7 + 8 (Plan 06-09 commit 9a08b01) closed, Plan 06-07
+attempt-6 against `salar@mckee-small-desktop` got past preflight, the
+Path B password prompt fired and accepted a password, and bootstrap
+aborted at the `configure_runner` step:
+
+```
+sudo: a terminal is required to read the password; either use the
+-S option to read from standard input or configure an askpass helper
+sudo: a password is required
+```
+
+Root cause: `internal/bootstrap/install.go::Apply` line 118 and
+`ApplyEphemeral` line 160 declare two `remote.Command` literals
+without `Sudo: true`:
+
+```go
+{ID: "configure_runner", Script: RenderInstallScript(opts), Env: ..., RedactArgs: ...},
+{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: ..., RedactArgs: ...},
+```
+
+`wrapSudoCommand` short-circuits when `c.Sudo == false` (gating
+"Path B should never wrap non-sudo commands"). The configure scripts
+DO contain `sudo curl`, `sudo sha256sum`, `sudo tar`, `sudo chown`,
+and `sudo su -s` (per Plan 06-05 Bug 2 fix and Plan 06-08 Bug 3 fix
+in `script.go`), so the rendered script gets dispatched verbatim and
+each raw sudo tries `/dev/tty` over the non-tty SSH session and fails.
+
+Same family of bug as the original Bug 1 (Plan 06-05) — preflight
+classification was tightened, but the bootstrap commands themselves
+were left under-annotated. Subsequent fixes that added sudo-prefixed
+calls into the configure step (Bug 2 / Bug 3) didn't update the
+Command flag, and unit tests didn't assert it.
+
+### Why cloud is unaffected
+
+Hetzner cloud-init configures `(ALL) NOPASSWD: ALL`, so the
+SudoPassword option is empty, so `wrapSudoCommand` returns the
+command unchanged in both branches — Sudo flag has no effect. Cloud
+bootstrap passes through.
+
+### Bug 9 fix
+
+Add `Sudo: true` to the configure_runner literal in `Apply` and the
+configure_ephemeral_runner literal in `ApplyEphemeral`. Two-line
+edit. Add unit tests covering both literals so future commands that
+add sudo invocations to the configure scripts can't regress this.
+
+### Bug 9 acceptance
+
+- `runnerkit up --host user@host` against an Ubuntu host with
+  password-protected sudo + Plan 06-06 Path B prompt threads the
+  password through the configure_runner step (no `sudo: a terminal
+  is required` aborts).
+- Two unit tests assert `Sudo: true` on both configure commands.
+
+### Task L — `Sudo: true` on configure commands (Bug 9)
+
+1. Edit `internal/bootstrap/install.go::Apply` line 118 and
+   `ApplyEphemeral` line 160: add `Sudo: true` to both
+   `remote.Command` literals.
+2. Add `TestApplyConfigureRunnerCommand_HasSudoTrue` and
+   `TestApplyEphemeralConfigureCommand_HasSudoTrue` in
+   `install_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -775,10 +842,15 @@ and `--connect-timeout` to keep the probe bounded.
   unrealistic test fake; Bug 8 is residential-network-specific
   (cloud paths see clean IPs and never trip the anonymous rate
   limit). Bundled with Bugs 4-6 in Plan 06-09 closure.
-- Once Bugs 7 + 8 closed: preflight passes on byo-prepared Ubuntu 24.04
-  hosts; Plan 06-07 attempt-6 proceeds to the actual smoke (BYO
-  bootstrap → register_runner → status → doctor → down → Hetzner
-  empty_precheck → cloud-end-to-end → destroy_verify).
+- Once Bugs 7 + 8 closed: preflight passed; Path B prompt fired;
+  bootstrap aborted at configure_runner where Bug 9 surfaced.
+- Bug 9 discovered 2026-05-05 during Plan 06-07 attempt-6 against the
+  same host AFTER Bugs 7 + 8 fixes landed. Affects only Path B
+  bootstrap on hosts with password-protected sudo. Cloud path
+  unaffected (cloud-init grants full NOPASSWD; SudoPassword stays
+  empty; wrapSudoCommand returns commands unchanged).
+- Once Bug 9 closed: Plan 06-07 attempt-7 expected to land a GitHub
+  runner ID and proceed to Hetzner cloud-end-to-end + destroy_verify.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

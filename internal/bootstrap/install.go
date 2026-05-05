@@ -115,7 +115,7 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(opts.MissingTools), Sudo: true},
 		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
 		downloadRunnerCommand(opts),
-		{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}},
+		{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
 		{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
 		{ID: "verify_service", Script: "set -euo pipefail\nsudo ./svc.sh status\n", Sudo: true},
 	}
@@ -157,7 +157,7 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(opts.MissingTools), Sudo: true},
 		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
 		downloadRunnerCommand(opts),
-		{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}},
+		{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
 		{ID: "install_ephemeral_finalizer", Script: RenderEphemeralFinalizerScript(opts), Sudo: true},
 		{ID: "install_ephemeral_service", Script: RenderEphemeralServiceScript(opts), Sudo: true},
 		{ID: "install_ephemeral_ttl_timer", Script: RenderEphemeralTTLTimerScript(opts), Sudo: true},
