@@ -186,6 +186,57 @@ func TestApply_WithSudoPassword_UsesSudoMinusSPipedFromHeredoc(t *testing.T) {
 // commands are wrapped with `sudo -S` or carry the
 // RUNNERKIT_SUDO_PASSWORD env — preserving Plan 06-05's exact behavior
 // for the NOPASSWD-sudo / byo-prepared happy path.
+// Bug 10 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
+//
+// Plan 06-07 attempt-7 against salar@mckee-small-desktop got past
+// preflight + Path B prompt + Bug 9 fix (configure_runner Sudo: true)
+// and aborted with:
+//
+//   Sorry, try again.
+//   sudo: no password was provided
+//   sudo: 1 incorrect password attempt
+//
+// Root cause: wrapSudoCommand wrapped the script in
+//   printf '$PW' | { rewritten_script }
+// so the brace group's outer stdin was the password. The inner
+// pattern `printf 'sum' | sudo -S sha256sum -c -` (from
+// RenderInstallScript's checksum-verify step) opens its OWN pipe to
+// sudo. Ubuntu's sudo defaults (use_pty + tty-scoped timestamp cache)
+// did not cache cred reliably across the SSH session, so sudo -S
+// re-prompted; -S read from the inner printf and got the checksum
+// string instead of the password ("Sorry, try again"), then EOF
+// ("no password was provided").
+//
+// The byo-prepare flow (internal/cli/byo_prepare.go) does NOT have
+// this bug because it uses a different structure — prime cred once
+// via a dedicated `printf | sudo -S -v` invocation, then run the
+// rewritten script WITHOUT an outer brace-group pipe. Each subsequent
+// sudo -S hits the freshly-primed cred and does not read its stdin,
+// so inner `printf X | sudo Y` patterns work because sudo lets the
+// printf reach Y.
+//
+// Bug 10 fix: align wrapSudoCommand with byo-prepare's proven
+// structure.
+func TestWrapSudoCommand_InnerStdinPipePreserved(t *testing.T) {
+	t.Parallel()
+	cmd := remote.Command{
+		ID:     "test",
+		Script: "printf 'CHECKSUM  FILE' | sudo sha256sum -c -",
+		Sudo:   true,
+	}
+	wrapped := wrapSudoCommand(cmd, Options{SudoPassword: "secret"})
+
+	if !strings.Contains(wrapped.Script, "printf 'CHECKSUM  FILE' | sudo -S sha256sum -c -") {
+		t.Fatalf("inner `printf | sudo sha256sum -c -` pipe must remain intact end-to-end:\n%s", wrapped.Script)
+	}
+	if strings.Contains(wrapped.Script, "| { ") {
+		t.Fatalf("wrap still uses outer brace-group pipe — Bug 10 not closed:\n%s", wrapped.Script)
+	}
+	if !strings.Contains(wrapped.Script, "sudo -S -v") {
+		t.Fatalf("expected dedicated `sudo -S -v` cred-priming invocation before script body:\n%s", wrapped.Script)
+	}
+}
+
 func TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605(t *testing.T) {
 	exec := &recordingExecutor{}
 	opts := Options{
