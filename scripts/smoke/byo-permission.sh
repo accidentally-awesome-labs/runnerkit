@@ -30,6 +30,18 @@ ssh "${HOST}" 'sudo test -f /opt/actions-runner/runnerkit-*/config.sh' || {
   exit 3
 }
 
+# Verify the GitHub-runner registration sentinel `.runner` exists in the
+# install dir — this is the file that `config.sh --unattended` writes on
+# successful registration. Catches Bug 3 (register_runner runas mismatch)
+# regression: if `runnerkit up` exits 0 but `.runner` is absent, the smoke
+# fails with a distinct exit code so Plan 06-07 attempt-2 has a hard
+# pass/fail signal beyond `runnerkit up exited 0`. See gap doc Task F.
+echo "===> [smoke-byo] Asserting GitHub-runner registration sentinel .runner exists"
+ssh "${HOST}" 'sudo test -f /opt/actions-runner/runnerkit-*/.runner' || {
+  echo "FAIL: .runner sentinel not found in /opt/actions-runner/runnerkit-*/ — config.sh --unattended did not complete registration (Bug 3 regression?)"
+  exit 4
+}
+
 echo "===> [smoke-byo] runnerkit status --repo ${REPO}"
 go run ./cmd/runnerkit status --repo "${REPO}"
 

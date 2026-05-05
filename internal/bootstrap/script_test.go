@@ -17,7 +17,13 @@ func TestRenderInstallAndServiceScripts(t *testing.T) {
 		Package:     RunnerPackage{Filename: "actions-runner-linux-x64-2.334.0.tar.gz", URL: "https://example.invalid/runner.tgz", SHA256: "abc123"},
 	}
 	install := RenderInstallScript(opts)
-	for _, want := range []string{"set -euo pipefail", "runnerkit-runner", "/opt/actions-runner/runnerkit-owner-repo-local", "/var/lib/runnerkit", "sha256sum -c -", "RUNNERKIT_REGISTRATION_TOKEN", "./config.sh --unattended --url https://github.com/owner/repo --token \"$RUNNERKIT_REGISTRATION_TOKEN\""} {
+	// Note: Plan 06-08 (Bug 3 fix) wraps the register_runner invocation in
+	// `sudo su -s /bin/bash - <user> -c "..."`, which means the inner
+	// `$RUNNERKIT_REGISTRATION_TOKEN` reference is now backslash-escaped
+	// (`\"$RUNNERKIT_REGISTRATION_TOKEN\"`) so the OUTER shell expands it
+	// before `su` invokes the inner shell. Token-leak invariant preserved
+	// (the literal token still never appears in rendered output).
+	for _, want := range []string{"set -euo pipefail", "runnerkit-runner", "/opt/actions-runner/runnerkit-owner-repo-local", "/var/lib/runnerkit", "sha256sum -c -", "RUNNERKIT_REGISTRATION_TOKEN", "./config.sh --unattended --url https://github.com/owner/repo --token \\\"$RUNNERKIT_REGISTRATION_TOKEN\\\""} {
 		if !strings.Contains(install, want) {
 			t.Fatalf("install script missing %q:\n%s", want, install)
 		}
@@ -172,10 +178,13 @@ func TestRenderEphemeralInstallScriptUsesEphemeralFlagAndRedactsToken(t *testing
 		Package:     RunnerPackage{Filename: "actions-runner-linux-x64-2.334.0.tar.gz", URL: "https://example.invalid/runner.tgz", SHA256: "abc123"},
 	}
 	script := RenderEphemeralInstallScript(opts)
+	// Note: Plan 06-08 (Bug 3 fix) wraps the register_runner invocation in
+	// `sudo su -s /bin/bash - <user> -c "..."`, so the inner
+	// `$RUNNERKIT_REGISTRATION_TOKEN` reference is now backslash-escaped.
 	for _, want := range []string{
 		"set -euo pipefail",
 		"--replace --ephemeral",
-		"./config.sh --unattended --url https://github.com/owner/repo --token \"$RUNNERKIT_REGISTRATION_TOKEN\"",
+		"./config.sh --unattended --url https://github.com/owner/repo --token \\\"$RUNNERKIT_REGISTRATION_TOKEN\\\"",
 		"--name runnerkit-owner-repo-ephemeral-abc123",
 		"--labels self-hosted,runnerkit,runnerkit-owner-repo,linux,x64,ephemeral",
 		"--work /var/lib/runnerkit/work/runnerkit-owner-repo-ephemeral-abc123",

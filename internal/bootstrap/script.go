@@ -32,6 +32,12 @@ func RenderInstallScript(opts Options) string {
 	workDir := defaultString(opts.WorkDir, filepath.Join("/var/lib/runnerkit/work", opts.RunnerName))
 	pkg := opts.Package
 	labels := strings.Join(opts.Labels, ",")
+	// register_runner: invoke config.sh via `su` from a root sudo context
+	// so the host's sudoers needs only (root) NOPASSWD — no (ALL) runas
+	// required. Closes Bug 3 from 06-GAP-byo-sudo-handling.md.
+	// sudo -u <non-root> would match (ALL) runas, which neither the
+	// byo-prepare scoped template nor a typical (root) NOPASSWD: ALL host
+	// sudoers covers. See gap doc lines 122-199 for the full rationale.
 	return fmt.Sprintf(`set -euo pipefail
 id -u %[1]s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %[1]s
 sudo install -d -o %[1]s -g %[1]s %[2]s
@@ -44,7 +50,7 @@ fi
 printf '%%s  %%s\n' '%[6]s' '%[4]s' | sudo sha256sum -c -
 sudo tar xzf %[4]s --skip-old-files
 sudo chown -R %[1]s:%[1]s %[2]s %[3]s
-sudo -u %[1]s RUNNERKIT_REGISTRATION_TOKEN="$RUNNERKIT_REGISTRATION_TOKEN" ./config.sh --unattended --url %[7]s --token "$RUNNERKIT_REGISTRATION_TOKEN" --name %[8]s --labels %[9]s --work %[3]s --replace
+sudo su -s /bin/bash - %[1]s -c "RUNNERKIT_REGISTRATION_TOKEN=\"$RUNNERKIT_REGISTRATION_TOKEN\" ./config.sh --unattended --url %[7]s --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name %[8]s --labels %[9]s --work %[3]s --replace"
 `, serviceUser, installPath, workDir, pkg.Filename, pkg.URL, pkg.SHA256, opts.RepoURL, opts.RunnerName, labels)
 }
 
@@ -68,6 +74,12 @@ func RenderEphemeralInstallScript(opts Options) string {
 	workDir := defaultString(opts.WorkDir, filepath.Join("/var/lib/runnerkit/work", opts.RunnerName))
 	pkg := opts.Package
 	labels := strings.Join(opts.Labels, ",")
+	// register_runner: invoke config.sh via `su` from a root sudo context
+	// so the host's sudoers needs only (root) NOPASSWD — no (ALL) runas
+	// required. Closes Bug 3 from 06-GAP-byo-sudo-handling.md.
+	// sudo -u <non-root> would match (ALL) runas, which neither the
+	// byo-prepare scoped template nor a typical (root) NOPASSWD: ALL host
+	// sudoers covers. See gap doc lines 122-199 for the full rationale.
 	return fmt.Sprintf(`set -euo pipefail
 id -u %[1]s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %[1]s
 sudo install -d -o %[1]s -g %[1]s %[2]s
@@ -80,7 +92,7 @@ fi
 printf '%%s  %%s\n' '%[6]s' '%[4]s' | sudo sha256sum -c -
 sudo tar xzf %[4]s --skip-old-files
 sudo chown -R %[1]s:%[1]s %[2]s %[3]s
-sudo -u %[1]s RUNNERKIT_REGISTRATION_TOKEN="$RUNNERKIT_REGISTRATION_TOKEN" ./config.sh --unattended --url %[7]s --token "$RUNNERKIT_REGISTRATION_TOKEN" --name %[8]s --labels %[9]s --work %[3]s --replace --ephemeral
+sudo su -s /bin/bash - %[1]s -c "RUNNERKIT_REGISTRATION_TOKEN=\"$RUNNERKIT_REGISTRATION_TOKEN\" ./config.sh --unattended --url %[7]s --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name %[8]s --labels %[9]s --work %[3]s --replace --ephemeral"
 `, serviceUser, installPath, workDir, pkg.Filename, pkg.URL, pkg.SHA256, opts.RepoURL, opts.RunnerName, labels)
 }
 
