@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-06-byo-prepare-and-sudo-prompt-PLAN.md
-last_updated: "2026-05-05T02:22:38.993Z"
+stopped_at: Completed 06-08-byo-register-runner-runas-fix-PLAN.md
+last_updated: "2026-05-05T16:31:34.438Z"
 last_activity: 2026-05-05
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 26
-  completed_plans: 25
+  total_plans: 27
+  completed_plans: 26
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 3 of 7
+Plan: 2 of 8
 Status: Ready to execute
 Last activity: 2026-05-05
 
@@ -63,6 +63,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P04 | 8m | 3 of 4 tasks (Task 4 is checkpoint:human-action awaiting maintainer) tasks | 11 created + 2 modified files |
 | Phase 06-release-upgrade-docs-and-v1-validation P05 | 8m | 2 tasks | 12 files |
 | Phase 06-release-upgrade-docs-and-v1-validation P06 | 11m | 3 tasks tasks | 15 files (4 created, 11 modified) files |
+| Phase 06-release-upgrade-docs-and-v1-validation P08 | 5m | 2 tasks tasks | 4 files (1 production, 2 test, 1 smoke) files |
 
 ## Accumulated Context
 
@@ -150,6 +151,9 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: byo_host_prepared doctor finding uses ops.SeverityPass (informational/positive) since ops.Severity has only pass/warning/error — no SeverityInfo. Pass is the closest analog and renders correctly via ui.Success in renderDoctorHuman.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: visudo runs on the REMOTE host inside RemoteVisudoCheckScript, NOT locally. Atomic-rename pattern (tmp → visudo -cf → mv on success only, exit 21 otherwise) guarantees /etc/sudoers.d/runnerkit-installer is never persisted with malformed content — locks out are physically impossible.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: --yes does NOT imply --non-interactive for sudo password input. --yes accepts safe defaults; sudo password is a separate human-input concern that always requires a TTY prompt unless --non-interactive is explicitly set. Locked in by TestUp_SudoPasswordPrompt_YesDoesNotImplyNonInteractive.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: register_runner uses 'sudo su -s /bin/bash - <user> -c "..."' instead of 'sudo -u <user> ./config.sh ...' so a host with only (root) NOPASSWD: ALL or only the byo-prepare scoped sudoers entry is sufficient — closes Bug 3 from 06-GAP-byo-sudo-handling.md (Task F).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: outer 'bash -c "..."' uses double quotes so the OUTER SSH-user shell expands \"$RUNNERKIT_REGISTRATION_TOKEN\" before su invokes the inner shell — preserves env-var indirection, no token leak in rendered Script string. RenderRemoveConfigScript and RenderReconfigureScript intentionally retain 'sudo -u %s' (out of scope per gap doc Task F bounds; recovery flows run after byo-prepare/Path B has established a working sudo path).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: smoke harness exit codes 3=config.sh missing (Plan 06-05) vs 4=.runner sentinel missing (Plan 06-08) so Plan 06-07 attempt-2 re-smoke can branch on cause. Cloud path verifiably unchanged: internal/provider/hetzner not modified, hetzner package tests stay green.
 
 ### Pending Todos
 
@@ -167,6 +171,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-05T02:22:38.989Z
-Stopped at: Completed 06-06-byo-prepare-and-sudo-prompt-PLAN.md
+Last session: 2026-05-05T16:31:21.055Z
+Stopped at: Completed 06-08-byo-register-runner-runas-fix-PLAN.md
 Resume file: None
