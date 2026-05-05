@@ -71,7 +71,7 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 	commands := []remote.Command{
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(opts.MissingTools), Sudo: true},
 		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
-		{ID: "download_runner", Script: fmt.Sprintf("set -euo pipefail\nsudo install -d -o %s -g %s %s\ncd %s\ncurl -fL --retry 3 --connect-timeout 10 -o %s %s\nprintf '%%s  %%s\n' '%s' '%s' | sha256sum -c -\ntar xzf %s --skip-old-files\n", opts.ServiceUser, opts.ServiceUser, opts.InstallPath, opts.InstallPath, opts.Package.Filename, opts.Package.URL, opts.Package.SHA256, opts.Package.Filename, opts.Package.Filename), Sudo: true},
+		downloadRunnerCommand(opts),
 		{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}},
 		{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
 		{ID: "verify_service", Script: "set -euo pipefail\nsudo ./svc.sh status\n", Sudo: true},
@@ -112,7 +112,7 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 	commands := []remote.Command{
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(opts.MissingTools), Sudo: true},
 		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
-		{ID: "download_runner", Script: fmt.Sprintf("set -euo pipefail\nsudo install -d -o %s -g %s %s\ncd %s\ncurl -fL --retry 3 --connect-timeout 10 -o %s %s\nprintf '%%s  %%s\n' '%s' '%s' | sha256sum -c -\ntar xzf %s --skip-old-files\n", opts.ServiceUser, opts.ServiceUser, opts.InstallPath, opts.InstallPath, opts.Package.Filename, opts.Package.URL, opts.Package.SHA256, opts.Package.Filename, opts.Package.Filename), Sudo: true},
+		downloadRunnerCommand(opts),
 		{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}},
 		{ID: "install_ephemeral_finalizer", Script: RenderEphemeralFinalizerScript(opts), Sudo: true},
 		{ID: "install_ephemeral_service", Script: RenderEphemeralServiceScript(opts), Sudo: true},
@@ -135,6 +135,28 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		}
 	}
 	return out, nil
+}
+
+// downloadRunnerCommand returns the bootstrap "download_runner"
+// remote.Command shared by Apply and ApplyEphemeral. The install
+// directory is created with `sudo install -d -o serviceUser` so it
+// is owned by the service user; curl, sha256sum -c -, and tar xzf
+// must therefore run with sudo so root can write into a directory
+// the SSH user does not own. Plain (non-sudo) curl/sha256sum/tar
+// against this dir hits `Permission denied` on any host where the
+// SSH user is not the service user — see gap doc
+// 06-GAP-byo-sudo-handling.md Bug 2.
+func downloadRunnerCommand(opts Options) remote.Command {
+	return remote.Command{
+		ID: "download_runner",
+		Script: fmt.Sprintf("set -euo pipefail\nsudo install -d -o %s -g %s %s\ncd %s\nsudo curl -fL --retry 3 --connect-timeout 10 -o %s %s\nprintf '%%s  %%s\n' '%s' '%s' | sudo sha256sum -c -\nsudo tar xzf %s --skip-old-files\n",
+			opts.ServiceUser, opts.ServiceUser, opts.InstallPath,
+			opts.InstallPath,
+			opts.Package.Filename, opts.Package.URL,
+			opts.Package.SHA256, opts.Package.Filename,
+			opts.Package.Filename),
+		Sudo: true,
+	}
 }
 
 func normalizeOptions(opts *Options) {

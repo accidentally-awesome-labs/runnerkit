@@ -39,10 +39,10 @@ sudo install -d -o %[1]s -g %[1]s /var/lib/runnerkit
 sudo install -d -o %[1]s -g %[1]s %[3]s
 cd %[2]s
 if [ ! -f %[4]s ]; then
-  curl -fL --retry 3 --connect-timeout 10 -o %[4]s %[5]s
+  sudo curl -fL --retry 3 --connect-timeout 10 -o %[4]s %[5]s
 fi
-printf '%%s  %%s\n' '%[6]s' '%[4]s' | sha256sum -c -
-tar xzf %[4]s --skip-old-files
+printf '%%s  %%s\n' '%[6]s' '%[4]s' | sudo sha256sum -c -
+sudo tar xzf %[4]s --skip-old-files
 sudo chown -R %[1]s:%[1]s %[2]s %[3]s
 sudo -u %[1]s RUNNERKIT_REGISTRATION_TOKEN="$RUNNERKIT_REGISTRATION_TOKEN" ./config.sh --unattended --url %[7]s --token "$RUNNERKIT_REGISTRATION_TOKEN" --name %[8]s --labels %[9]s --work %[3]s --replace
 `, serviceUser, installPath, workDir, pkg.Filename, pkg.URL, pkg.SHA256, opts.RepoURL, opts.RunnerName, labels)
@@ -75,10 +75,10 @@ sudo install -d -o %[1]s -g %[1]s /var/lib/runnerkit
 sudo install -d -o %[1]s -g %[1]s %[3]s
 cd %[2]s
 if [ ! -f %[4]s ]; then
-  curl -fL --retry 3 --connect-timeout 10 -o %[4]s %[5]s
+  sudo curl -fL --retry 3 --connect-timeout 10 -o %[4]s %[5]s
 fi
-printf '%%s  %%s\n' '%[6]s' '%[4]s' | sha256sum -c -
-tar xzf %[4]s --skip-old-files
+printf '%%s  %%s\n' '%[6]s' '%[4]s' | sudo sha256sum -c -
+sudo tar xzf %[4]s --skip-old-files
 sudo chown -R %[1]s:%[1]s %[2]s %[3]s
 sudo -u %[1]s RUNNERKIT_REGISTRATION_TOKEN="$RUNNERKIT_REGISTRATION_TOKEN" ./config.sh --unattended --url %[7]s --token "$RUNNERKIT_REGISTRATION_TOKEN" --name %[8]s --labels %[9]s --work %[3]s --replace --ephemeral
 `, serviceUser, installPath, workDir, pkg.Filename, pkg.URL, pkg.SHA256, opts.RepoURL, opts.RunnerName, labels)

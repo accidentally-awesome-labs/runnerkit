@@ -20,6 +20,16 @@ START_EPOCH=$(date +%s)
 echo "===> [smoke-byo] runnerkit up --repo ${REPO} --host ${HOST} --mode persistent --yes"
 go run ./cmd/runnerkit up --repo "${REPO}" --host "${HOST}" --mode persistent --yes
 
+# Verify the bootstrap actually landed the runner tarball and extracted
+# config.sh into the install dir on the remote host. This catches Bug 2
+# (download_runner permission failure) before the test moves on to
+# runner registration. See gap doc 06-GAP-byo-sudo-handling.md Task E.
+echo "===> [smoke-byo] Asserting install dir contains config.sh on the remote host"
+ssh "${HOST}" 'sudo test -f /opt/actions-runner/runnerkit-*/config.sh' || {
+  echo "FAIL: config.sh not found in /opt/actions-runner/runnerkit-*/ — bootstrap did not land the tarball"
+  exit 3
+}
+
 echo "===> [smoke-byo] runnerkit status --repo ${REPO}"
 go run ./cmd/runnerkit status --repo "${REPO}"
 

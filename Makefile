@@ -1,7 +1,7 @@
 # RunnerKit Makefile — solo developer + Claude execution.
 # Live smoke targets are MAINTAINER-ONLY and must NOT be invoked from CI (D-11).
 
-.PHONY: help test test-race vet lint smoke-live smoke-live-byo smoke-live-cloud smoke-stopwatch release-snapshot
+.PHONY: help test test-race test-integration vet lint smoke-live smoke-live-byo smoke-live-cloud smoke-stopwatch release-snapshot
 
 help: ## Show this help.
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -11,6 +11,9 @@ test: ## Run the unit/integration test suite.
 
 test-race: ## Run the full test suite with -race.
 	go test ./... -count=1 -race
+
+test-integration: ## Run real-shell integration tests (requires NOPASSWD sudo on local machine; gated by RUNNERKIT_INTEGRATION=1).
+	RUNNERKIT_INTEGRATION=1 go test -tags=integration ./internal/bootstrap/... -count=1 -v
 
 vet: ## go vet all packages.
 	go vet ./...
