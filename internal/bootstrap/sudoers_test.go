@@ -130,6 +130,24 @@ func TestRemoteVisudoCheckScript_RunsVisudoBeforeMv(t *testing.T) {
 	}
 }
 
+// TestRemoteVisudoCheckScript_MktempInvokedViaSudo asserts that the
+// staging tempfile is created under root ownership (sudo mktemp) so
+// that subsequent `sudo tee/visudo/chmod/mv` operations don't fail
+// with EACCES on Ubuntu 24.04 LTS (and any kernel with
+// fs.protected_regular=2). When mktemp runs unsudoed, the resulting
+// tempfile is owned by the SSH user, and root's O_CREAT-open of a
+// non-root-owned file in the world-writable sticky /tmp is rejected
+// by the kernel hardening — Plan 06-07 attempt-3 surfaced this as
+// `tee: /tmp/runnerkit-installer.XXXXXX: Permission denied`.
+//
+// Bug 5 / Task H — gap doc 06-GAP-byo-sudo-handling.md.
+func TestRemoteVisudoCheckScript_MktempInvokedViaSudo(t *testing.T) {
+	script := RemoteVisudoCheckScript()
+	if !strings.Contains(script, "sudo mktemp ") {
+		t.Fatalf("mktemp must be invoked via sudo so the tempfile is root-owned (fs.protected_regular=2 hardening). Script:\n%s", script)
+	}
+}
+
 // TestSudoersIsPrepared_MissingFileReturnsFalse confirms that when the
 // remote sudoers file does not exist (read script exit 1), the
 // idempotency probe returns (false, nil) instead of an error so
