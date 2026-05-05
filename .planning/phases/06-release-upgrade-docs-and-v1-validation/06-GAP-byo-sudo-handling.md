@@ -3,13 +3,13 @@ status: open
 source: live BYO smoke (Plan 06-04 Task 4)
 discovered: 2026-05-04
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (or v1.1 milestone)
-severity: medium
+gap_closure_target: 06-05 (mandatory before v1.0.0 tag — v1 BYO is unusable as-is)
+severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
 ---
 
-# Gap: BYO host sudo handling
+# Gap: BYO bootstrap is unusable — sudo handling AND download permission bug
 
 ## What's broken
 
@@ -58,6 +58,65 @@ Two complementary solutions: **Path B + Path C**.
 **Rejected:** Path A (document NOPASSWD as the contract, force users to
 edit sudoers manually) — too high-friction for solo developers who are
 the target audience.
+
+## Bug 2 — `download_runner` permission failure
+
+After NOPASSWD sudo was configured on `salar@mckee-small-desktop` to
+test past Bug 1, the bootstrap then failed at the `download_runner`
+step with:
+
+```
+curl: (23) Failure writing output to destination
+Warning: Permission denied
+```
+
+Root cause: the `download_runner` script in
+`internal/bootstrap/install.go:74` creates the install directory
+**owned by `runnerkit-runner` (mode 0755 default)** then runs plain
+`curl`, `sha256sum`, and `tar` *without sudo* as the SSH user. The SSH
+user does not own the directory and 0755 grants `other` read+execute
+only — no write. The download cannot land.
+
+The same buggy pattern exists in `internal/bootstrap/script.go`:
+- `RenderInstallScript` (lines 35-48): `sudo install -d -o serviceUser`
+  → `cd` → plain `curl` → plain `sha256sum` → plain `tar`.
+- `RenderEphemeralInstallScript` (lines 65-84): same pattern.
+
+This bug never surfaced before because every test in
+`internal/bootstrap/` uses `fakeExecutor` which records commands but
+does not execute them. There is no integration test that runs the
+actual scripts against a real shell, so the permission contradiction
+went undetected from Plan 02-02 through Phase 5.
+
+Anyone running `runnerkit up` against a BYO host today, regardless of
+sudo configuration, will hit this. **BYO is non-functional in v1
+without a fix.**
+
+### Bug 2 fix
+
+In `internal/bootstrap/install.go::Apply` (and `ApplyEphemeral`) and
+in `internal/bootstrap/script.go::RenderInstallScript` (and
+`RenderEphemeralInstallScript`), the install-directory pre-stage and
+the download/verify/extract sequence must run with consistent
+ownership. Two acceptable approaches:
+
+**Option 1 (preferred — minimal diff):** prefix `curl`, `sha256sum -c`,
+and `tar xzf` with `sudo`. The directory remains owned by
+`runnerkit-runner`; root writes the tarball into it; ownership stays
+correct without an extra `chown` round-trip.
+
+**Option 2:** `install -d` as the SSH user, then `chown -R
+runnerkit-runner:runnerkit-runner` at the end of the configure step.
+Slightly cleaner conceptually but adds an extra sudo call.
+
+Either way the fix needs:
+
+- An end-to-end test that exercises a real shell (or a tighter
+  fakeExecutor that simulates filesystem permissions), so future
+  regressions surface before live smoke.
+- A scripted shell smoke (`scripts/smoke/byo-permission.sh` is the
+  obvious extension point) that validates `download_runner` lands the
+  tarball and the extraction succeeds, before the configure step.
 
 ## Required work
 
@@ -173,6 +232,29 @@ Files:
   password required" with remediation pointing at `byo-prepare`.
 - README.md: one-liner under BYO install pointing at the sudo setup.
 
+### Task E — Fix download_runner permission bug
+
+`internal/bootstrap/install.go::Apply` step `download_runner` and
+`internal/bootstrap/script.go::RenderInstallScript` /
+`RenderEphemeralInstallScript`:
+
+- Prefix `curl`, `sha256sum -c`, and `tar xzf` with `sudo` (Option 1
+  above), OR restructure ownership (Option 2).
+- Add an integration test that exercises the actual scripts against a
+  real shell with a tmpfs sandbox and asserts the tarball + extraction
+  land in a directory owned by `runnerkit-runner`. This closes the gap
+  that fakeExecutor-based unit tests left.
+- Extend `scripts/smoke/byo-permission.sh` to assert the install dir
+  contains `config.sh` after the bootstrap apply (verifies the
+  download landed, before going on to runner registration).
+
+Files affected:
+- `internal/bootstrap/install.go` (Apply + ApplyEphemeral)
+- `internal/bootstrap/script.go` (RenderInstallScript + RenderEphemeralInstallScript)
+- `internal/bootstrap/install_integration_test.go` (new — guarded by build tag, exercised in `make test-integration`)
+- `scripts/smoke/byo-permission.sh` (additional assertion)
+- `internal/bootstrap/script_test.go` (substring assertions updated to include `sudo curl`/`sudo tar` if Option 1 chosen)
+
 ## Acceptance
 
 - [ ] Preflight rejects "sudo binary present but password required"
@@ -191,6 +273,14 @@ Files:
 - [ ] BYO quickstart docs updated.
 - [ ] No raw sudo password leaks into state files, logs, JSON output,
       or error messages — redactor coverage tested.
+- [ ] `download_runner` (and `RenderInstallScript`,
+      `RenderEphemeralInstallScript`) write the tarball with consistent
+      ownership; salar (or any non-runnerkit-runner SSH user) runs
+      `runnerkit up` against a fresh BYO host successfully end-to-end.
+- [ ] New integration test (or shell-backed bootstrap test) runs the
+      actual install scripts against a real shell — the
+      fakeExecutor-only test suite gap that hid this bug since 02-02
+      is closed.
 
 ## Cross-references
 
