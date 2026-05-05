@@ -6,6 +6,7 @@ require (
 	github.com/hashicorp/go-version v1.9.0
 	github.com/hetznercloud/hcloud-go v1.59.2
 	github.com/spf13/cobra v1.10.1
+	golang.org/x/term v0.10.0
 )
 
 require (

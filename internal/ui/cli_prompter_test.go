@@ -108,11 +108,7 @@ func TestCLIPrompter_Select_RejectsOutOfBounds(t *testing.T) {
 func TestCLIPrompter_Password_RequiresTerminalWhenStdinNotTTY(t *testing.T) {
 	t.Parallel()
 	p := NewCLIPrompter(strings.NewReader("hunter2\n"), &nopWriter{})
-	pp, ok := p.(PasswordPrompter)
-	if !ok {
-		t.Fatal("expected PasswordPrompter")
-	}
-	if _, err := pp.Password(context.Background(), Prompt{Message: "Sudo password:"}); err == nil {
+	if _, err := p.Password(context.Background(), Prompt{Message: "Sudo password:"}); err == nil {
 		t.Fatal("expected error when stdin is not a terminal — refusing to read password from non-TTY would echo the password in plain text")
 	}
 }

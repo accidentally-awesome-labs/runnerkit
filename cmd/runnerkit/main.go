@@ -16,8 +16,12 @@ func isTerminal(file *os.File) bool {
 	return err == nil && (info.Mode()&os.ModeCharDevice) != 0
 }
 
-func main() {
-	cmd := cli.NewRootCommand(cli.Dependencies{
+// buildDependencies constructs the production-binary Dependencies
+// struct. Extracted from main() so cmd/runnerkit/main_test.go can
+// regression-guard the wiring (Bug 4 / Task G — Plans 06-06 + 06-08
+// shipped Path B + Path C prompt code paths but never wired Prompts).
+func buildDependencies() cli.Dependencies {
+	return cli.Dependencies{
 		Version: version,
 		In:      os.Stdin,
 		Out:     os.Stdout,
@@ -30,7 +34,12 @@ func main() {
 		},
 		Clock:         time.Now,
 		CommandRunner: github.OSCommandRunner{},
-	})
+		Prompts:       ui.NewCLIPrompter(os.Stdin, os.Stdout),
+	}
+}
+
+func main() {
+	cmd := cli.NewRootCommand(buildDependencies())
 	if err := cmd.Execute(); err != nil {
 		os.Exit(cli.ExitCode(err))
 	}
