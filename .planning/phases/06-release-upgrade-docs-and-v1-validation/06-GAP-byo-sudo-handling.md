@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bug 4 + Task G — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5 + Tasks G,H — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -481,6 +481,70 @@ direct.
    message: distinguish "no TTY" vs "prompter unavailable" so future
    wiring regressions surface a clearer message.
 
+## Bug 5 — `mktemp` staging file owned by SSH user → root EACCES under fs.protected_regular=2 (discovered 2026-05-05)
+
+After Bug 4 (Plan 06-09 commit 1d1888e) wired a concrete `ui.Prompter`,
+Plan 06-07 attempt-3 against `salar@mckee-small-desktop` (Ubuntu 24.04
+LTS) progressed past the prompt and surfaced a 5th BYO blocker on the
+remote sudoers install:
+
+```
+✗ RunnerKit could not install the scoped sudoers entry.
+→ Remote stderr: tee: /tmp/runnerkit-installer.HtDsXL: Permission denied
+```
+
+Root cause: `internal/bootstrap/sudoers.go::RemoteVisudoCheckScript`
+creates the staging tempfile with plain `mktemp /tmp/runnerkit-installer.XXXXXX`
+(unsudoed). The resulting file is owned by the SSH user (mode 0600).
+The next pipeline step `printf '%s' "$RUNNERKIT_SUDOERS_CONTENT" | sudo tee "$TMP"`
+runs as root, but Ubuntu 24.04 LTS ships with the kernel hardening
+default `fs.protected_regular=2`, which disallows O_CREAT-open of files
+in world-writable sticky directories (e.g. `/tmp`) by any process whose
+UID differs from the file owner — root is NOT exempt from this protection.
+`tee` therefore fails with EACCES, and `byo-prepare` aborts.
+
+The bug went undetected before now because the unit test for the
+script only asserts `visudo -cf` runs before `mv`; the live BYO smoke
+in v1 had previously been worked around with `(ALL) NOPASSWD: ALL`
+(attempt 1), so byo-prepare itself never ran end-to-end against a
+real Ubuntu 24.04 host.
+
+### Why cloud is unaffected (yet again)
+
+Hetzner cloud-init writes `/etc/sudoers.d/runnerkit-admin` directly
+during provisioning; it never goes through `RemoteVisudoCheckScript`.
+The cloud path bypasses the staging tempfile entirely.
+
+### Bug 5 fix
+
+One-line patch: change `TMP=$(mktemp /tmp/runnerkit-installer.XXXXXX)`
+to `TMP=$(sudo mktemp /tmp/runnerkit-installer.XXXXXX)` in
+`RemoteVisudoCheckScript`. After the wrapper substitutes `sudo ` →
+`sudo -S `, the tempfile is created as root (which can re-open and
+write any file under `/tmp` without tripping `fs.protected_regular`).
+Subsequent `sudo tee/visudo/chmod/mv` operations then succeed end-to-end.
+
+### Bug 5 acceptance
+
+- `runnerkit byo-prepare --host user@host` against an Ubuntu 24.04 LTS
+  host with `fs.protected_regular=2` (kernel default) successfully
+  writes `/etc/sudoers.d/runnerkit-installer` after a single sudo
+  password prompt.
+- Unit test `TestRemoteVisudoCheckScript_MktempInvokedViaSudo` asserts
+  the staging tempfile is created via `sudo mktemp`.
+- Plan 06-07 attempt-3 against `salar@mckee-small-desktop` proceeds
+  past byo-prepare into the smoke proper.
+
+### Task H — `sudo mktemp` in RemoteVisudoCheckScript (Bug 5)
+
+1. Update `internal/bootstrap/sudoers.go::RemoteVisudoCheckScript` line 58
+   to invoke mktemp via sudo. Update the function doc comment to record
+   the rationale (Ubuntu 24.04 + fs.protected_regular=2).
+2. Add `internal/bootstrap/sudoers_test.go::TestRemoteVisudoCheckScript_MktempInvokedViaSudo`
+   asserting the script contains the literal substring `sudo mktemp `.
+3. Run full repo `go test ./... -count=1 -race` to confirm no regression
+   in any sibling package.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -504,6 +568,16 @@ direct.
 - Once Bug 4 closed: Plan 06-07 attempt-3 can finally run end-to-end on
   a host with password-protected sudo. Plan 06-09 is the gap-closure
   target.
+- Bug 5 discovered 2026-05-05 during Plan 06-07 attempt-3 against the
+  same host AFTER Bug 4 fix (Plan 06-09 commit 1d1888e) landed. The
+  Ubuntu 24.04 default `fs.protected_regular=2` rejects root's O_CREAT
+  on a non-root-owned file under `/tmp`. Cloud path unaffected (cloud-init
+  writes sudoers.d directly, never uses the staging tempfile). Bundled
+  with Bug 4 in Plan 06-09 closure since the smoke can't make end-to-end
+  forward progress without both fixes.
+- Once Bug 5 closed: byo-prepare runs to completion; Plan 06-07 attempt-3
+  proceeds to the actual smoke (BYO bootstrap → register_runner → status
+  → doctor → down → Hetzner empty_precheck → cloud-end-to-end → destroy_verify).
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

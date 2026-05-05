@@ -53,9 +53,17 @@ func RenderSudoersEntry(user string) string {
 // Critical: the visudo step MUST run BEFORE the mv. A malformed
 // sudoers file persisted to /etc/sudoers.d/ can lock the user out of
 // sudo entirely; the visudo gate is the only thing preventing that.
+//
+// Bug 5 (Plan 06-07 attempt-3, 2026-05-05) — the staging tempfile
+// MUST be created via `sudo mktemp` so that the file is root-owned
+// from the start. On Ubuntu 24.04 LTS (kernel hardening default
+// fs.protected_regular=2) a tempfile created by an unprivileged user
+// in /tmp cannot be O_CREAT-opened by root because /tmp is sticky and
+// world-writable. The protection applies to root, NOT just the file
+// owner; subsequent `sudo tee` then fails with EACCES.
 func RemoteVisudoCheckScript() string {
 	return `set -euo pipefail
-TMP=$(mktemp /tmp/runnerkit-installer.XXXXXX)
+TMP=$(sudo mktemp /tmp/runnerkit-installer.XXXXXX)
 printf '%s' "$RUNNERKIT_SUDOERS_CONTENT" | sudo tee "$TMP" >/dev/null
 sudo chmod 0440 "$TMP"
 if ! sudo visudo -cf "$TMP"; then
