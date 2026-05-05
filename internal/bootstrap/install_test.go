@@ -124,6 +124,91 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 	}
 }
 
+// TestApply_WithSudoPassword_UsesSudoMinusSPipedFromHeredoc asserts the
+// Plan 06-06 Path B contract: when Options.SudoPassword is non-empty,
+// each sudo-prefixed command's Script is wrapped so it pipes the
+// password from the env-var $RUNNERKIT_SUDO_PASSWORD into `sudo -S`.
+// The literal password value MUST flow through Env (not be embedded
+// in Script) and MUST be appended to RedactArgs so the executor
+// scrubs it from any captured stderr.
+func TestApply_WithSudoPassword_UsesSudoMinusSPipedFromHeredoc(t *testing.T) {
+	password := "correct horse battery staple"
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName:   "runnerkit-owner-repo",
+		RepoURL:      "https://github.com/owner/repo",
+		Labels:       []string{"x"},
+		ServiceUser:  "runnerkit-runner",
+		RunnerToken:  "registration-token-x",
+		Package:      RunnerPackage{Filename: "runner.tgz", URL: "https://example.invalid/runner.tgz", SHA256: "abc"},
+		SudoPassword: password,
+	}
+	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if len(exec.commands) == 0 {
+		t.Fatal("no commands recorded")
+	}
+	sawSudoMinusS := false
+	for _, c := range exec.commands {
+		if !c.Sudo {
+			continue
+		}
+		// The wrapped script must reference sudo -S and the env var,
+		// but NOT contain the literal password value.
+		if strings.Contains(c.Script, password) {
+			t.Fatalf("command %q leaked literal password into Script:\n%s", c.ID, c.Script)
+		}
+		if strings.Contains(c.Script, "sudo -S") && strings.Contains(c.Script, "RUNNERKIT_SUDO_PASSWORD") {
+			sawSudoMinusS = true
+			if c.Env["RUNNERKIT_SUDO_PASSWORD"] != password {
+				t.Fatalf("command %q missing password Env: %#v", c.ID, c.Env)
+			}
+			redacted := false
+			for _, ra := range c.RedactArgs {
+				if ra == password {
+					redacted = true
+					break
+				}
+			}
+			if !redacted {
+				t.Fatalf("command %q missing password in RedactArgs: %#v", c.ID, c.RedactArgs)
+			}
+		}
+	}
+	if !sawSudoMinusS {
+		t.Fatalf("no sudo command was wrapped with sudo -S + RUNNERKIT_SUDO_PASSWORD env in any of %d commands", len(exec.commands))
+	}
+}
+
+// TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605 asserts
+// that when Options.SudoPassword is empty, none of the rendered
+// commands are wrapped with `sudo -S` or carry the
+// RUNNERKIT_SUDO_PASSWORD env — preserving Plan 06-05's exact behavior
+// for the NOPASSWD-sudo / byo-prepared happy path.
+func TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605(t *testing.T) {
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"x"},
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "registration-token-x",
+		Package:     RunnerPackage{Filename: "runner.tgz", URL: "https://example.invalid/runner.tgz", SHA256: "abc"},
+	}
+	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	for _, c := range exec.commands {
+		if strings.Contains(c.Script, "sudo -S") {
+			t.Fatalf("command %q unexpectedly wrapped with sudo -S without SudoPassword opt:\n%s", c.ID, c.Script)
+		}
+		if _, has := c.Env["RUNNERKIT_SUDO_PASSWORD"]; has {
+			t.Fatalf("command %q unexpectedly carried RUNNERKIT_SUDO_PASSWORD without SudoPassword opt", c.ID)
+		}
+	}
+}
+
 func TestApplyRunsBootstrapCommandsInOrderAndRedactsToken(t *testing.T) {
 	token := "registration-token-secret-12345"
 	exec := &recordingExecutor{}

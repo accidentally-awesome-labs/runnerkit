@@ -416,6 +416,166 @@ func TestUp_BootstrapFailed_SurfacesRedactedRemoteStderr(t *testing.T) {
 	}
 }
 
+// recordingPasswordPrompter satisfies ui.Prompter and additionally
+// records that Password() was called and what value was returned.
+// Used by the Path B sudo-password fallback tests below.
+type recordingPasswordPrompter struct {
+	password         string
+	passwordCalls    int
+	confirmResponses bool
+	selectResponse   string
+	inputResponse    string
+}
+
+func (p *recordingPasswordPrompter) Confirm(context.Context, ui.Prompt) (bool, error) {
+	return p.confirmResponses, nil
+}
+func (p *recordingPasswordPrompter) Select(context.Context, ui.Prompt, []ui.Option) (string, error) {
+	return p.selectResponse, nil
+}
+func (p *recordingPasswordPrompter) Input(context.Context, ui.Prompt) (string, error) {
+	return p.inputResponse, nil
+}
+func (p *recordingPasswordPrompter) Password(_ context.Context, _ ui.Prompt) (string, error) {
+	p.passwordCalls++
+	return p.password, nil
+}
+
+// passwordRequiredProbe wires the fake remote executor so that
+// preflight's `sudo -n true` probe reports "password is required",
+// triggering CheckPrivilegePasswordReq (Plan 06-05) which Path B
+// (Plan 06-06) consumes to prompt for the sudo password.
+func passwordRequiredProbe(remoteExec *fakeRemoteExecutor) {
+	remoteExec.runResults["probe_sudo_n"] = remote.Result{ExitCode: 1, Stderr: "sudo: a password is required"}
+}
+
+// TestUp_SudoPasswordPrompt_Interactive asserts Path B end-to-end:
+// preflight emits CheckPrivilegePasswordReq → CLI prompts via
+// deps.Prompts.Password → password is registered with redact.SudoPassword
+// → bootstrap.Apply sees Options.SudoPassword and wraps sudo commands
+// with `sudo -S`. The literal password value MUST NOT appear in the
+// captured renderer output.
+func TestUp_SudoPasswordPrompt_Interactive(t *testing.T) {
+	password := "correct horse battery staple"
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	remoteExec := newFakeRemoteExecutor()
+	passwordRequiredProbe(remoteExec)
+	prompter := &recordingPasswordPrompter{password: password, confirmResponses: true}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		StateBaseDir:   stateDir,
+		TTY:            ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:        prompter,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"up", "--repo", "owner/repo", "--host", "alice@example.com", "--yes", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("up returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+	}
+	if prompter.passwordCalls == 0 {
+		t.Fatalf("Prompts.Password was not called; preflight password_required path did not trigger Path B")
+	}
+	// At least one sudo command must have been wrapped to use sudo -S
+	// + RUNNERKIT_SUDO_PASSWORD env. The fakeRemoteExecutor records the
+	// rendered Command for verification.
+	wrapped := false
+	for _, cmd := range remoteExec.runs {
+		if strings.Contains(cmd.Script, "sudo -S") && cmd.Env["RUNNERKIT_SUDO_PASSWORD"] == password {
+			wrapped = true
+			break
+		}
+	}
+	if !wrapped {
+		t.Fatalf("no recorded command was wrapped with sudo -S + RUNNERKIT_SUDO_PASSWORD env; recorded %d commands", len(remoteExec.runs))
+	}
+	// Redaction invariant: literal password must not appear in any
+	// captured renderer output.
+	if combined := out.String() + errOut.String(); strings.Contains(combined, password) {
+		t.Fatalf("renderer output leaked raw sudo password:\n%s", combined)
+	}
+}
+
+// TestUp_SudoPasswordPrompt_NonInteractive_Fails asserts that
+// `--non-interactive` against a host whose preflight reports
+// password_required fails with remediation pointing at
+// `runnerkit byo-prepare` AND the RKD-BOOT-015 docs anchor; it MUST
+// never call deps.Prompts.Password.
+func TestUp_SudoPasswordPrompt_NonInteractive_Fails(t *testing.T) {
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	remoteExec := newFakeRemoteExecutor()
+	passwordRequiredProbe(remoteExec)
+	prompter := &recordingPasswordPrompter{password: "should-not-be-used"}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		StateBaseDir:   stateDir,
+		TTY:            ui.TerminalCapabilities{StdinTTY: false, StdoutTTY: false, Width: 80},
+		Prompts:        prompter,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/repo", "--host", "alice@example.com", "--non-interactive", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected non-interactive sudo password to fail")
+	}
+	if got := ExitCode(err); got != ExitInputRequired {
+		t.Fatalf("ExitCode() = %d, want %d", got, ExitInputRequired)
+	}
+	if prompter.passwordCalls != 0 {
+		t.Fatalf("Prompts.Password called in non-interactive mode: %d", prompter.passwordCalls)
+	}
+	combined := out.String() + errOut.String()
+	if !strings.Contains(combined, "runnerkit byo-prepare") {
+		t.Fatalf("error remediation missing runnerkit byo-prepare:\n%s", combined)
+	}
+	if !strings.Contains(combined, "RKD-BOOT-015") {
+		t.Fatalf("error remediation missing RKD-BOOT-015:\n%s", combined)
+	}
+}
+
+// TestUp_SudoPasswordPrompt_YesDoesNotImplyNonInteractive asserts that
+// --yes (accept safe defaults) does NOT disable Path B prompting.
+// Per gap doc constraint at lines 177-178: --yes is for safe-defaults,
+// sudo password is a separate human-input concern.
+func TestUp_SudoPasswordPrompt_YesDoesNotImplyNonInteractive(t *testing.T) {
+	stateDir := t.TempDir()
+	service := newFakePermittedGitHubService()
+	remoteExec := newFakeRemoteExecutor()
+	passwordRequiredProbe(remoteExec)
+	prompter := &recordingPasswordPrompter{password: "yespassword", confirmResponses: true}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		StateBaseDir:   stateDir,
+		TTY:            ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:        prompter,
+		GitHub:         service,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	// --yes is set but --non-interactive is NOT. Prompt MUST still fire.
+	cmd.SetArgs([]string{"up", "--repo", "owner/repo", "--host", "alice@example.com", "--yes", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("up with --yes (interactive sudo) returned error: %v\nstderr=%s", err, errOut.String())
+	}
+	if prompter.passwordCalls == 0 {
+		t.Fatal("Prompts.Password was not called even though --yes does NOT imply --non-interactive")
+	}
+}
+
 func TestDefaultGitHubServiceUsesRealMetadataAndBlocksPublicRepo(t *testing.T) {
 	var sawRegistration, sawRepository bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
