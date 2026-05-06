@@ -226,6 +226,26 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 	partial := false
 	stateRemoved := false
 	target, targetErr := targetFromState(repoState)
+	// Bug 21 (Plan 06-10, 2026-05-06): probe sudo before remote
+	// cleanup. If `sudo -n true` fails on the host (password-protected
+	// sudo, no NOPASSWD scope for rm/svc.sh on the requested paths),
+	// prompt for the sudo password (TTY required) and thread it
+	// through service-uninstall + files-remove via the same
+	// printf|sudo -S -v pattern bootstrap uses (Plan 06-09 Bug 10).
+	// On hosts where sudo IS passwordless (NOPASSWD ALL or Path C
+	// byo-prepare), the probe exits 0 and we keep the existing
+	// unwrapped happy path.
+	sudoPassword := ""
+	if sshReachable && targetErr == nil && needsAnyRemoteSudo(selected) {
+		needs, probeErr := probeSudoNeedsPassword(ctx, deps.RemoteExecutor, target)
+		if probeErr == nil && needs {
+			password, err := promptSudoPasswordForDown(ctx, deps, renderer, target)
+			if err != nil {
+				return nil, false, nil, false, err
+			}
+			sudoPassword = password
+		}
+	}
 	if selected[ops.ArtifactHostRegistration] && sshReachable && targetErr == nil {
 		removal, err := deps.GitHub.CreateRemovalToken(ctx, repoState.Repo)
 		if err != nil {
@@ -268,7 +288,8 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 	}
 	if selected[ops.ArtifactSystemdService] && targetErr == nil {
 		script := "cd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh stop || true\ncd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh uninstall || true\nsudo systemctl disable --now " + shellQuote(repoState.Machine.ServiceName) + " || true"
-		result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.service.uninstall", Script: script, Timeout: 60 * time.Second})
+		cmd := wrapDownSudoCommand(remote.Command{ID: "down.service.uninstall", Script: script, Timeout: 60 * time.Second}, sudoPassword)
+		result, err := deps.RemoteExecutor.Run(ctx, target, cmd)
 		results = append(results, cleanupResult{Artifact: string(ops.ArtifactSystemdService), Status: statusFromRemoteResult(result, err), Message: idempotentMessage(result)})
 	}
 	if selected[ops.ArtifactRunnerFiles] && targetErr == nil {
@@ -294,7 +315,8 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 			partial = true
 		} else {
 			script := "sudo rm -rf -- " + shellQuote(installPath) + " " + shellQuote(workDir)
-			result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.files.remove", Script: script, Timeout: 60 * time.Second})
+			cmd := wrapDownSudoCommand(remote.Command{ID: "down.files.remove", Script: script, Timeout: 60 * time.Second}, sudoPassword)
+			result, err := deps.RemoteExecutor.Run(ctx, target, cmd)
 			results = append(results, cleanupResult{Artifact: string(ops.ArtifactRunnerFiles), Status: statusFromRemoteResult(result, err), Message: idempotentMessage(result)})
 		}
 	}
@@ -377,6 +399,113 @@ func contains(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// needsAnyRemoteSudo returns true when the selected cleanup artifacts
+// involve a remote sudo invocation (svc.sh stop/uninstall, systemctl
+// disable, or rm -rf of the install path). Bug 21 only needs to probe
+// + thread sudo when at least one of these is selected — the GitHub +
+// local-state cleanup paths run locally and never invoke remote sudo.
+func needsAnyRemoteSudo(selected map[ops.CleanupArtifact]bool) bool {
+	return selected[ops.ArtifactSystemdService] || selected[ops.ArtifactRunnerFiles] || selected[ops.ArtifactHostRegistration]
+}
+
+// probeSudoNeedsPassword runs `sudo -n true` on the remote host. Exit
+// code 0 means sudo is passwordless (NOPASSWD ALL, Path C byo-prepare,
+// or a previously-cached cred). Non-zero exit + stderr containing
+// `password is required` / `a terminal is required` / `a password is
+// required` indicates password-protected sudo. Other non-zero exits
+// (e.g. command-not-found, network) return needs=false and the caller
+// keeps the existing happy path; the underlying cleanup will surface
+// the real error if any.
+func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, target remote.Target) (bool, error) {
+	if executor == nil {
+		return false, nil
+	}
+	result, err := executor.Run(ctx, target, remote.Command{
+		ID:      "down.sudo.probe",
+		Script:  "sudo -n true",
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		// Non-fatal — fall through to the unwrapped path; if sudo is
+		// genuinely broken the cleanup surface will surface it.
+		return false, nil
+	}
+	if result.ExitCode == 0 {
+		return false, nil
+	}
+	stderr := strings.ToLower(result.Stderr + " " + result.Stdout)
+	for _, marker := range []string{"password is required", "a terminal is required", "no tty present"} {
+		if strings.Contains(stderr, marker) {
+			return true, nil
+		}
+	}
+	// Unknown non-zero — assume sudo works but in an unexpected mode and
+	// keep the unwrapped path. If it does need a password the cleanup
+	// will report the canonical sudo failure verbatim.
+	return false, nil
+}
+
+// promptSudoPasswordForDown is the down-command analogue of
+// promptSudoPasswordForPathB (cli/up.go::Plan 06-06). It enforces TTY
+// + password-prompter capability, registers the literal with the
+// renderer's redactor, and points users at `runnerkit byo-prepare`
+// when the prompt cannot run. We keep this helper local to down.go so
+// changes to up.go's flow don't accidentally couple to cleanup.
+func promptSudoPasswordForDown(ctx context.Context, deps Dependencies, renderer *ui.Renderer, target remote.Target) (string, error) {
+	rkdLine := errcodes.FormatLine(errcodes.BootSudoPasswordRequired)
+	if !deps.TTY.StdinTTY || deps.Prompts == nil {
+		remediation := []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` to install a scoped sudoers entry, then re-run `runnerkit down`.",
+			rkdLine,
+		}
+		_ = renderer.Error("sudo_password_required", "RunnerKit needs a sudo password for remote cleanup but no TTY is available for prompting.", remediation)
+		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but no TTY"))
+	}
+	passwordPrompter, ok := deps.Prompts.(ui.PasswordPrompter)
+	if !ok {
+		remediation := []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` first; this RunnerKit build's prompter does not support sudo password input.",
+			rkdLine,
+		}
+		_ = renderer.Error("sudo_password_required", "RunnerKit's prompter does not implement password input.", remediation)
+		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but prompter has no Password method"))
+	}
+	password, err := passwordPrompter.Password(ctx, ui.Prompt{Message: "Sudo password for " + target.Display() + ":"})
+	if err != nil {
+		return "", err
+	}
+	if password == "" {
+		_ = renderer.Error("sudo_password_required", "RunnerKit received an empty sudo password.", []string{
+			"Run `runnerkit byo-prepare --host " + target.Display() + "` to install a scoped sudoers entry, or re-run `runnerkit down` and enter the host's sudo password when prompted.",
+			rkdLine,
+		})
+		return "", NewExitError(ExitInputRequired, errors.New("empty sudo password"))
+	}
+	renderer.Redactor().Register(redact.SudoPassword, password)
+	return password, nil
+}
+
+// wrapDownSudoCommand applies the same printf|sudo -S -v cred-priming
+// wrapper bootstrap.wrapSudoCommand uses (Plan 06-09 Bug 10). The
+// password flows via Env (not Script) so the rendered Script is safe
+// to log: only the env-var name appears. RedactArgs is extended so the
+// executor scrubs the password from any captured stderr regardless.
+// No-op when sudoPassword is empty — preserves the existing
+// passwordless happy path.
+func wrapDownSudoCommand(cmd remote.Command, sudoPassword string) remote.Command {
+	if sudoPassword == "" {
+		return cmd
+	}
+	rewritten := bootstrap.RewriteSudoForPasswordPipe(cmd.Script)
+	cmd.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | sudo -S -v\n" + rewritten
+	if cmd.Env == nil {
+		cmd.Env = map[string]string{}
+	}
+	cmd.Env["RUNNERKIT_SUDO_PASSWORD"] = sudoPassword
+	cmd.RedactArgs = append(cmd.RedactArgs, sudoPassword)
+	return cmd
 }
 
 func cleanupPayload(repo string, dryRun bool, plan ops.CleanupPlan, results []cleanupResult, partial bool, pending []string, stateRemoved bool) map[string]any {
