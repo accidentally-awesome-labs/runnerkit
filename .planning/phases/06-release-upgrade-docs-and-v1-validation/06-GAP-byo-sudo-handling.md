@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11 + Tasks G,H,I,J,K,L,M,N — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11+12 + Tasks G,H,I,J,K,L,M,N,O — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -947,6 +947,70 @@ already `chown`ed to runnerkit-runner so the user has access.
    `script_test.go`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 12 — `ServiceNotActiveError` swallows remote stderr (discovered 2026-05-06)
+
+After Bug 11 (Plan 06-09 commit beef841) closed the config.sh cwd
+issue, Plan 06-07 attempt-9 against `salar@mckee-small-desktop`
+aborted with the bare-bones message:
+
+```
+ERROR RunnerKit installed the runner but the service is not active.
+NEXT  Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service.
+```
+
+The actual remote stderr from the failing svc.sh / install_service /
+verify_service step was never surfaced. `internal/bootstrap/install.go`
+returned `ServiceNotActiveError{Err: err}` — the struct only carried
+the wrapped err, not the failing command's ID or stderr. `up.go`'s
+handler then emitted a generic remediation that left the user
+unable to diagnose root cause without a separate SSH session.
+
+This is a UX bug, not a behavioral one — RunnerKit's bootstrap was
+working correctly enough to land a runner unit (the actual systemd
+service IS in `active running` state when probed directly). Whatever
+the failing command actually reported was the only signal that could
+have explained the false negative.
+
+### Why cloud is unaffected
+
+Cloud bootstrap uses the same ServiceNotActiveError plumbing (see
+up.go cloud branch around line 749), but cloud-init's install +
+service-start runs synchronously inside cloud-init before runnerkit
+takes over, so verify_service tends to find the service already
+active. The bug is dormant on the cloud path; nevertheless the same
+remediation enrichment is applied to keep both paths symmetric.
+
+### Bug 12 fix
+
+Extend `ServiceNotActiveError` with `CommandID` and `Stderr` fields.
+`Apply` and `ApplyEphemeral` populate both when a service-related
+step exits non-zero. `up.go`'s four ServiceNotActiveError handlers
+(BYO/cloud × persistent/ephemeral) append the stderr and CommandID
+to the remediation list when present.
+
+### Bug 12 acceptance
+
+- When install_service / verify_service / install_ephemeral_service /
+  install_ephemeral_ttl_timer / verify_ephemeral_service exits
+  non-zero on a real host, the user sees the failing step's actual
+  remote stderr in the CLI output (subject to redactor scrubbing).
+- Two unit tests assert: ServiceNotActiveError exposes CommandID +
+  Stderr; Apply populates both when install_service exits non-zero.
+
+### Task O — Surface remote stderr in service errors (Bug 12)
+
+1. Edit `internal/bootstrap/install.go::ServiceNotActiveError` to
+   add CommandID + Stderr fields. Update Apply + ApplyEphemeral to
+   populate both at the failing-step branch.
+2. Edit `internal/cli/up.go` ServiceNotActiveError handlers (BYO
+   persistent + BYO ephemeral + cloud persistent + cloud ephemeral)
+   to append "Remote stderr (CmdID): ..." to the remediation list
+   when serviceErr.Stderr is non-empty.
+3. Add `TestServiceNotActiveError_CarriesCommandIDAndStderr` and
+   `TestApply_ServiceFailureSurfacesStderrInError` in
+   `install_test.go`.
+4. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -1018,8 +1082,18 @@ already `chown`ed to runnerkit-runner so the user has access.
   introduced by Plan 06-08's Bug 3 fix; not caught by unit tests
   because they only asserted the new su form's presence, not the
   cwd contract.
-- Once Bug 11 closed: Plan 06-07 attempt-9 expected to land a GitHub
-  runner ID and proceed to Hetzner cloud-end-to-end + destroy_verify.
+- Once Bug 11 closed: Plan 06-07 attempt-9 progressed to service
+  install/verify and aborted with the generic ServiceNotActiveError
+  message — Bug 12 surfaced because the user-facing copy hid the
+  actual remote stderr.
+- Bug 12 discovered 2026-05-06 during Plan 06-07 attempt-9 against the
+  same host AFTER Bug 11 fix landed. UX-only fix (no behavioral
+  change). Required to unblock diagnosis of whatever real failure
+  attempt-9 hit at the service step.
+- Once Bug 12 closed: Plan 06-07 attempt-10 should reveal the actual
+  service-failure cause (if any) in the user-facing message; the
+  service is also probed directly to be `active running`, so the
+  next attempt may simply pass.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

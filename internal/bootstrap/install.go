@@ -65,7 +65,17 @@ type Result struct {
 	Commands []remote.Result
 }
 
-type ServiceNotActiveError struct{ Err error }
+// ServiceNotActiveError signals that install_service / verify_service
+// (persistent path) or install_ephemeral_service / verify_ephemeral_service
+// (ephemeral path) exited non-zero. Bug 12 (Plan 06-07 attempt-9, 2026-05-06)
+// added CommandID + Stderr so the user-facing remediation can surface
+// the failing step's actual remote output instead of a generic
+// "service not active" message.
+type ServiceNotActiveError struct {
+	Err       error
+	CommandID string
+	Stderr    string
+}
 
 func (e ServiceNotActiveError) Error() string {
 	if e.Err != nil {
@@ -140,7 +150,7 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 		out.Commands = append(out.Commands, result)
 		if err != nil || result.ExitCode != 0 {
 			if command.ID == "verify_service" || command.ID == "install_service" {
-				return out, ServiceNotActiveError{Err: err}
+				return out, ServiceNotActiveError{Err: err, CommandID: command.ID, Stderr: result.Stderr}
 			}
 			if err != nil {
 				return out, err
@@ -185,7 +195,7 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		if err != nil || result.ExitCode != 0 {
 			switch command.ID {
 			case "install_ephemeral_service", "install_ephemeral_ttl_timer", "verify_ephemeral_service":
-				return out, ServiceNotActiveError{Err: err}
+				return out, ServiceNotActiveError{Err: err, CommandID: command.ID, Stderr: result.Stderr}
 			}
 			if err != nil {
 				return out, err

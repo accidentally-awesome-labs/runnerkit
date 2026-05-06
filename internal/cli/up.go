@@ -229,7 +229,11 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		if result, err := bootstrap.ApplyEphemeral(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
 			var serviceErr bootstrap.ServiceNotActiveError
 			if errors.As(err, &serviceErr) {
-				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the ephemeral runner but the service is not active.", []string{"Run systemctl status " + bootstrapOpts.EphemeralServiceName + " on the host or re-run runnerkit up after fixing the service."})
+				remediation := []string{"Run systemctl status " + bootstrapOpts.EphemeralServiceName + " on the host or re-run runnerkit up after fixing the service."}
+				if stderr := strings.TrimSpace(serviceErr.Stderr); stderr != "" {
+					remediation = append(remediation, "Remote stderr ("+serviceErr.CommandID+"): "+renderer.Redactor().String(stderr))
+				}
+				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the ephemeral runner but the service is not active.", remediation)
 				return NewExitError(ExitSafetyGate, err)
 			}
 			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
@@ -243,7 +247,11 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		if result, err := bootstrap.Apply(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
 			var serviceErr bootstrap.ServiceNotActiveError
 			if errors.As(err, &serviceErr) {
-				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the runner but the service is not active.", []string{"Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service."})
+				remediation := []string{"Run sudo ./svc.sh status in the runner directory or re-run runnerkit up after fixing the service."}
+				if stderr := strings.TrimSpace(serviceErr.Stderr); stderr != "" {
+					remediation = append(remediation, "Remote stderr ("+serviceErr.CommandID+"): "+renderer.Redactor().String(stderr))
+				}
+				_ = renderer.Error("runner_service_not_active", "RunnerKit installed the runner but the service is not active.", remediation)
 				return NewExitError(ExitSafetyGate, err)
 			}
 			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
