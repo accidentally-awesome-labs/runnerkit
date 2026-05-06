@@ -212,7 +212,14 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return NewExitError(ExitGitHubAuth, err)
 	}
 	if existingRunner, found := gh.FindRunnerByName(runners, labelSet.RunnerName); found {
-		return runnerNameConflict(renderer, labelSet.RunnerName, existingRunner)
+		// Bug 17 (Plan 06-07 attempt-14, 2026-05-06): only refuse when the
+		// existing runner is NOT one of ours. The runner name is deterministic
+		// per (repo, host, mode), so a re-run of `runnerkit up` always sees its
+		// own previously-registered runner. config.sh --replace handles
+		// re-registration end-to-end.
+		if !isRunnerKitManagedRunner(existingRunner) {
+			return runnerNameConflict(renderer, labelSet.RunnerName, existingRunner)
+		}
 	}
 
 	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target); err != nil {
@@ -741,7 +748,14 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		return NewExitError(ExitGitHubAuth, err)
 	}
 	if existingRunner, found := gh.FindRunnerByName(runners, labelSet.RunnerName); found {
-		return runnerNameConflict(renderer, labelSet.RunnerName, existingRunner)
+		// Bug 17 (Plan 06-07 attempt-14, 2026-05-06): only refuse when the
+		// existing runner is NOT one of ours. The runner name is deterministic
+		// per (repo, host, mode), so a re-run of `runnerkit up` always sees its
+		// own previously-registered runner. config.sh --replace handles
+		// re-registration end-to-end.
+		if !isRunnerKitManagedRunner(existingRunner) {
+			return runnerNameConflict(renderer, labelSet.RunnerName, existingRunner)
+		}
 	}
 	token, err := deps.GitHub.CreateRegistrationToken(ctx, repo)
 	if err != nil {
@@ -1443,6 +1457,21 @@ func confirmBootstrapPlan(ctx context.Context, deps Dependencies, renderer *ui.R
 		return NewExitError(ExitCanceled, errors.New(message))
 	}
 	return nil
+}
+
+// isRunnerKitManagedRunner reports whether the given GitHub runner
+// was previously registered by RunnerKit. Detected via the canonical
+// `runnerkit` label that labels.Build always emits. Used by the
+// runner-name pre-bootstrap collision check so re-runs of
+// `runnerkit up` don't refuse to re-register their own runners
+// (Bug 17 / Task T).
+func isRunnerKitManagedRunner(r gh.Runner) bool {
+	for _, label := range r.Labels {
+		if strings.EqualFold(label, "runnerkit") {
+			return true
+		}
+	}
+	return false
 }
 
 func runnerNameConflict(renderer *ui.Renderer, runnerName string, existing gh.Runner) error {

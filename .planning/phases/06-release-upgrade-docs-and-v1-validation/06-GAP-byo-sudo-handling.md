@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4..16 + Tasks G..S — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4..17 + Tasks G..T — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -1251,6 +1251,66 @@ correct in their own world; the matching layer must normalize.
 2. Add `internal/cli/runner_online_test.go::TestRunnerOnlineWithLabels_CaseInsensitiveMatch`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 17 — `runnerNameConflict` pre-check refuses re-runs against our own runner (discovered 2026-05-06)
+
+After Bug 16 (Plan 06-09 commit 91c45ff) fixed the case-insensitive
+label match, Plan 06-07 attempt-14 against
+`salar@mckee-small-desktop` failed at the up.go pre-bootstrap check:
+
+```
+ERROR RunnerKit can't continue because a GitHub runner named
+      runnerkit-accidentally-awesome-labs-dat0-local already exists.
+NEXT  Remove or rename the existing GitHub runner ...
+```
+
+Root cause: `internal/cli/up.go` line 214 (BYO) + 743 (cloud) calls
+`gh.FindRunnerByName(runners, labelSet.RunnerName)` and refuses to
+proceed if any runner with the deterministic name already exists.
+The runner name is `runnerkit-<repo>-local` (or `-<random>` for
+ephemeral) — deterministic per (repo, host, mode). Every re-run of
+`runnerkit up` against the same target sees its own prior runner.
+The pre-check is too strict for the idempotent re-run path that
+Bugs 13 + 14 enabled at the bootstrap layer.
+
+`config.sh --replace` (already in RenderInstallScript) handles the
+GitHub-side runner-record replacement during registration. The
+pre-check should only fire when the existing runner is unrelated
+(no `runnerkit` label).
+
+### Why cloud is unaffected
+
+The cloud branch has the same code path (line 743) but cloud-init
+provisions a fresh server every `up` — there's no persistent
+GitHub-side state from prior runs because each cloud server has a
+fresh hostname. The pre-check never fires on the cloud path.
+
+### Bug 17 fix
+
+Extract `isRunnerKitManagedRunner(r gh.Runner) bool` — returns true
+iff the runner's label set contains `runnerkit` (case-insensitive).
+Both BYO and cloud pre-bootstrap checks call it; only when the
+existing runner is NOT ours do they invoke `runnerNameConflict`.
+
+### Bug 17 acceptance
+
+- `runnerkit up` is idempotent against a host whose deterministic
+  runner is already registered on GitHub. Bootstrap proceeds and
+  config.sh --replace handles the registration cleanup.
+- A genuine name collision with an unrelated user-managed runner
+  (no `runnerkit` label) still triggers the conflict error.
+- Two unit tests assert: runners with `runnerkit` label are ours;
+  runners without the label are not.
+
+### Task T — Skip self-collision in pre-bootstrap check (Bug 17)
+
+1. Edit `internal/cli/up.go`: extract `isRunnerKitManagedRunner`,
+   call it at both pre-bootstrap conflict checks (BYO + cloud) so
+   the runnerNameConflict only fires for foreign runners.
+2. Add `TestIsRunnerKitManagedRunner_DetectsOurOwnRunner` and
+   `TestIsRunnerKitManagedRunner_RejectsForeignRunner` in
+   `runner_online_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -1354,9 +1414,17 @@ correct in their own world; the matching layer must normalize.
   the same host AFTER Bug 15 fix landed. Affects both BYO and cloud
   paths but cloud never reached this stage in attempt-1; smokes have
   never validated the online-check end-to-end before.
-- Once Bug 16 closed: Plan 06-07 attempt-14 expected to clear
-  online-check and proceed to the smoke harness's downstream
-  status/doctor/down/.runner-sentinel + cloud phase.
+- Once Bug 16 closed: Plan 06-07 attempt-14 hit the
+  runner-name-conflict pre-check immediately because the runner
+  registered by attempt-13 was still on GitHub — Bug 17 surfaced.
+- Bug 17 discovered 2026-05-06 during Plan 06-07 attempt-14 against
+  the same host AFTER Bug 16 fix landed. Pre-existing latent bug
+  in idempotent re-run path; surfaced once attempts started
+  reaching online-check successfully.
+- Once Bug 17 closed: Plan 06-07 attempt-15 expected to skip the
+  conflict, re-register via config.sh --replace, clear online-check
+  with case-insensitive label match, and proceed to the smoke
+  harness's downstream sequence.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

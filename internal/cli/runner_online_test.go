@@ -31,6 +31,36 @@ import (
 // Both are correct in their own world; the matching layer must
 // normalize before comparing.
 
+// Bug 17 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
+//
+// Plan 06-07 attempt-14 (post Bug 16 fix) aborted at up.go's
+// runner-name pre-check:
+//
+//   ERROR RunnerKit can't continue because a GitHub runner named
+//         runnerkit-accidentally-awesome-labs-dat0-local already exists.
+//
+// The runner name is deterministic per (repo, host, mode), so a
+// second `runnerkit up` against the same target ALWAYS sees its own
+// prior runner. config.sh --replace handles re-registration. The
+// pre-check should only fire on a name collision with an unrelated
+// user-managed runner (no `runnerkit` label).
+
+func TestIsRunnerKitManagedRunner_DetectsOurOwnRunner(t *testing.T) {
+	t.Parallel()
+	mine := gh.Runner{Name: "x", Labels: []string{"self-hosted", "Linux", "X64", "runnerkit", "runnerkit-x", "persistent"}}
+	if !isRunnerKitManagedRunner(mine) {
+		t.Fatal("expected runner with `runnerkit` label to be classified as ours")
+	}
+}
+
+func TestIsRunnerKitManagedRunner_RejectsForeignRunner(t *testing.T) {
+	t.Parallel()
+	foreign := gh.Runner{Name: "x", Labels: []string{"self-hosted", "Linux", "X64", "user-managed"}}
+	if isRunnerKitManagedRunner(foreign) {
+		t.Fatal("runner without `runnerkit` label must not be classified as ours")
+	}
+}
+
 func TestRunnerOnlineWithLabels_CaseInsensitiveMatch(t *testing.T) {
 	t.Parallel()
 	runners := []gh.Runner{{
