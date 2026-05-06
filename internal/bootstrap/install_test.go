@@ -238,6 +238,51 @@ func TestWrapSudoCommand_InnerStdinPipePreserved(t *testing.T) {
 	}
 }
 
+// Bug 15 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
+//
+// Plan 06-07 attempt-12 against salar@mckee-small-desktop got past
+// install_service (Bug 14 fix) and aborted at verify_service:
+//
+//   sudo: ./svc.sh: command not found
+//
+// Root cause: install.go's verify_service Command literal:
+//   {ID: "verify_service", Script: "set -euo pipefail\nsudo ./svc.sh status\n", Sudo: true}
+// has no `cd` — each remote.Command runs in a fresh SSH session whose
+// default cwd is the SSH user's HOME, not installPath. ./svc.sh is
+// relative to cwd, so the lookup fails.
+//
+// install_service does NOT have this bug because RenderServiceScript
+// emits an explicit `cd <installPath>` at the top. verify_service was
+// written inline as a one-liner and that cd was never added.
+
+func TestApply_VerifyService_CdsIntoInstallPathBeforeSvcSh(t *testing.T) {
+	t.Parallel()
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName: "runnerkit-x", RepoURL: "https://github.com/owner/repo",
+		Labels: []string{"x"}, ServiceUser: "runnerkit-runner", RunnerToken: "tk",
+		InstallPath: "/opt/actions-runner/runnerkit-x",
+		Package:     RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	for _, c := range exec.commands {
+		if c.ID == "verify_service" {
+			if !strings.Contains(c.Script, "cd /opt/actions-runner/runnerkit-x") {
+				t.Fatalf("verify_service script must cd into installPath before invoking ./svc.sh (Bug 15):\n%s", c.Script)
+			}
+			cdIdx := strings.Index(c.Script, "cd ")
+			svcIdx := strings.Index(c.Script, "./svc.sh")
+			if cdIdx < 0 || svcIdx < 0 || cdIdx >= svcIdx {
+				t.Fatalf("cd must precede ./svc.sh; got cd=%d svc=%d\nscript:\n%s", cdIdx, svcIdx, c.Script)
+			}
+			return
+		}
+	}
+	t.Fatal("verify_service command not recorded")
+}
+
 // Bug 12 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
 // Plan 06-07 attempt-9 against salar@mckee-small-desktop got past Bug 11

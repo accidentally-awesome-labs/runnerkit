@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11+12+13+14 + Tasks G..Q — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4..15 + Tasks G..R — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -1136,6 +1136,64 @@ on absent state.
 2. Add `TestRenderServiceScriptIdempotentInstall` in `script_test.go`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 15 — `verify_service` Command lacks `cd <installPath>` (discovered 2026-05-06)
+
+After Bug 14 (Plan 06-09 commit 7bc9b25) made svc.sh install
+idempotent, Plan 06-07 attempt-12 against `salar@mckee-small-desktop`
+got past install_service and aborted at verify_service:
+
+```
+sudo: ./svc.sh: command not found
+```
+
+Root cause: `internal/bootstrap/install.go::Apply` line 144 declares:
+
+```go
+{ID: "verify_service", Script: "set -euo pipefail\nsudo ./svc.sh status\n", Sudo: true}
+```
+
+Each `remote.Command` runs in a fresh SSH session whose default cwd
+is the SSH user's HOME, NOT installPath. `./svc.sh` is relative to
+cwd, so the lookup fails. install_service does NOT have this bug
+because `RenderServiceScript` emits an explicit `cd <installPath>`
+at the top; verify_service was inlined as a one-liner and the cd
+was never added.
+
+This was hidden across attempts 1-11 because install_service kept
+failing first, so verify_service never ran. Once Bug 14 made
+install_service pass, attempt-12 reached verify_service and exposed
+the missing cd.
+
+### Why cloud is unaffected
+
+The cloud verify_service runs against the same install.go source,
+but the cloud bootstrap path (cloud-init) handles install + start
+synchronously and verify_service typically observes an already-active
+state via `is-active` shortcuts. Even so the cd fix is BYO/cloud
+agnostic and applies uniformly.
+
+### Bug 15 fix
+
+Add `cd <installPath>` (with `defaultString(opts.InstallPath, ...)`
+default) to verify_service's Script before `sudo ./svc.sh status`,
+mirroring RenderServiceScript's structure.
+
+### Bug 15 acceptance
+
+- `runnerkit up` against an Ubuntu host runs `sudo ./svc.sh status`
+  from /opt/actions-runner/runnerkit-<name>/, so svc.sh is found
+  and the service-active check returns 0.
+- Unit test asserts the verify_service Command's Script contains
+  `cd <installPath>` before `./svc.sh`.
+
+### Task R — `cd` in verify_service Command (Bug 15)
+
+1. Edit `internal/bootstrap/install.go::Apply` verify_service Command
+   literal to prepend `cd <installPath>` to its Script.
+2. Add `TestApply_VerifyService_CdsIntoInstallPathBeforeSvcSh` in
+   `install_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -1227,9 +1285,14 @@ on absent state.
 - Bug 14 discovered 2026-05-06 during Plan 06-07 attempt-11 against
   the same host AFTER Bug 13 fix landed. Same idempotency family at
   the systemd layer.
-- Once Bug 14 closed: Plan 06-07 attempt-12 expected to land
-  end-to-end on a host with stale systemd state, including
-  idempotent re-runs against existing units.
+- Once Bug 14 closed: Plan 06-07 attempt-12 progressed past
+  install_service and hit verify_service which had no cd — Bug 15
+  surfaced.
+- Bug 15 discovered 2026-05-06 during Plan 06-07 attempt-12 against
+  the same host AFTER Bug 14 fix landed.
+- Once Bug 15 closed: Plan 06-07 attempt-13 expected to land
+  end-to-end through verify_service into the smoke harness's
+  `.runner` sentinel assertion + status/doctor/down sequence.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned

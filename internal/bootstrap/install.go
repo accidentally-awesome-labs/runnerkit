@@ -141,7 +141,7 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 		downloadRunnerCommand(opts),
 		{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
 		{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
-		{ID: "verify_service", Script: "set -euo pipefail\nsudo ./svc.sh status\n", Sudo: true},
+		{ID: "verify_service", Script: "set -euo pipefail\ncd " + defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName)) + "\nsudo ./svc.sh status\n", Sudo: true},
 	}
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
