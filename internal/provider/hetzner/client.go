@@ -24,6 +24,16 @@ type Client interface {
 	DeleteSSHKey(ctx context.Context, id int) error
 	DeleteFirewall(ctx context.Context, id int) error
 	DeletePrimaryIP(ctx context.Context, id int) error
+	// DetachFirewallFromServer detaches the given firewall from the
+	// given server before either is deleted. Bug 23 (Plan 06-10): the
+	// Hetzner API rejects firewall.Delete with `resource_in_use` while
+	// the firewall is still attached, so destroy must detach first.
+	DetachFirewallFromServer(ctx context.Context, firewallID int, serverID int) error
+	// UnassignPrimaryIP detaches a Primary IP from whatever server it
+	// is currently assigned to. Bug 23 (Plan 06-10): the Hetzner API
+	// rejects primary_ip.Delete with `must_be_unassigned` while the
+	// IP is attached, so destroy must unassign first.
+	UnassignPrimaryIP(ctx context.Context, id int) error
 }
 
 type APIClient struct {
@@ -108,6 +118,26 @@ func (c *APIClient) DeleteFirewall(ctx context.Context, id int) error {
 
 func (c *APIClient) DeletePrimaryIP(ctx context.Context, id int) error {
 	_, err := c.client.PrimaryIP.Delete(ctx, &hcloud.PrimaryIP{ID: id})
+	return err
+}
+
+// DetachFirewallFromServer issues firewalls/{id}/actions/remove_from_resources
+// to dissociate the firewall from the server. Bug 23 (Plan 06-10).
+// Already-absent (404) errors bubble up unchanged so the caller's
+// isAlreadyAbsentError helper can treat them as a no-op.
+func (c *APIClient) DetachFirewallFromServer(ctx context.Context, firewallID int, serverID int) error {
+	_, _, err := c.client.Firewall.RemoveResources(ctx, &hcloud.Firewall{ID: firewallID}, []hcloud.FirewallResource{{
+		Type:   hcloud.FirewallResourceTypeServer,
+		Server: &hcloud.FirewallResourceServer{ID: serverID},
+	}})
+	return err
+}
+
+// UnassignPrimaryIP issues primary_ips/{id}/actions/unassign so the
+// follow-up DeletePrimaryIP call does not see `must_be_unassigned`.
+// Bug 23 (Plan 06-10).
+func (c *APIClient) UnassignPrimaryIP(ctx context.Context, id int) error {
+	_, _, err := c.client.PrimaryIP.Unassign(ctx, id)
 	return err
 }
 

@@ -113,6 +113,8 @@ func (f *fakeClient) DeleteServer(context.Context, int) error                   
 func (f *fakeClient) DeleteSSHKey(context.Context, int) error                      { return nil }
 func (f *fakeClient) DeleteFirewall(context.Context, int) error                    { return nil }
 func (f *fakeClient) DeletePrimaryIP(context.Context, int) error                   { return nil }
+func (f *fakeClient) DetachFirewallFromServer(context.Context, int, int) error     { return nil }
+func (f *fakeClient) UnassignPrimaryIP(context.Context, int) error                 { return nil }
 
 func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T) {
 	t.Setenv("HCLOUD_TOKEN", "") // fake client plus explicit env token means tests do not depend on a live shell token.

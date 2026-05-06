@@ -43,12 +43,60 @@ func (p *Provider) Destroy(ctx context.Context, ref state.ProviderRef) (provider
 		}
 		result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifact, Status: "done"})
 	}
+	// Bug 23 (Plan 06-10, 2026-05-06): ordering the destroy sequence.
+	// Hetzner rejects firewall.Delete with `resource_in_use` and
+	// primary_ip.Delete with `must_be_unassigned` while either is still
+	// attached to the server. We therefore:
+	//   1. Detach the firewall from the server (best-effort).
+	//   2. Unassign the primary IPs from the server (best-effort).
+	//   3. Delete the server.
+	//   4. Delete the (now-free) ssh_key.
+	//   5. Delete the (now-unassigned) primary IPs.
+	//   6. Delete the (now-detached) firewall last.
+	// Already-absent (404) on any detach/unassign step is fine — the
+	// downstream delete will surface a real error if the resource is
+	// genuinely stuck.
+	if serverID, ok := parsedNonEmpty(ids["server"]); ok {
+		if firewallID, ok := parsedNonEmpty(ids["firewall"]); ok {
+			if err := client.DetachFirewallFromServer(ctx, firewallID, serverID); err != nil && !isAlreadyAbsentError(err) {
+				// Detach failure is recorded as a non-fatal warning so
+				// destroy still attempts the deletes; if the firewall
+				// genuinely cannot be detached, firewall.Delete below
+				// will surface the real error and partial cleanup will
+				// keep state.
+				result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderFirewall, Status: "warning", Message: "detach failed: " + err.Error()})
+			}
+		}
+		for _, kind := range []string{"primary_ipv4", "primary_ipv6"} {
+			if ipID, ok := parsedNonEmpty(ids[kind]); ok {
+				if err := client.UnassignPrimaryIP(ctx, ipID); err != nil && !isAlreadyAbsentError(err) {
+					result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "warning", Message: "unassign " + kind + " failed: " + err.Error()})
+				}
+			}
+		}
+	}
 	apply(artifactProviderServer, ids["server"], client.DeleteServer, "provider_server_pending")
 	apply(artifactProviderSSHKey, ids["ssh_key"], client.DeleteSSHKey, "provider_ssh_key_pending")
-	apply(artifactProviderFirewall, ids["firewall"], client.DeleteFirewall, "provider_firewall_pending")
 	apply(artifactProviderPrimaryIP, ids["primary_ipv4"], client.DeletePrimaryIP, "provider_primary_ip_pending")
 	apply(artifactProviderPrimaryIP, ids["primary_ipv6"], client.DeletePrimaryIP, "provider_primary_ip_pending")
+	apply(artifactProviderFirewall, ids["firewall"], client.DeleteFirewall, "provider_firewall_pending")
 	return result, nil
+}
+
+// parsedNonEmpty returns (parsedInt, true) when the id string is
+// present and parseable; (0, false) otherwise. Used to gate the new
+// detach/unassign steps without short-circuiting the existing apply
+// loop, which still records skipped/pending statuses for missing or
+// malformed IDs.
+func parsedNonEmpty(id string) (int, bool) {
+	if strings.TrimSpace(id) == "" {
+		return 0, false
+	}
+	parsed, err := parseID(id)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
 }
 
 func (p *Provider) VerifyDestroyed(ctx context.Context, ref state.ProviderRef) (provider.VerificationResult, error) {
