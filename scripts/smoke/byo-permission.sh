@@ -25,7 +25,14 @@ go run ./cmd/runnerkit up --repo "${REPO}" --host "${HOST}" --mode persistent --
 # (download_runner permission failure) before the test moves on to
 # runner registration. See gap doc 06-GAP-byo-sudo-handling.md Task E.
 echo "===> [smoke-byo] Asserting install dir contains config.sh on the remote host"
-ssh "${HOST}" 'sudo test -f /opt/actions-runner/runnerkit-*/config.sh' || {
+# Bug 18 (Plan 06-09, 2026-05-06): use plain `test -f` (no sudo). The
+# install dir is mode 0755 and config.sh is mode 0755 (per
+# RenderInstallScript's `sudo install -d -o <serviceUser>` + the
+# tarball's preserved mode), so the SSH user can stat both without
+# elevation. `sudo test -f` over a non-tty SSH session fails with
+# "a terminal is required" because `test` is not in the byo-prepare
+# scoped sudoers allowlist.
+ssh "${HOST}" 'test -f /opt/actions-runner/runnerkit-*/config.sh' || {
   echo "FAIL: config.sh not found in /opt/actions-runner/runnerkit-*/ — bootstrap did not land the tarball"
   exit 3
 }
@@ -37,7 +44,9 @@ ssh "${HOST}" 'sudo test -f /opt/actions-runner/runnerkit-*/config.sh' || {
 # fails with a distinct exit code so Plan 06-07 attempt-2 has a hard
 # pass/fail signal beyond `runnerkit up exited 0`. See gap doc Task F.
 echo "===> [smoke-byo] Asserting GitHub-runner registration sentinel .runner exists"
-ssh "${HOST}" 'sudo test -f /opt/actions-runner/runnerkit-*/.runner' || {
+# Bug 18: same rationale as the config.sh assertion above. .runner is
+# mode 0664 (world-readable) so plain `test -f` works.
+ssh "${HOST}" 'test -f /opt/actions-runner/runnerkit-*/.runner' || {
   echo "FAIL: .runner sentinel not found in /opt/actions-runner/runnerkit-*/ — config.sh --unattended did not complete registration (Bug 3 regression?)"
   exit 4
 }
