@@ -1476,13 +1476,18 @@ func runnerOnlineWithLabels(runners []gh.Runner, name string, expectedLabels []s
 		if runner.Name != name || runner.Status != "online" {
 			continue
 		}
+		// Bug 16 (Plan 06-07 attempt-13, 2026-05-06): case-insensitive
+		// match. GitHub auto-adds OS + arch labels in canonical CamelCase
+		// (Linux, macOS, Windows, X64, ARM64) while RunnerKit's
+		// labels.Build slug-lowercases its values. Both are correct in
+		// their own world; the matching layer must normalize.
 		actual := map[string]bool{}
 		for _, label := range runner.Labels {
-			actual[label] = true
+			actual[strings.ToLower(label)] = true
 		}
 		allPresent := true
 		for _, label := range expectedLabels {
-			if !actual[label] {
+			if !actual[strings.ToLower(label)] {
 				allPresent = false
 				break
 			}

@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4..15 + Tasks G..R — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4..16 + Tasks G..S — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -1194,6 +1194,63 @@ mirroring RenderServiceScript's structure.
    `install_test.go`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 16 — `runnerOnlineWithLabels` case-sensitive match against GitHub auto-labels (discovered 2026-05-06)
+
+After Bug 15 (Plan 06-09 commit ec19486) closed verify_service,
+Plan 06-07 attempt-13 against `salar@mckee-small-desktop` completed
+the bootstrap end-to-end but `waitForRunnerOnline` polled for 6
+minutes and timed out:
+
+```
+ERROR RunnerKit could not verify the GitHub runner came online with the expected labels.
+```
+
+`gh api repos/accidentally-awesome-labs/dat0/actions/runners`
+confirmed the runner WAS online with id 24 and labels:
+
+```
+["self-hosted", "Linux", "X64", "runnerkit",
+ "runnerkit-accidentally-awesome-labs-dat0", "persistent"]
+```
+
+— exactly what RunnerKit registered, plus GitHub's auto-added
+"Linux" + "X64" (CamelCase). RunnerKit's expected label set from
+`labels.Build` includes lowercase "linux" + "x64" (slug() applies
+strings.ToLower). `runnerOnlineWithLabels` does case-sensitive set
+membership, so "linux" never matched "Linux" → poll timeout.
+
+### Why cloud is unaffected
+
+Cloud also hits this code path. The bug is universal — affects any
+runner whose labels include OS or arch tokens. Hetzner cloud-init
+runs Linux x64 servers, so cloud bootstrap had the same latent bug,
+but Plan 06-04 attempt-1 didn't reach the online-check step (BYO
+failed first), so the case mismatch was never observed. The fix
+applies uniformly to both code paths since they share
+`runnerOnlineWithLabels`.
+
+### Bug 16 fix
+
+Lowercase both sides before set membership in
+`runnerOnlineWithLabels`. GitHub always emits OS + arch auto-labels
+in canonical CamelCase; RunnerKit always lowercases. Both are
+correct in their own world; the matching layer must normalize.
+
+### Bug 16 acceptance
+
+- `runnerkit up` against any host whose runner registers successfully
+  exits the polling loop on the first iteration after the runner
+  flips online, regardless of label case.
+- Unit test asserts a runner with labels in CamelCase form
+  (`Linux`, `X64`) matches expected lowercase labels.
+
+### Task S — Case-insensitive label match (Bug 16)
+
+1. Edit `internal/cli/up.go::runnerOnlineWithLabels` to lowercase
+   both actual and expected labels before set membership.
+2. Add `internal/cli/runner_online_test.go::TestRunnerOnlineWithLabels_CaseInsensitiveMatch`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -1290,9 +1347,16 @@ mirroring RenderServiceScript's structure.
   surfaced.
 - Bug 15 discovered 2026-05-06 during Plan 06-07 attempt-12 against
   the same host AFTER Bug 14 fix landed.
-- Once Bug 15 closed: Plan 06-07 attempt-13 expected to land
-  end-to-end through verify_service into the smoke harness's
-  `.runner` sentinel assertion + status/doctor/down sequence.
+- Once Bug 15 closed: Plan 06-07 attempt-13 cleared bootstrap
+  end-to-end and aborted at runner-online polling — Bug 16
+  surfaced.
+- Bug 16 discovered 2026-05-06 during Plan 06-07 attempt-13 against
+  the same host AFTER Bug 15 fix landed. Affects both BYO and cloud
+  paths but cloud never reached this stage in attempt-1; smokes have
+  never validated the online-check end-to-end before.
+- Once Bug 16 closed: Plan 06-07 attempt-14 expected to clear
+  online-check and proceed to the smoke harness's downstream
+  status/doctor/down/.runner-sentinel + cloud phase.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned
