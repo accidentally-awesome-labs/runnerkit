@@ -221,6 +221,47 @@ func TestRenderEphemeralInstallScriptRemovesStaleRunnerStateBeforeConfig(t *test
 	}
 }
 
+// TestRenderServiceScriptIdempotentInstall asserts the Bug 14 fix:
+// svc.sh install refuses to overwrite an existing systemd unit file
+// with `Failed: error: exists /etc/systemd/system/actions.runner.<...>.service`.
+// The fix is to run `svc.sh stop` + `svc.sh uninstall` (each || true
+// so the first install isn't tripped by absent state) BEFORE
+// `svc.sh install`, making re-runs of `runnerkit up` idempotent
+// against a host that already has the unit installed from a prior
+// attempt.
+func TestRenderServiceScriptIdempotentInstall(t *testing.T) {
+	t.Parallel()
+	opts := Options{
+		RunnerName:  "runnerkit-x",
+		InstallPath: "/opt/actions-runner/runnerkit-x",
+	}
+	script := RenderServiceScript(opts)
+	for _, want := range []string{
+		"sudo ./svc.sh stop",
+		"sudo ./svc.sh uninstall",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("RenderServiceScript must contain %q to be idempotent against stale systemd unit (Bug 14):\nscript:\n%s", want, script)
+		}
+	}
+	stopIdx := strings.Index(script, "sudo ./svc.sh stop")
+	uninstallIdx := strings.Index(script, "sudo ./svc.sh uninstall")
+	installIdx := strings.Index(script, "sudo ./svc.sh install ")
+	if stopIdx < 0 || uninstallIdx < 0 || installIdx < 0 {
+		t.Fatalf("ordering check requires all 3 svc.sh commands present; got stop=%d uninstall=%d install=%d", stopIdx, uninstallIdx, installIdx)
+	}
+	if !(stopIdx < uninstallIdx && uninstallIdx < installIdx) {
+		t.Fatalf("svc.sh ordering must be stop → uninstall → install; got stop=%d uninstall=%d install=%d\nscript:\n%s", stopIdx, uninstallIdx, installIdx, script)
+	}
+	// Each idempotent step must allow first-install (|| true).
+	if !strings.Contains(script, "sudo ./svc.sh stop || true") {
+		t.Fatalf("`sudo ./svc.sh stop` must be `|| true`-suffixed so first install isn't blocked by absent unit:\n%s", script)
+	}
+	if !strings.Contains(script, "sudo ./svc.sh uninstall || true") {
+		t.Fatalf("`sudo ./svc.sh uninstall` must be `|| true`-suffixed:\n%s", script)
+	}
+}
+
 // TestRenderEphemeralInstallScriptUsesSuForRegisterRunner is the
 // parallel assertion for the ephemeral renderer.
 func TestRenderEphemeralInstallScriptUsesSuForRegisterRunner(t *testing.T) {
