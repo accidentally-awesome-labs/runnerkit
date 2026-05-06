@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
-status: Awaiting maintainer live smoke (Plan 06-07 Task 1)
-stopped_at: "Awaiting maintainer live smoke (Plan 06-07 Task 1 — checkpoint:human-action)"
-last_updated: "2026-05-06T23:32:30.133Z"
-last_activity: 2026-05-05
+status: executing
+stopped_at: Completed 06-release-upgrade-docs-and-v1-validation-10-status-down-cloud-fixes-PLAN.md (Bugs 19-23 closed; Plan 06-07 attempt-16+ ready)
+last_updated: "2026-05-06T23:59:32.797Z"
+last_activity: 2026-05-06
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 29
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 7 of 8 (06-07 — checkpoint:human-action; awaiting maintainer live smoke)
-Status: Awaiting maintainer live smoke (Plan 06-07 Task 1)
-Last activity: 2026-05-05
+Plan: 2 of 10
+Status: Ready to execute
+Last activity: 2026-05-06
 
 Milestone Progress: [███████░░░] 67%
 
@@ -64,6 +64,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P05 | 8m | 2 tasks | 12 files |
 | Phase 06-release-upgrade-docs-and-v1-validation P06 | 11m | 3 tasks tasks | 15 files (4 created, 11 modified) files |
 | Phase 06-release-upgrade-docs-and-v1-validation P08 | 5m | 2 tasks tasks | 4 files (1 production, 2 test, 1 smoke) files |
+| Phase 06-release-upgrade-docs-and-v1-validation P10 | 12m | 5 tasks tasks | 9 files (5 production, 4 test) files |
 
 ## Accumulated Context
 
@@ -154,6 +155,11 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: register_runner uses 'sudo su -s /bin/bash - <user> -c "..."' instead of 'sudo -u <user> ./config.sh ...' so a host with only (root) NOPASSWD: ALL or only the byo-prepare scoped sudoers entry is sufficient — closes Bug 3 from 06-GAP-byo-sudo-handling.md (Task F).
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: outer 'bash -c "..."' uses double quotes so the OUTER SSH-user shell expands \"$RUNNERKIT_REGISTRATION_TOKEN\" before su invokes the inner shell — preserves env-var indirection, no token leak in rendered Script string. RenderRemoveConfigScript and RenderReconfigureScript intentionally retain 'sudo -u %s' (out of scope per gap doc Task F bounds; recovery flows run after byo-prepare/Path B has established a working sudo path).
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: smoke harness exit codes 3=config.sh missing (Plan 06-05) vs 4=.runner sentinel missing (Plan 06-08) so Plan 06-07 attempt-2 re-smoke can branch on cause. Cloud path verifiably unchanged: internal/provider/hetzner not modified, hetzner package tests stay green.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: ops.ProbeRemoteStatus falls back to systemctl list-units to resolve actual unit name when saved simplified ServiceName returns LoadState=not-found (Bug 19); resolution matched by <runner-name>.service suffix to handle GitHub's actions.runner.<owner-repo>.<runner-name>.service form.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: ops.CompareLabels normalizes via strings.ToLower for set membership (Bug 20). Same family as Plan 06-09 Bug 16 (runnerOnlineWithLabels) but in the status/doctor drift detector code path.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: down probes 'sudo -n true' once before remote cleanup; on password-required stderr (markers: 'password is required', 'a terminal is required', 'no tty present') it prompts via ui.PasswordPrompter and threads the literal through wrapDownSudoCommand using the same printf|sudo -S -v cred-priming pattern bootstrap.wrapSudoCommand uses (Plan 06-09 Bug 10). NOPASSWD/Path C hosts keep the unwrapped happy path (Bug 21).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: hetzner.ProbeHostKeyWithRetry default budget = 60 attempts × 5s = ~5min wall-clock, easily covering Hetzner cloud-init's typical 30-90s host-key install window with residential-IP retry headroom. Empty fingerprint with nil error counts as failure. Sleep is injectable for tests so they don't burn wall-clock time (Bug 22).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: cloud destroy ordering — detach firewall (RemoveResources) + unassign primary IPv4 + unassign primary IPv6 BEFORE server.Delete; then delete server, ssh_key, primary IPs, firewall last. Already-absent (404) on detach/unassign is silenced; on delete it's still treated as skipped. Client interface gained DetachFirewallFromServer + UnassignPrimaryIP backed by hcloud-go v1.59.2's Firewall.RemoveResources(FirewallResourceTypeServer) and PrimaryIP.Unassign (Bug 23).
 
 ### Pending Todos
 
@@ -171,6 +177,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-06T23:32:30.124Z
-Stopped at: Awaiting maintainer live smoke (Plan 06-07 Task 1 — checkpoint:human-action)
+Last session: 2026-05-06T23:59:32.793Z
+Stopped at: Completed 06-release-upgrade-docs-and-v1-validation-10-status-down-cloud-fixes-PLAN.md (Bugs 19-23 closed; Plan 06-07 attempt-16+ ready)
 Resume file: None
