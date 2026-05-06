@@ -153,23 +153,30 @@ type ObservedRunner struct {
 }
 
 func CompareLabels(expected, actual []string) LabelFact {
+	// Bug 20 (Plan 06-10, 2026-05-06): GitHub auto-adds OS+arch labels in
+	// canonical CamelCase (Linux, X64, ARM64, macOS, Windows) while
+	// RunnerKit's labels.Build slug-lowercases its values. Both are
+	// correct in their own world; the matching layer must normalize via
+	// strings.ToLower for set membership. Same family as Plan 06-09 Bug
+	// 16's fix in runnerOnlineWithLabels (cli/up.go) but applied to the
+	// status / doctor drift detector code path.
 	expectedSet := map[string]bool{}
 	actualSet := map[string]bool{}
 	for _, label := range expected {
-		expectedSet[label] = true
+		expectedSet[strings.ToLower(label)] = true
 	}
 	for _, label := range actual {
-		actualSet[label] = true
+		actualSet[strings.ToLower(label)] = true
 	}
 	var missing []string
 	for _, label := range expected {
-		if !actualSet[label] {
+		if !actualSet[strings.ToLower(label)] {
 			missing = append(missing, label)
 		}
 	}
 	var extra []string
 	for _, label := range actual {
-		if !expectedSet[label] {
+		if !expectedSet[strings.ToLower(label)] {
 			extra = append(extra, label)
 		}
 	}

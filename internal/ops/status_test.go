@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -138,5 +139,42 @@ func TestCompareLabelsReportsPersistentMissingAndGPUExtra(t *testing.T) {
 	fact := CompareLabels([]string{"self-hosted", "runnerkit", "persistent"}, []string{"self-hosted", "runnerkit", "gpu"})
 	if fact.Match || len(fact.Missing) != 1 || fact.Missing[0] != "persistent" || len(fact.Extra) != 1 || fact.Extra[0] != "gpu" {
 		t.Fatalf("unexpected label drift: %#v", fact)
+	}
+}
+
+// Bug 20 (Plan 06-10, 2026-05-06): GitHub auto-adds OS+arch labels in
+// canonical CamelCase (Linux, X64, ARM64, macOS, Windows) while
+// RunnerKit's labels.Build slug-lowercases its values (linux, x64). The
+// status / doctor label-drift detector must treat these as equal —
+// same family as Plan 06-09 Bug 16 fixed for runnerOnlineWithLabels but
+// in a different code path (status/doctor drift detector). With this
+// fix, CompareLabels({linux, x64}, {Linux, X64}) reports Match=true,
+// not the spurious `missing [linux, x64] extra [Linux, X64]` warning.
+func TestCompareLabelsCaseInsensitiveMatchClosesBug20(t *testing.T) {
+	fact := CompareLabels(
+		[]string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"},
+		[]string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "Linux", "X64", "persistent"},
+	)
+	if !fact.Match {
+		t.Fatalf("CompareLabels must treat Linux/linux + X64/x64 as equal (Bug 20); got %#v", fact)
+	}
+	if len(fact.Missing) != 0 || len(fact.Extra) != 0 {
+		t.Fatalf("CompareLabels must not flag case-only differences; got missing=%v extra=%v", fact.Missing, fact.Extra)
+	}
+}
+
+// Genuine label drift (different label entirely) must STILL be reported
+// after the case-insensitive fix — we don't want Bug 20's fix to mask
+// real drift.
+func TestCompareLabelsStillReportsRealDriftAfterBug20Fix(t *testing.T) {
+	fact := CompareLabels(
+		[]string{"self-hosted", "runnerkit", "linux", "x64"},
+		[]string{"self-hosted", "runnerkit", "Linux", "X64", "gpu"},
+	)
+	if fact.Match {
+		t.Fatalf("real drift (extra=gpu) must still report Match=false; got %#v", fact)
+	}
+	if len(fact.Extra) != 1 || strings.ToLower(fact.Extra[0]) != "gpu" {
+		t.Fatalf("real drift must surface gpu in Extra; got %#v", fact.Extra)
 	}
 }

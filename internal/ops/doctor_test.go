@@ -41,6 +41,33 @@ func TestBuildDoctorReportSSHUnreachable(t *testing.T) {
 	}
 }
 
+// Bug 20 (Plan 06-10, 2026-05-06): GitHub auto-labels OS+arch in
+// CamelCase (Linux, X64) while RunnerKit's labels.Build slug-lowercases
+// (linux, x64). The doctor `label_drift` finding must NOT fire when
+// the only difference is case. This test threads a CamelCase actual
+// label list through CompareLabels (the case-insensitive Bug 20 fix)
+// and asserts BuildDoctorReport does not emit the spurious finding.
+func TestDoctor_LabelDriftIsCaseInsensitiveClosesBug20(t *testing.T) {
+	repo := testsupport.HealthyRepositoryState()
+	githubLabels := []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "Linux", "X64", "persistent"}
+	observed := ObservedRunner{
+		Repo:         repo.Repo.FullName,
+		StatePath:    "/state.json",
+		StatePresent: true,
+		State:        &repo,
+		GitHub:       GitHubFact{Found: true, ID: 123, Name: repo.Runner.Name, Status: "online", Labels: githubLabels},
+		SSH:          SSHFact{Reachable: true, HostKey: "matched"},
+		Service:      ServiceFact{Service: repo.Machine.ServiceName, ActiveState: "active"},
+		Labels:       CompareLabels(repo.Runner.Labels, githubLabels),
+	}
+	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true})
+	for _, finding := range report.Findings {
+		if finding.ID == "label_drift" {
+			t.Fatalf("doctor must not emit label_drift for case-only differences (Bug 20); finding=%#v", finding)
+		}
+	}
+}
+
 // TestDoctor_ByoHostPreparedFinding asserts that when DeepChecks
 // reports the remote host has /etc/sudoers.d/runnerkit-installer
 // (i.e. `runnerkit byo-prepare` was previously applied), the doctor
