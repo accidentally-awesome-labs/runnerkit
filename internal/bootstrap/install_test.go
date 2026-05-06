@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -235,6 +236,79 @@ func TestWrapSudoCommand_InnerStdinPipePreserved(t *testing.T) {
 	if !strings.Contains(wrapped.Script, "sudo -S -v") {
 		t.Fatalf("expected dedicated `sudo -S -v` cred-priming invocation before script body:\n%s", wrapped.Script)
 	}
+}
+
+// Bug 12 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
+//
+// Plan 06-07 attempt-9 against salar@mckee-small-desktop got past Bug 11
+// (config.sh cwd) and aborted with the generic message:
+//
+//   ERROR RunnerKit installed the runner but the service is not active.
+//   NEXT  Run sudo ./svc.sh status in the runner directory ...
+//
+// The actual remote stderr (from svc.sh status / install_service)
+// was never surfaced — Apply returned ServiceNotActiveError{Err: err}
+// without the failing command's stderr. up.go's handler emits a
+// generic remediation, leaving the user unable to diagnose root cause.
+//
+// Bug 12 fix: extend ServiceNotActiveError with CommandID + Stderr
+// fields populated by Apply / ApplyEphemeral, and have up.go's
+// handlers render them in the user-facing remediation.
+
+func TestServiceNotActiveError_CarriesCommandIDAndStderr(t *testing.T) {
+	t.Parallel()
+	e := ServiceNotActiveError{CommandID: "verify_service", Stderr: "Failed to start actions.runner.foo.service: Unit not found"}
+	if e.CommandID != "verify_service" {
+		t.Fatalf("CommandID field missing or wrong: %#v", e)
+	}
+	if !strings.Contains(e.Stderr, "Unit not found") {
+		t.Fatalf("Stderr field missing or wrong: %#v", e)
+	}
+}
+
+func TestApply_ServiceFailureSurfacesStderrInError(t *testing.T) {
+	t.Parallel()
+	exec := &serviceFailingExecutor{
+		commands: nil,
+		stderr:   "Job for actions.runner.foo.service failed because the control process exited with error code.",
+		exitCode: 3,
+	}
+	opts := Options{
+		RunnerName: "runnerkit-x", RepoURL: "https://github.com/owner/repo",
+		Labels: []string{"x"}, ServiceUser: "runnerkit-runner", RunnerToken: "tk",
+		Package: RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	_, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts)
+	if err == nil {
+		t.Fatal("expected error from Apply")
+	}
+	var serviceErr ServiceNotActiveError
+	if !errors.As(err, &serviceErr) {
+		t.Fatalf("err is not ServiceNotActiveError: %T %v", err, err)
+	}
+	if serviceErr.CommandID == "" {
+		t.Fatalf("ServiceNotActiveError.CommandID empty — user can't tell which step failed")
+	}
+	if !strings.Contains(serviceErr.Stderr, "control process exited") {
+		t.Fatalf("ServiceNotActiveError.Stderr does not surface remote stderr; got %q", serviceErr.Stderr)
+	}
+}
+
+type serviceFailingExecutor struct {
+	commands []remote.Command
+	stderr   string
+	exitCode int
+}
+
+func (s *serviceFailingExecutor) Probe(context.Context, remote.Target) (remote.ProbeResult, error) {
+	return remote.ProbeResult{}, nil
+}
+func (s *serviceFailingExecutor) Run(_ context.Context, _ remote.Target, command remote.Command) (remote.Result, error) {
+	s.commands = append(s.commands, command)
+	if command.ID == "install_service" || command.ID == "verify_service" {
+		return remote.Result{ExitCode: s.exitCode, Stderr: s.stderr}, nil
+	}
+	return remote.Result{ExitCode: 0}, nil
 }
 
 func TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605(t *testing.T) {
