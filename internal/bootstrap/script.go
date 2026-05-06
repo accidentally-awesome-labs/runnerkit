@@ -57,8 +57,17 @@ sudo su -s /bin/bash - %[1]s -c "cd %[2]s && RUNNERKIT_REGISTRATION_TOKEN=\"$RUN
 }
 
 func RenderServiceScript(opts Options) string {
+	// Idempotency (Bug 14, Plan 06-07 attempt-11, 2026-05-06): pre-stop
+	// and uninstall any existing systemd unit before re-installing.
+	// svc.sh install refuses with "Failed: error: exists ..." when the
+	// /etc/systemd/system/actions.runner.<...>.service unit file is
+	// already present from a prior `runnerkit up`. Each pre-step is
+	// `|| true`-suffixed so a first install (when no unit exists) is
+	// not blocked.
 	return "set -euo pipefail\n" +
 		"cd " + defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName)) + "\n" +
+		"sudo ./svc.sh stop || true\n" +
+		"sudo ./svc.sh uninstall || true\n" +
 		"sudo ./svc.sh install runnerkit-runner\n" +
 		"sudo ./svc.sh start\n" +
 		"sudo ./svc.sh status\n"

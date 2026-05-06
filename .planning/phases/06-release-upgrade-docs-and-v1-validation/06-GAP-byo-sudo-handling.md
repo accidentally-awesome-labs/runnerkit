@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11+12+13 + Tasks G..P — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11+12+13+14 + Tasks G..Q — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -1074,6 +1074,68 @@ absent files), so the line is a no-op on first install.
    in `script_test.go`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 14 — `svc.sh install` refuses to overwrite stale systemd unit (discovered 2026-05-06)
+
+After Bug 13 (Plan 06-09 commit ae1a702) made register_runner
+idempotent, Plan 06-07 attempt-11 against `salar@mckee-small-desktop`
+got past config.sh and aborted at `install_service` with the
+now-visible remote stderr (Bug 12 fix):
+
+```
+Failed: error: exists
+/etc/systemd/system/actions.runner.<repo>.<runner>.service
+```
+
+Root cause: `internal/bootstrap/script.go::RenderServiceScript`
+invokes `sudo ./svc.sh install runnerkit-runner` without first
+removing the existing systemd unit file. svc.sh install refuses to
+overwrite. Re-runs of `runnerkit up` against a host where the unit
+already exists abort at install_service.
+
+Same family as Bug 13 (stale .runner state) but at the systemd
+layer. Both are idempotency gaps that surfaced once attempts started
+making forward progress — every prior attempt failed before reaching
+service-install, so stale unit-file state was never observed.
+
+### Why cloud is unaffected
+
+Cloud servers are freshly provisioned per `runnerkit up`. No prior
+unit can exist.
+
+### Bug 14 fix
+
+Insert idempotent stop + uninstall before install:
+
+```bash
+sudo ./svc.sh stop || true
+sudo ./svc.sh uninstall || true
+sudo ./svc.sh install runnerkit-runner
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+Each pre-step is `|| true`-suffixed so a first install (where no
+unit/service exists) is not blocked by the stop/uninstall failing
+on absent state.
+
+### Bug 14 acceptance
+
+- `runnerkit up` is idempotent against a host whose
+  `/etc/systemd/system/actions.runner.<...>.service` already exists
+  from a prior install. svc.sh install runs cleanly; smoke proceeds
+  to verify_service.
+- Unit test asserts: stop + uninstall both present; ordered before
+  install; both `|| true`-suffixed.
+
+### Task Q — Idempotent svc.sh install (Bug 14)
+
+1. Edit `internal/bootstrap/script.go::RenderServiceScript` to
+   prepend `sudo ./svc.sh stop || true` and
+   `sudo ./svc.sh uninstall || true` before
+   `sudo ./svc.sh install runnerkit-runner`.
+2. Add `TestRenderServiceScriptIdempotentInstall` in `script_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -1159,9 +1221,15 @@ absent files), so the line is a no-op on first install.
 - Bug 13 discovered 2026-05-06 during Plan 06-07 attempt-10 against
   the same host AFTER Bug 12 fix landed. BYO-only (cloud always
   freshly provisioned).
-- Once Bug 13 closed: Plan 06-07 attempt-11 expected to land
-  end-to-end without manual host cleanup, including idempotent
-  re-runs.
+- Once Bug 13 closed: Plan 06-07 attempt-11 progressed to
+  install_service and aborted with the now-visible "exists"
+  stderr — Bug 14 surfaced.
+- Bug 14 discovered 2026-05-06 during Plan 06-07 attempt-11 against
+  the same host AFTER Bug 13 fix landed. Same idempotency family at
+  the systemd layer.
+- Once Bug 14 closed: Plan 06-07 attempt-12 expected to land
+  end-to-end on a host with stale systemd state, including
+  idempotent re-runs against existing units.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned
