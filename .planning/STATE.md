@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 06-08-byo-register-runner-runas-fix-PLAN.md
-last_updated: "2026-05-05T16:31:34.438Z"
+status: Awaiting maintainer live smoke (Plan 06-07 Task 1)
+stopped_at: "Awaiting maintainer live smoke (Plan 06-07 Task 1 — checkpoint:human-action)"
+last_updated: "2026-05-06T23:32:30.133Z"
 last_activity: 2026-05-05
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 27
-  completed_plans: 26
+  total_plans: 29
+  completed_plans: 27
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 2 of 8
-Status: Ready to execute
+Plan: 7 of 8 (06-07 — checkpoint:human-action; awaiting maintainer live smoke)
+Status: Awaiting maintainer live smoke (Plan 06-07 Task 1)
 Last activity: 2026-05-05
 
 Milestone Progress: [███████░░░] 67%
@@ -171,6 +171,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-05T16:31:21.055Z
-Stopped at: Completed 06-08-byo-register-runner-runas-fix-PLAN.md
+Last session: 2026-05-06T23:32:30.124Z
+Stopped at: Awaiting maintainer live smoke (Plan 06-07 Task 1 — checkpoint:human-action)
 Resume file: None
