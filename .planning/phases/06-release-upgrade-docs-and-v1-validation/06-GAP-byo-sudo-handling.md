@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10 + Tasks G,H,I,J,K,L,M — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11 + Tasks G,H,I,J,K,L,M,N — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -883,6 +883,70 @@ the freshly-primed cache and does not consume its stdin.
    `install_test.go`.
 3. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 11 — `sudo su -s /bin/bash -` login shell drops cwd, breaks `./config.sh` (discovered 2026-05-06)
+
+After Bug 10 (Plan 06-09 commit 281966d) closed the password-pipe
+structure, Plan 06-07 attempt-8 against `salar@mckee-small-desktop`
+got past every previous gate and aborted at config.sh:
+
+```
+-bash: line 1: ./config.sh: No such file or directory
+```
+
+Root cause: Plan 06-08's Bug 3 fix changed the register_runner form
+from `sudo -u runnerkit-runner ./config.sh ...` to:
+
+```
+sudo su -s /bin/bash - runnerkit-runner -c "RUNNERKIT_REGISTRATION_TOKEN=... ./config.sh --unattended ..."
+```
+
+The literal `-` argument to `su` requests a LOGIN shell, which
+re-establishes the user's HOME as cwd by design. The outer script
+DOES `cd /opt/actions-runner/runnerkit-<name>` earlier, but the
+inner `sudo su -` re-anchors cwd to runnerkit-runner's HOME (which
+useradd --create-home placed at `/home/runnerkit-runner`). When the
+inner shell runs `./config.sh`, it looks for it under HOME, fails.
+
+Bug 3's correctness for runas was preserved; the cwd-inheritance
+contract from the prior `sudo -u user` form was inadvertently
+dropped.
+
+### Why cloud is unaffected
+
+Same reason as Bugs 9 + 10: cloud-init grants full NOPASSWD and
+runs the bootstrap fresh via cloud-init. The `sudo su -` form fires
+on cloud too, but cloud cloud-init doesn't use the bootstrap
+`runnerkit up` codepath — it constructs its own register_runner
+command directly with the correct cwd. The bug is BYO-only.
+
+### Bug 11 fix
+
+Prepend `cd <installPath> && ` to the inner `-c` argument of both
+`sudo su -s /bin/bash -` invocations in `RenderInstallScript` and
+`RenderEphemeralInstallScript`. The su login shell still resets HOME
+correctly, but the explicit cd inside the -c arg ensures
+`./config.sh` resolves against the install dir. install dir is
+already `chown`ed to runnerkit-runner so the user has access.
+
+### Bug 11 acceptance
+
+- `runnerkit up --host user@host` against an Ubuntu host runs
+  config.sh under runnerkit-runner from the correct cwd; .runner
+  sentinel file lands; `.runner` assertion in
+  `scripts/smoke/byo-permission.sh` passes.
+- Two unit tests assert the inner -c arg starts with
+  `cd <installPath> && ` for both renderers.
+
+### Task N — `cd <installPath>` inside `-c` arg (Bug 11)
+
+1. Edit `internal/bootstrap/script.go::RenderInstallScript` line 53
+   and `RenderEphemeralInstallScript` line 95: prepend `cd %[2]s && `
+   to the -c argument body.
+2. Add `TestRenderInstallScriptCdsBeforeConfigSh` and
+   `TestRenderEphemeralInstallScriptCdsBeforeConfigSh` in
+   `script_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -945,7 +1009,16 @@ the freshly-primed cache and does not consume its stdin.
   sessions (Ubuntu 24 default with use_pty). The asymmetry between
   byo-prepare's working structure and install.go's broken structure
   hid Bug 10 from earlier reviews.
-- Once Bug 10 closed: Plan 06-07 attempt-8 expected to land a GitHub
+- Once Bug 10 closed: Plan 06-07 attempt-8 progressed to config.sh
+  invocation where Bug 11 surfaced.
+- Bug 11 discovered 2026-05-06 during Plan 06-07 attempt-8 against the
+  same host AFTER Bug 10 fix landed. Affects both BYO bootstrap
+  paths (persistent + ephemeral). Cloud path unaffected (cloud-init
+  uses a different register_runner construction). Latent regression
+  introduced by Plan 06-08's Bug 3 fix; not caught by unit tests
+  because they only asserted the new su form's presence, not the
+  cwd contract.
+- Once Bug 11 closed: Plan 06-07 attempt-9 expected to land a GitHub
   runner ID and proceed to Hetzner cloud-end-to-end + destroy_verify.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
