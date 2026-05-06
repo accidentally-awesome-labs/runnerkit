@@ -7,11 +7,12 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
-	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
+	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
 )
 
 const (
@@ -395,3 +396,83 @@ func cloneIDs(ids map[string]string) map[string]string {
 }
 
 var _ provider.Provider = (*Provider)(nil)
+
+// HostKeyProbeOptions configures the retry budget for
+// ProbeHostKeyWithRetry. All fields are optional; zero values fall
+// back to the documented defaults below.
+//
+// Bug 22 (Plan 06-10, 2026-05-06): cloud-init writes
+// /etc/ssh/ssh_host_*_key.pub during the boot phase, typically 30-90s
+// after the Hetzner API reports the server status as "running". A
+// single-shot ssh-keyscan + ProbeHostKey landed in that window
+// returned an empty fingerprint, surfacing as
+// `SSH host key fingerprint was not observed` and aborting `runnerkit
+// up --cloud hetzner` after billable resources had already been
+// created. ProbeHostKeyWithRetry tolerates that window by retrying
+// with a small interval so the host_key entry shows up before the
+// caller exits the readiness phase.
+type HostKeyProbeOptions struct {
+	// Attempts is the maximum number of probe calls. Default: 60.
+	Attempts int
+	// Interval is the wait between attempts. Default: 5 seconds.
+	// At the default budget that gives ~5 minutes of total wall-clock
+	// runway, easily covering Hetzner cloud-init's typical 30-90s
+	// host-key install window with headroom for residential-IP
+	// retries.
+	Interval time.Duration
+	// Sleep is an optional injection point for tests so they can
+	// fast-forward without burning real wall-clock seconds. Default:
+	// time.Sleep.
+	Sleep func(time.Duration)
+}
+
+const (
+	defaultHostKeyProbeAttempts = 60
+	defaultHostKeyProbeInterval = 5 * time.Second
+)
+
+// ProbeHostKeyWithRetry repeatedly invokes prober.ProbeHostKey until
+// the returned HostKey carries a non-empty Fingerprint, the context
+// is cancelled, or opts.Attempts is exhausted. On success it returns
+// the observed HostKey; on exhaustion it returns the LAST observed
+// error (or a generic "not observed" error if every attempt returned
+// nil err + empty fingerprint) so callers can surface a useful
+// diagnostic. Empty fingerprints with a nil error count as failures
+// because Hetzner cloud-init can return an empty ssh-keyscan result
+// even when the SSH layer accepts the connection.
+func ProbeHostKeyWithRetry(ctx context.Context, prober remote.HostKeyProber, target remote.Target, opts HostKeyProbeOptions) (remote.HostKey, error) {
+	attempts := opts.Attempts
+	if attempts <= 0 {
+		attempts = defaultHostKeyProbeAttempts
+	}
+	interval := opts.Interval
+	if interval <= 0 {
+		interval = defaultHostKeyProbeInterval
+	}
+	sleep := opts.Sleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	var (
+		lastErr error
+		lastKey remote.HostKey
+	)
+	for i := 0; i < attempts; i++ {
+		if err := ctx.Err(); err != nil {
+			return remote.HostKey{}, err
+		}
+		key, err := prober.ProbeHostKey(ctx, target)
+		lastKey = key
+		lastErr = err
+		if err == nil && remote.NormalizeHostKey(key).Fingerprint != "" {
+			return key, nil
+		}
+		if i < attempts-1 {
+			sleep(interval)
+		}
+	}
+	if lastErr != nil {
+		return lastKey, lastErr
+	}
+	return lastKey, errors.New("SSH host key fingerprint was not observed after retry budget exhausted")
+}

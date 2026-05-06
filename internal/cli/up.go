@@ -17,6 +17,7 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/labels"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/preflight"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/provider/hetzner"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/runmode"
@@ -344,9 +345,9 @@ const (
 	modeTradeoffStepTitle      = "Runner mode selection"
 
 	// Internal mode-selection values for the interactive Select prompt.
-	modeChoicePersistentBYO   = "persistent-byo"
-	modeChoiceEphemeralBYO    = "ephemeral-byo"
-	modeChoiceEphemeralCloud  = "ephemeral-cloud"
+	modeChoicePersistentBYO  = "persistent-byo"
+	modeChoiceEphemeralBYO   = "ephemeral-byo"
+	modeChoiceEphemeralCloud = "ephemeral-cloud"
 )
 
 // resolveModeDecision normalizes the user-supplied --mode flag, prompts
@@ -921,9 +922,14 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 	return report, hostKey, machine, nil
 }
 
+// probeCloudHostKey runs the cloud SSH host-key readiness probe with
+// retry/backoff so cloud-init's host-key install window (~30-90s on a
+// fresh Ubuntu 24.04 image) does not abort `runnerkit up --cloud
+// hetzner` after billable resources have already been created. Bug 22
+// (Plan 06-10, 2026-05-06).
 func probeCloudHostKey(ctx context.Context, executor remote.Executor, target remote.Target) (remote.HostKey, error) {
 	if prober, ok := executor.(remote.HostKeyProber); ok {
-		return prober.ProbeHostKey(ctx, target)
+		return hetzner.ProbeHostKeyWithRetry(ctx, prober, target, hetzner.HostKeyProbeOptions{})
 	}
 	probe, err := executor.Probe(ctx, target)
 	if err != nil {

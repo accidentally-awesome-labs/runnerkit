@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
 )
 
 type fakeClient struct {
@@ -221,6 +222,136 @@ func TestValidateUnavailableImageReturnsRemediationWithoutCreate(t *testing.T) {
 	if gotCreates := createCalls(client.calls); len(gotCreates) != 0 {
 		t.Fatalf("Validate created resources: %#v", gotCreates)
 	}
+}
+
+// Bug 22 (Plan 06-10, 2026-05-06): cloud SSH host-key readiness probe
+// must retry across the cloud-init host-key-install window (~30-90s on
+// fresh Ubuntu 24.04 images). The previous single-shot probe failed
+// with `SSH host key fingerprint was not observed` because cloud-init
+// had not yet written /etc/ssh/ssh_host_*_key.pub by the time the
+// probe ran. ProbeHostKeyWithRetry wraps a HostKeyProber with bounded
+// retries + exponential-ish backoff and surfaces the last attempt's
+// error if the budget is exhausted.
+func TestProbeHostKeyWithRetrySucceedsOnLaterAttempt(t *testing.T) {
+	prober := &fakeHostKeyProber{
+		responses: []hostKeyResponse{
+			{err: errors.New("SSH host key fingerprint was not observed")},
+			{err: errors.New("SSH host key fingerprint was not observed")},
+			{key: stubHostKey("SHA256:cloudinithostkey")},
+		},
+	}
+	clock := &fakeClock{}
+	hostKey, err := ProbeHostKeyWithRetry(context.Background(), prober, fakeTarget(), HostKeyProbeOptions{Attempts: 5, Interval: 100 * time.Millisecond, Sleep: clock.Sleep})
+	if err != nil {
+		t.Fatalf("expected eventual success, got err=%v after %d calls", err, prober.calls)
+	}
+	if hostKey.Fingerprint != "SHA256:cloudinithostkey" {
+		t.Fatalf("unexpected hostKey fingerprint: %q", hostKey.Fingerprint)
+	}
+	if prober.calls != 3 {
+		t.Fatalf("expected 3 probe attempts; got %d", prober.calls)
+	}
+	if len(clock.sleeps) != 2 {
+		t.Fatalf("expected 2 backoff sleeps between attempts; got %d (%#v)", len(clock.sleeps), clock.sleeps)
+	}
+}
+
+// When the retry budget is exhausted (cloud-init never writes a host
+// key, or the IP is permanently unreachable), ProbeHostKeyWithRetry
+// must return the LAST observed error so the caller can surface a
+// useful diagnostic to the user.
+func TestProbeHostKeyWithRetryReturnsLastErrorOnExhaustion(t *testing.T) {
+	prober := &fakeHostKeyProber{
+		responses: []hostKeyResponse{
+			{err: errors.New("SSH host key fingerprint was not observed")},
+			{err: errors.New("SSH host key fingerprint was not observed")},
+			{err: errors.New("SSH host key fingerprint was not observed")},
+		},
+	}
+	clock := &fakeClock{}
+	hostKey, err := ProbeHostKeyWithRetry(context.Background(), prober, fakeTarget(), HostKeyProbeOptions{Attempts: 3, Interval: 50 * time.Millisecond, Sleep: clock.Sleep})
+	if err == nil {
+		t.Fatalf("expected error after exhaustion; got hostKey=%#v", hostKey)
+	}
+	if !strings.Contains(err.Error(), "SSH host key fingerprint was not observed") {
+		t.Fatalf("expected last-attempt error surface; got %v", err)
+	}
+	if prober.calls != 3 {
+		t.Fatalf("expected exactly 3 attempts at exhaustion; got %d", prober.calls)
+	}
+}
+
+// An empty Fingerprint counts as a failure even if no error is
+// returned — Cloud-init can return an empty ssh-keyscan result while
+// the connection itself succeeds; retry until a real fingerprint
+// appears.
+func TestProbeHostKeyWithRetryRetriesOnEmptyFingerprint(t *testing.T) {
+	prober := &fakeHostKeyProber{
+		responses: []hostKeyResponse{
+			{key: stubHostKey("")}, // empty
+			{key: stubHostKey("SHA256:eventualhostkey")},
+		},
+	}
+	clock := &fakeClock{}
+	hostKey, err := ProbeHostKeyWithRetry(context.Background(), prober, fakeTarget(), HostKeyProbeOptions{Attempts: 4, Interval: 10 * time.Millisecond, Sleep: clock.Sleep})
+	if err != nil {
+		t.Fatalf("retry on empty fingerprint should eventually succeed; err=%v", err)
+	}
+	if hostKey.Fingerprint != "SHA256:eventualhostkey" {
+		t.Fatalf("unexpected hostKey: %#v", hostKey)
+	}
+	if prober.calls != 2 {
+		t.Fatalf("expected 2 attempts; got %d", prober.calls)
+	}
+}
+
+// Defaults: empty Attempts/Interval should produce a usable retry
+// budget out of the box (no caller required to set them).
+func TestProbeHostKeyWithRetryUsesDefaultsWhenOptionsZero(t *testing.T) {
+	prober := &fakeHostKeyProber{responses: []hostKeyResponse{{key: stubHostKey("SHA256:firsttry")}}}
+	clock := &fakeClock{}
+	_, err := ProbeHostKeyWithRetry(context.Background(), prober, fakeTarget(), HostKeyProbeOptions{Sleep: clock.Sleep})
+	if err != nil {
+		t.Fatalf("zero-value options should still succeed on first attempt: %v", err)
+	}
+	if prober.calls != 1 {
+		t.Fatalf("expected 1 probe call; got %d", prober.calls)
+	}
+}
+
+type hostKeyResponse struct {
+	key remote.HostKey
+	err error
+}
+
+type fakeHostKeyProber struct {
+	responses []hostKeyResponse
+	calls     int
+}
+
+func (f *fakeHostKeyProber) ProbeHostKey(_ context.Context, _ remote.Target) (remote.HostKey, error) {
+	idx := f.calls
+	f.calls++
+	if idx >= len(f.responses) {
+		idx = len(f.responses) - 1
+	}
+	return f.responses[idx].key, f.responses[idx].err
+}
+
+type fakeClock struct {
+	sleeps []time.Duration
+}
+
+func (c *fakeClock) Sleep(d time.Duration) {
+	c.sleeps = append(c.sleeps, d)
+}
+
+func stubHostKey(fingerprint string) remote.HostKey {
+	return remote.HostKey{Algorithm: "ssh-ed25519", Fingerprint: fingerprint, PublicKey: []byte(fingerprint)}
+}
+
+func fakeTarget() remote.Target {
+	return remote.Target{User: "runnerkit-admin", Host: "203.0.113.10", Port: 22, Raw: "runnerkit-admin@203.0.113.10:22"}
 }
 
 func provisionInput() provider.ProvisionInput {
