@@ -4,7 +4,7 @@ source: live BYO smoke (Plan 06-04 Task 4); re-smoke (Plan 06-07 attempt 1)
 discovered: 2026-05-04
 updated: 2026-05-05
 phase: 06-release-upgrade-docs-and-v1-validation
-gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11+12 + Tasks G,H,I,J,K,L,M,N,O — OPEN, mandatory before v1.0.0 tag)
+gap_closure_target: 06-05 (Bug 1+2 + Tasks A,E — CLOSED 2026-05-04 commit ee5c0a2); 06-06 (Tasks B,C,D — CLOSED 2026-05-05 commit 08b8708); 06-08 (Bug 3 + Task F — CLOSED 2026-05-05 commit bdef940); 06-09 (Bugs 4+5+6+7+8+9+10+11+12+13 + Tasks G..P — OPEN, mandatory before v1.0.0 tag)
 severity: high
 type: bug + missing-feature
 related_decisions: [D-04 (live BYO smoke), Phase 2 context (service must not run as root), 02-01 (preflight separate behind remote.Executor)]
@@ -1011,6 +1011,69 @@ to the remediation list when present.
    `install_test.go`.
 4. Run full repo `go test ./... -count=1 -race` — no regression.
 
+## Bug 13 — stale `.runner` blocks re-registration (discovered 2026-05-06)
+
+After Bug 12 (Plan 06-09 commit 248c68b) made remote stderr visible
+in service errors, Plan 06-07 attempt-10 against
+`salar@mckee-small-desktop` revealed the actual cause of attempt-9's
+service abort:
+
+```
+Cannot configure the runner because it is already configured.
+To reconfigure the runner, run 'config.cmd remove' or
+'./config.sh remove' first.
+```
+
+Root cause: bootstrap's register_runner step is not idempotent
+against re-registration. When the install dir already contains the
+`.runner` sentinel + `.credentials` + `.credentials_rsaparams` from
+a prior successful registration, config.sh refuses to re-register
+even with `--replace`. The `--replace` flag only removes the
+GitHub-side runner record (preventing 409 on duplicate name); local
+state must be removed separately.
+
+This was hidden across attempts 1-9 because every prior attempt
+failed BEFORE config.sh ran successfully even once — so `.runner`
+was never written. Once Bugs 4-11 closed and config.sh actually ran
+cleanly in attempt 9, attempt 10 saw the leftover state and
+config.sh aborted on the second pass.
+
+### Why cloud is unaffected
+
+Each Hetzner cloud server is freshly provisioned per `runnerkit up`
+invocation; there's no persistent state between runs. Bug 13 is
+exclusively a BYO concern.
+
+### Bug 13 fix
+
+Insert `sudo rm -f .runner .credentials .credentials_rsaparams`
+after `sudo chown` and BEFORE the `sudo su` config.sh invocation
+in both `RenderInstallScript` and `RenderEphemeralInstallScript`.
+The script already `cd %[2]s` for the chown, but explicitly cd
+again before the rm to make the script's cwd contract explicit
+under `set -euo pipefail`. `rm -f` is idempotent (no error on
+absent files), so the line is a no-op on first install.
+
+### Bug 13 acceptance
+
+- `runnerkit up --host user@host` is idempotent against a host
+  whose install dir already contains `.runner` + `.credentials`
+  from a prior successful registration. config.sh re-registers
+  cleanly and the smoke harness's `.runner` sentinel re-appears.
+- Two unit tests assert the rm line is present and ordered before
+  config.sh in both renderers.
+
+### Task P — Idempotent re-registration (Bug 13)
+
+1. Edit `internal/bootstrap/script.go::RenderInstallScript` and
+   `RenderEphemeralInstallScript` to add a cd-then-rm step removing
+   `.runner`, `.credentials`, `.credentials_rsaparams` before the
+   `sudo su` config.sh invocation.
+2. Add `TestRenderInstallScriptRemovesStaleRunnerStateBeforeConfig`
+   and `TestRenderEphemeralInstallScriptRemovesStaleRunnerStateBeforeConfig`
+   in `script_test.go`.
+3. Run full repo `go test ./... -count=1 -race` — no regression.
+
 ## Cross-references
 
 - Discovered while running Plan 06-04 Task 4 BYO smoke. The smoke
@@ -1090,10 +1153,15 @@ to the remediation list when present.
   same host AFTER Bug 11 fix landed. UX-only fix (no behavioral
   change). Required to unblock diagnosis of whatever real failure
   attempt-9 hit at the service step.
-- Once Bug 12 closed: Plan 06-07 attempt-10 should reveal the actual
-  service-failure cause (if any) in the user-facing message; the
-  service is also probed directly to be `active running`, so the
-  next attempt may simply pass.
+- Once Bug 12 closed: Plan 06-07 attempt-10's stderr surface revealed
+  Bug 13 — config.sh refused to re-register because `.runner`
+  sentinel from attempt-9 still existed in the install dir.
+- Bug 13 discovered 2026-05-06 during Plan 06-07 attempt-10 against
+  the same host AFTER Bug 12 fix landed. BYO-only (cloud always
+  freshly provisioned).
+- Once Bug 13 closed: Plan 06-07 attempt-11 expected to land
+  end-to-end without manual host cleanup, including idempotent
+  re-runs.
 - Related decisions: Phase 2 context (service must not run as root —
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned
