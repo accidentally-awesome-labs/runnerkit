@@ -122,6 +122,54 @@ func TestRenderInstallScriptUsesSuForRegisterRunner(t *testing.T) {
 	}
 }
 
+// TestRenderInstallScriptCdsBeforeConfigSh asserts the Bug 11 fix:
+// `sudo su -s /bin/bash - <user> -c "..."` uses `-` (login shell)
+// which resets cwd to the user's HOME. Plan 06-08 Bug 3 fix preserved
+// the runas correctness but lost the cwd that the prior form
+// (`sudo -u runnerkit-runner ./config.sh`) inherited from the outer
+// `cd %[2]s`. Without an explicit `cd <installPath>` inside the -c
+// arg, the inner shell tries `./config.sh` against runnerkit-runner's
+// HOME and fails with `./config.sh: No such file or directory`.
+//
+// This test asserts the inner -c arg starts with `cd <installPath>
+// && ` so config.sh is found. See gap doc Bug 11 / Task N.
+func TestRenderInstallScriptCdsBeforeConfigSh(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"x"},
+		InstallPath: "/opt/actions-runner/runnerkit-owner-repo",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-owner-repo",
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "tk",
+		Package:     RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	script := RenderInstallScript(opts)
+	want := `sudo su -s /bin/bash - runnerkit-runner -c "cd /opt/actions-runner/runnerkit-owner-repo &&`
+	if !strings.Contains(script, want) {
+		t.Fatalf("RenderInstallScript -c arg must cd into installPath before invoking config.sh (Bug 11):\nwant prefix: %q\nscript:\n%s", want, script)
+	}
+}
+
+func TestRenderEphemeralInstallScriptCdsBeforeConfigSh(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-owner-repo-ephemeral",
+		RepoURL:     "https://github.com/owner/repo",
+		Labels:      []string{"x"},
+		InstallPath: "/opt/actions-runner/runnerkit-owner-repo-ephemeral",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-owner-repo-ephemeral",
+		ServiceUser: "runnerkit-runner",
+		RunnerToken: "tk",
+		Mode:        "ephemeral",
+		Package:     RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	script := RenderEphemeralInstallScript(opts)
+	want := `sudo su -s /bin/bash - runnerkit-runner -c "cd /opt/actions-runner/runnerkit-owner-repo-ephemeral &&`
+	if !strings.Contains(script, want) {
+		t.Fatalf("RenderEphemeralInstallScript -c arg must cd into installPath before invoking config.sh (Bug 11):\nwant prefix: %q\nscript:\n%s", want, script)
+	}
+}
+
 // TestRenderEphemeralInstallScriptUsesSuForRegisterRunner is the
 // parallel assertion for the ephemeral renderer.
 func TestRenderEphemeralInstallScriptUsesSuForRegisterRunner(t *testing.T) {
