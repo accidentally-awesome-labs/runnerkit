@@ -130,6 +130,14 @@ func collectStatus(ctx context.Context, deps Dependencies, statePath string, rep
 	observed.Labels = ops.CompareLabels(repoState.Runner.Labels, observed.GitHub.Labels)
 	observed.Provider = collectProviderFact(ctx, deps, repoState)
 	if probeRemote {
+		// Bug 19 (Plan 06-10, 2026-05-06): the saved Machine.ServiceName
+		// is the simplified `actions.runner.<runner-name>.service` form
+		// RunnerKit constructs at registration time, but GitHub's svc.sh
+		// installs the unit as
+		// `actions.runner.<owner-repo>.<runner-name>.service`. ops.ProbeRemoteStatus
+		// resolves the actual on-disk unit via systemctl list-units when
+		// the saved name returns LoadState=not-found, so status reports
+		// the active service (not WARNING inactive) for healthy runners.
 		if target, err := targetFromState(repoState); err == nil {
 			observed.SSH, observed.Service = ops.ProbeRemoteStatus(ctx, deps.RemoteExecutor, target, repoState.Machine.HostKeyFingerprint, repoState.Machine.ServiceName)
 		} else {
