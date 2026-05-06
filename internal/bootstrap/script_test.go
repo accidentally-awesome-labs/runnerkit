@@ -170,6 +170,57 @@ func TestRenderEphemeralInstallScriptCdsBeforeConfigSh(t *testing.T) {
 	}
 }
 
+// TestRenderInstallScriptRemovesStaleRunnerStateBeforeConfig asserts
+// the Bug 13 fix: bootstrap's register_runner step must be idempotent
+// against re-registration. config.sh refuses to re-configure when the
+// install dir already contains the .runner sentinel (e.g. from a
+// prior failed attempt or a stopped runner) — it emits:
+//
+//   Cannot configure the runner because it is already configured.
+//   To reconfigure the runner, run 'config.cmd remove' or
+//   './config.sh remove' first.
+//
+// `--replace` removes the GitHub-side runner record (so registration
+// doesn't 409 on duplicate name), but config.sh still aborts on local
+// state. The fix is to remove .runner / .credentials /
+// .credentials_rsaparams BEFORE invoking config.sh, so re-runs of
+// `runnerkit up` against a host with a stale runner reliably succeed.
+func TestRenderInstallScriptRemovesStaleRunnerStateBeforeConfig(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-x", RepoURL: "https://github.com/owner/repo",
+		Labels: []string{"x"}, InstallPath: "/opt/actions-runner/runnerkit-x",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-x",
+		ServiceUser: "runnerkit-runner", RunnerToken: "tk",
+		Package: RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	script := RenderInstallScript(opts)
+	want := "sudo rm -f .runner .credentials .credentials_rsaparams"
+	if !strings.Contains(script, want) {
+		t.Fatalf("RenderInstallScript must remove stale runner state before config.sh (Bug 13):\nwant substring: %q\nscript:\n%s", want, script)
+	}
+	rmIdx := strings.Index(script, want)
+	configIdx := strings.Index(script, "./config.sh")
+	if rmIdx < 0 || configIdx < 0 || rmIdx >= configIdx {
+		t.Fatalf("`%s` must appear BEFORE `./config.sh` in the rendered script:\nrm idx=%d config idx=%d\nscript:\n%s", want, rmIdx, configIdx, script)
+	}
+}
+
+func TestRenderEphemeralInstallScriptRemovesStaleRunnerStateBeforeConfig(t *testing.T) {
+	opts := Options{
+		RunnerName:  "runnerkit-x-ephemeral", RepoURL: "https://github.com/owner/repo",
+		Labels: []string{"x"}, InstallPath: "/opt/actions-runner/runnerkit-x-ephemeral",
+		WorkDir:     "/var/lib/runnerkit/work/runnerkit-x-ephemeral",
+		ServiceUser: "runnerkit-runner", RunnerToken: "tk",
+		Mode:        "ephemeral",
+		Package:     RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+	}
+	script := RenderEphemeralInstallScript(opts)
+	want := "sudo rm -f .runner .credentials .credentials_rsaparams"
+	if !strings.Contains(script, want) {
+		t.Fatalf("RenderEphemeralInstallScript must remove stale runner state before config.sh (Bug 13):\nwant substring: %q\nscript:\n%s", want, script)
+	}
+}
+
 // TestRenderEphemeralInstallScriptUsesSuForRegisterRunner is the
 // parallel assertion for the ephemeral renderer.
 func TestRenderEphemeralInstallScriptUsesSuForRegisterRunner(t *testing.T) {
