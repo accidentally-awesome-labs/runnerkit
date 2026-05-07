@@ -109,6 +109,16 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 
 	start := true
 	automount := false
+	// Bug 26 (Plan 06-11, 2026-05-06): pass EnableIPv4/EnableIPv6 only,
+	// without overriding the IPv4/IPv6 PrimaryIP fields. This makes
+	// Hetzner auto-allocate fresh primary IPs that carry
+	// `AutoDelete: true` by default — which is the property destroy.go
+	// relies on for cascade-delete (no `Server must be offline` error
+	// when deleting). See destroy.go for the full cascade explanation;
+	// providing an explicit *PrimaryIP here would override the default
+	// and break the cascade, so DO NOT add IPv4/IPv6 fields below
+	// without setting AutoDelete: true on a separately-allocated IP and
+	// updating destroy.go's flow accordingly.
 	server, action, err := client.CreateServer(ctx, hcloud.ServerCreateOpts{
 		Name:             plan.ResourceNames["server"],
 		ServerType:       serverType,

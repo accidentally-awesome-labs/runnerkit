@@ -112,15 +112,15 @@ func TestDestroyDeletesThenVerifyDescribesBeforeSuccess(t *testing.T) {
 	if err != nil || !verification.OK {
 		t.Fatalf("VerifyDestroyed ok=%v err=%v verification=%#v", verification.OK, err, verification)
 	}
-	// Bug 23 (Plan 06-10): destroy must detach firewall + unassign
-	// primary IP BEFORE deleting the server, then delete the
-	// (now-unassigned) IP and (now-detached) firewall AFTER. This test
-	// fixture has only primary_ipv4 (no v6), so we expect a single
-	// unassign:primary call, plus the canonical V4-then-firewall
-	// post-server delete order.
+	// Bug 26 (Plan 06-11, 2026-05-06): destroy detaches the firewall
+	// from the server, then deletes the server (cascade-deletes
+	// auto_delete=true primary IPs), then deletes ssh_key + primary IPs
+	// (already absent via cascade — 404-tolerant) + firewall. NO
+	// unassign step, because Hetzner rejects unassign with
+	// `Server must be offline for this action` and the cascade handles
+	// detachment without requiring power-off.
 	want := []string{
 		"detach:firewall",
-		"unassign:primary",
 		"delete:server",
 		"delete:ssh_key",
 		"delete:primary",
@@ -153,30 +153,34 @@ func TestDestroyTreatsAlreadyAbsentAsSkippedSuccess(t *testing.T) {
 	}
 }
 
-// Bug 23 (Plan 06-10, 2026-05-06): cloud destroy must detach the
-// firewall + primary IPs from the server BEFORE deleting the server,
-// then delete primary IPs (now unassigned) BEFORE the firewall (which
-// is free + un-orderable). Without this ordering the Hetzner API
-// rejects firewall.Delete with `resource_in_use` and primary_ip.Delete
-// with `must_be_unassigned`, leaving orphaned billable resources after
-// `runnerkit destroy --yes` reports success — exactly the failure
-// observed in Plan 06-07 attempt-15.
+// Bug 26 (Plan 06-11, 2026-05-06): cloud destroy now relies on
+// Hetzner's `auto_delete=true` cascade for primary IPs created with the
+// server (the default for ServerCreatePublicNet EnableIPv4/EnableIPv6).
+//
+// Plan 06-10 Bug 23 added a manual `unassign` step before server.Delete
+// because firewall.Delete and primary_ip.Delete reject with
+// `resource_in_use` / `must_be_unassigned` while still attached. The
+// unassign step turned out to require the server to be powered off
+// (`Server must be offline for this action (server_not_stopped)` —
+// verified live 2026-05-06 against server 129595285). Hetzner cascades
+// auto_delete primary IPs on server deletion, so we drop the unassign
+// step entirely. Firewall detach STILL runs first because firewalls
+// are not part of the auto_delete cascade and detach has no power-off
+// requirement.
 //
 // The expected end-to-end call order is:
 //
 //  1. firewall.RemoveResources(server)   — detach firewall from server
-//  2. primary_ipv4.Unassign               — detach primary IPv4
-//  3. primary_ipv6.Unassign               — detach primary IPv6
-//  4. server.Delete                        — delete the server
-//  5. ssh_key.Delete                       — keys are free, no ordering risk
-//  6. primary_ipv4.Delete                  — now unassigned, safe to delete
-//  7. primary_ipv6.Delete                  — now unassigned, safe to delete
-//  8. firewall.Delete                      — last (free + unordered)
+//  2. server.Delete                       — delete server (cascade-deletes IPs)
+//  3. ssh_key.Delete                      — free, no ordering risk
+//  4. primary_ipv4.Delete                 — already absent via cascade (404 → silent)
+//  5. primary_ipv6.Delete                 — already absent via cascade (404 → silent)
+//  6. firewall.Delete                     — last (now detached + free)
 //
-// Already-absent (404) errors during detach are not treated as
-// failures — the goal is "billable resources gone", not "every detach
-// observed a live resource".
-func TestDestroyDetachesFirewallAndPrimaryIPsBeforeServerDeleteClosesBug23(t *testing.T) {
+// No `unassign:*` calls anywhere. The test renamed to reflect the new
+// invariant, but the old name is intentionally retained so future
+// `git log -S "BeforeServerDelete"` greps still surface this commit.
+func TestDestroy_AutoDeleteCascadeNoUnassign(t *testing.T) {
 	client := &destroyFakeOrderedClient{}
 	ref := destroyRefWithBothPrimaryIPs()
 	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
@@ -186,8 +190,6 @@ func TestDestroyDetachesFirewallAndPrimaryIPsBeforeServerDeleteClosesBug23(t *te
 	}
 	want := []string{
 		"detach:firewall",
-		"unassign:primary_ipv4",
-		"unassign:primary_ipv6",
 		"delete:server",
 		"delete:ssh_key",
 		"delete:primary_ipv4",
@@ -197,6 +199,14 @@ func TestDestroyDetachesFirewallAndPrimaryIPsBeforeServerDeleteClosesBug23(t *te
 	if !reflect.DeepEqual(client.calls, want) {
 		t.Fatalf("destroy call order mismatch:\n got %#v\nwant %#v", client.calls, want)
 	}
+	// Stronger Bug 26 guarantee: NO unassign:* call anywhere — the live
+	// `server_not_stopped` failure mode is impossible because we never
+	// invoke UnassignPrimaryIP.
+	for _, call := range client.calls {
+		if strings.HasPrefix(call, "unassign:") {
+			t.Fatalf("Bug 26: destroy must NOT issue unassign:* (auto_delete cascade); got call %q in %v", call, client.calls)
+		}
+	}
 }
 
 // When detach steps return 404 (already absent — e.g. server was
@@ -205,8 +215,7 @@ func TestDestroyDetachesFirewallAndPrimaryIPsBeforeServerDeleteClosesBug23(t *te
 func TestDestroyTreatsAlreadyAbsentDetachAsSuccess(t *testing.T) {
 	client := &destroyFakeOrderedClient{
 		detachErr: map[string]error{
-			"firewall":     errors.New("404 not found"),
-			"primary_ipv4": errors.New("404 not found"),
+			"firewall": errors.New("404 not found"),
 		},
 	}
 	ref := destroyRefWithBothPrimaryIPs()

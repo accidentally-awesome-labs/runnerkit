@@ -173,6 +173,37 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 	}
 }
 
+// Bug 26 (Plan 06-11, 2026-05-06): destroy.go's cascade-delete approach
+// requires Hetzner to auto-allocate primary IPs with `AutoDelete: true`
+// — the default for ServerCreatePublicNet when EnableIPv4 / EnableIPv6
+// is true and no explicit IPv4/IPv6 *PrimaryIP override is provided.
+// If a future change passes `IPv4: &PrimaryIP{...}` (or `IPv6`), the
+// cascade is broken — the primary IPs survive server.Delete and
+// `runnerkit destroy` falls into the live `Server must be offline for
+// this action (server_not_stopped)` path on the unassign step that
+// destroy.go relies on auto-cascade to skip.
+//
+// Regression guard: assert provision sets EnableIPv4=true,
+// EnableIPv6=true, IPv4=nil, IPv6=nil. The fakeClient captures
+// ServerCreateOpts so we can inspect PublicNet directly.
+func TestProvisionEnablesPublicIPsWithoutOverridingForBug26(t *testing.T) {
+	client := newFakeClient()
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
+	if _, err := p.Provision(context.Background(), provisionInput()); err != nil {
+		t.Fatalf("Provision returned error: %v", err)
+	}
+	pn := client.serverOpts.PublicNet
+	if pn == nil {
+		t.Fatal("PublicNet must be set so Hetzner auto-allocates primary IPs with AutoDelete: true")
+	}
+	if !pn.EnableIPv4 || !pn.EnableIPv6 {
+		t.Fatalf("EnableIPv4/EnableIPv6 must both be true for Bug 26 cascade; got %#v", pn)
+	}
+	if pn.IPv4 != nil || pn.IPv6 != nil {
+		t.Fatalf("Bug 26: provision must NOT pass explicit *PrimaryIP overrides — that breaks the auto_delete=true cascade destroy.go relies on; got IPv4=%#v IPv6=%#v", pn.IPv4, pn.IPv6)
+	}
+}
+
 func TestProvisionErrorAfterServerCreationCarriesPartialResourceIDs(t *testing.T) {
 	client := newFakeClient()
 	client.createSrvErr = errors.New("server action failed after create")

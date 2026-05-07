@@ -43,19 +43,41 @@ func (p *Provider) Destroy(ctx context.Context, ref state.ProviderRef) (provider
 		}
 		result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifact, Status: "done"})
 	}
-	// Bug 23 (Plan 06-10, 2026-05-06): ordering the destroy sequence.
-	// Hetzner rejects firewall.Delete with `resource_in_use` and
-	// primary_ip.Delete with `must_be_unassigned` while either is still
-	// attached to the server. We therefore:
-	//   1. Detach the firewall from the server (best-effort).
-	//   2. Unassign the primary IPs from the server (best-effort).
-	//   3. Delete the server.
-	//   4. Delete the (now-free) ssh_key.
-	//   5. Delete the (now-unassigned) primary IPs.
-	//   6. Delete the (now-detached) firewall last.
-	// Already-absent (404) on any detach/unassign step is fine — the
-	// downstream delete will surface a real error if the resource is
-	// genuinely stuck.
+	// Bug 23 (Plan 06-10, 2026-05-06) + Bug 26 (Plan 06-11, 2026-05-06):
+	// destroy ordering relies on Hetzner's `auto_delete=true` cascade for
+	// primary IPs.
+	//
+	// Auto-allocated primary IPs (created via ServerCreatePublicNet
+	// EnableIPv4=true / EnableIPv6=true without an explicit IPv4/IPv6
+	// PrimaryIP override) carry `auto_delete=true` by default. The
+	// hcloud-go v1.59.2 PrimaryIP struct exposes this as `AutoDelete bool`
+	// — see hcloud/primary_ip.go. When the server is deleted, Hetzner
+	// cascade-deletes those primary IPs whose AutoDelete flag is set.
+	// This is empirically verified live (2026-05-06): after
+	// server.Delete, a follow-up GET of the IP IDs returns 404, no
+	// `server_not_stopped` or `must_be_unassigned` errors anywhere.
+	//
+	// Plan 06-10 Bug 23 added a manual `unassign primary IPs` step
+	// before server.Delete. That step turned out to require the server
+	// to be powered off (`Server must be offline for this action
+	// (server_not_stopped)`). Since the cascade already handles the
+	// detachment correctly, we remove the unassign step entirely and
+	// rely on Hetzner's default — which also keeps destroy idempotent
+	// because the explicit DeletePrimaryIP calls below now race against
+	// the cascade (Hetzner returns 404 once the cascade completes; our
+	// isAlreadyAbsentError already treats 404 as a no-op).
+	//
+	// Firewall detach STILL runs first — firewalls are not part of the
+	// auto_delete cascade, and firewall.Delete rejects with
+	// `resource_in_use` while still attached to the server. Detach has
+	// no power-off requirement.
+	//
+	// Final order:
+	//   1. Detach firewall from server (best-effort, 404-tolerant).
+	//   2. Delete server (cascade-deletes auto_delete primary IPs).
+	//   3. Delete ssh_key.
+	//   4. Delete primary IPv4/IPv6 (no-op via 404 cascade; idempotent).
+	//   5. Delete firewall last (now detached, no resource_in_use).
 	if serverID, ok := parsedNonEmpty(ids["server"]); ok {
 		if firewallID, ok := parsedNonEmpty(ids["firewall"]); ok {
 			if err := client.DetachFirewallFromServer(ctx, firewallID, serverID); err != nil && !isAlreadyAbsentError(err) {
@@ -65,13 +87,6 @@ func (p *Provider) Destroy(ctx context.Context, ref state.ProviderRef) (provider
 				// will surface the real error and partial cleanup will
 				// keep state.
 				result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderFirewall, Status: "warning", Message: "detach failed: " + err.Error()})
-			}
-		}
-		for _, kind := range []string{"primary_ipv4", "primary_ipv6"} {
-			if ipID, ok := parsedNonEmpty(ids[kind]); ok {
-				if err := client.UnassignPrimaryIP(ctx, ipID); err != nil && !isAlreadyAbsentError(err) {
-					result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "warning", Message: "unassign " + kind + " failed: " + err.Error()})
-				}
 			}
 		}
 	}

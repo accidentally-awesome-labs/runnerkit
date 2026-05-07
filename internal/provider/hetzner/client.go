@@ -30,9 +30,14 @@ type Client interface {
 	// the firewall is still attached, so destroy must detach first.
 	DetachFirewallFromServer(ctx context.Context, firewallID int, serverID int) error
 	// UnassignPrimaryIP detaches a Primary IP from whatever server it
-	// is currently assigned to. Bug 23 (Plan 06-10): the Hetzner API
-	// rejects primary_ip.Delete with `must_be_unassigned` while the
-	// IP is attached, so destroy must unassign first.
+	// is currently assigned to. Bug 23 (Plan 06-10) added this method
+	// to support a manual unassign-before-delete path. Bug 26 (Plan
+	// 06-11) now relies on Hetzner's `auto_delete=true` cascade for
+	// primary IPs auto-allocated with the server, so destroy.go no
+	// longer calls UnassignPrimaryIP. The method remains on the
+	// interface as a future fallback for legacy state where a primary
+	// IP carries `auto_delete=false` (would require server power-off
+	// first; the live `Server must be offline` error path).
 	UnassignPrimaryIP(ctx context.Context, id int) error
 }
 
