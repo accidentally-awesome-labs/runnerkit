@@ -82,6 +82,50 @@ func TestProbeRemoteStatusFallsBackToListUnitsWhenSavedNameIsNotFound(t *testing
 	}
 }
 
+// Bug 24 (Plan 06-11, 2026-05-06): host_key_match property — when `up`
+// saves a fingerprint produced by remote.scanHostKey at install time,
+// `status` must observe the byte-equal fingerprint when the host has
+// not changed. We model both probe paths going through the same
+// selectHostKeyLine logic by feeding identical ssh-keyscan output (in
+// different line orders) through remote.FingerprintSHA256 +
+// remote.NormalizeHostKey, then driving it through ProbeRemoteStatus
+// with the saved fingerprint. The resulting SSHFact must report
+// HostKey="matched", not "mismatch".
+func TestStatusHostKeyMatchesUpTimeFingerprint(t *testing.T) {
+	// Simulate up-time: ssh-keyscan emitted ed25519 first.
+	upTimeKeyscan := "[host]:22 ssh-rsa AAAARSA\n[host]:22 ssh-ed25519 AAAAED25519\n"
+	upTimeLine := remote.SelectHostKeyLineForTest(upTimeKeyscan)
+	upTimeFingerprint := remote.FingerprintSHA256([]byte(upTimeLine))
+
+	// Simulate status-time: same server, but ssh-keyscan returned
+	// rsa LAST in its output. Old behavior: firstHostKeyLine picked
+	// the rsa line first, fingerprints differed, status reported
+	// mismatch. New behavior: selectHostKeyLine prefers ed25519,
+	// regardless of order, so the fingerprint is byte-equal.
+	statusTimeKeyscan := "[host]:22 ssh-ed25519 AAAAED25519\n[host]:22 ssh-rsa AAAARSA\n"
+	statusTimeLine := remote.SelectHostKeyLineForTest(statusTimeKeyscan)
+	statusTimeFingerprint := remote.FingerprintSHA256([]byte(statusTimeLine))
+
+	if upTimeFingerprint != statusTimeFingerprint {
+		t.Fatalf("host_key_match broken: up-time=%q status-time=%q", upTimeFingerprint, statusTimeFingerprint)
+	}
+
+	// Drive ProbeRemoteStatus with savedFingerprint=upTimeFingerprint
+	// and a probe executor whose ProbeHostKey returns the
+	// status-time fingerprint. SSHFact must report HostKey="matched".
+	exec := &testsupport.RemoteExecutor{
+		ProbeHostKeyResult: remote.HostKey{Fingerprint: statusTimeFingerprint},
+		Results: map[string]remote.Result{
+			CommandStatusSSHReachable: {ExitCode: 0},
+			CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n", ExitCode: 0},
+		},
+	}
+	ssh, _ := ProbeRemoteStatus(context.Background(), exec, target(), upTimeFingerprint, testsupport.TestServiceName)
+	if ssh.HostKey != "matched" || !ssh.Reachable {
+		t.Fatalf("status host_key_match property broken; SSHFact=%#v upTimeFingerprint=%q observed=%q", ssh, upTimeFingerprint, statusTimeFingerprint)
+	}
+}
+
 // When the saved ServiceName matches the actual unit (no fallback
 // needed), ProbeRemoteStatus must NOT issue list-units — the original
 // happy path stays single-show.

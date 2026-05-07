@@ -98,7 +98,13 @@ func scanHostKey(ctx context.Context, target Target) HostKey {
 	if err != nil || len(out) == 0 {
 		return HostKey{}
 	}
-	line := firstHostKeyLine(string(out))
+	// Bug 24 (Plan 06-11, 2026-05-06): use selectHostKeyLine, which picks
+	// a deterministic line regardless of the order ssh-keyscan emits the
+	// server's keys. Without this, `up` and `status` could observe the
+	// same host but pick different keys (ed25519 vs rsa) and produce
+	// different fingerprints — falsely flagging `SSH ERROR host key
+	// mismatch` despite the host being unchanged.
+	line := selectHostKeyLine(string(out))
 	fields := strings.Fields(line)
 	algorithm := ""
 	if len(fields) >= 2 {
@@ -107,15 +113,63 @@ func scanHostKey(ctx context.Context, target Target) HostKey {
 	return HostKey{Algorithm: algorithm, Fingerprint: FingerprintSHA256([]byte(line)), PublicKey: []byte(line)}
 }
 
-func firstHostKeyLine(output string) string {
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
+// SelectHostKeyLineForTest exposes selectHostKeyLine to tests in other
+// packages so they can verify the host_key_match property end-to-end
+// without duplicating the selection logic. It is a thin alias and not
+// intended for production callers.
+func SelectHostKeyLineForTest(output string) string { return selectHostKeyLine(output) }
+
+// selectHostKeyLine picks one canonical line from ssh-keyscan output so
+// that two separate scans of the same host always pick the same line —
+// which keeps FingerprintSHA256 byte-stable across calls.
+//
+// Selection rules:
+//  1. Skip blank lines and comments (#-prefixed).
+//  2. Among remaining lines, prefer algorithms in this order:
+//     ssh-ed25519, ecdsa-sha2-nistp521, ecdsa-sha2-nistp384,
+//     ecdsa-sha2-nistp256, ssh-rsa, others.
+//  3. Within the same algorithm precedence, fall back to lexicographic
+//     ordering of the entire line so duplicate algorithms still resolve
+//     deterministically.
+//
+// Returns empty string when output has no eligible line.
+func selectHostKeyLine(output string) string {
+	preference := map[string]int{
+		"ssh-ed25519":           0,
+		"ecdsa-sha2-nistp521":   1,
+		"ecdsa-sha2-nistp384":   2,
+		"ecdsa-sha2-nistp256":   3,
+		"ssh-rsa":               4,
+		"rsa-sha2-512":          5,
+		"rsa-sha2-256":          6,
+		"ssh-dss":               7,
+	}
+	bestRank := -1
+	bestLine := ""
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		return line
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		rank, known := preference[fields[1]]
+		if !known {
+			rank = len(preference) // unknown algorithms rank after all known ones
+		}
+		if bestLine == "" {
+			bestRank = rank
+			bestLine = line
+			continue
+		}
+		if rank < bestRank || (rank == bestRank && line < bestLine) {
+			bestRank = rank
+			bestLine = line
+		}
 	}
-	return strings.TrimSpace(output)
+	return bestLine
 }
 
 func sshOutput(ctx context.Context, target Target, script string) (string, error) {

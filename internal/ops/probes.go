@@ -25,6 +25,18 @@ const (
 	CommandStatusSystemdShowResolved = "status.systemd.show.resolved"
 )
 
+// ProbeRemoteStatus collects the live SSH + service health for status/doctor.
+//
+// Bug 24 (Plan 06-11, 2026-05-06): the host_key_match property — that the
+// fingerprint observed at status time equals the one saved by `up` — was
+// previously broken when sshd publishes multiple host keys (Ubuntu 24.04
+// default: ed25519 + ecdsa + rsa). `ssh-keyscan` returned them in a non-
+// stable order and we hashed the first non-comment line; `up` and `status`
+// could pick different keys and produce different fingerprints. The fix
+// lives in remote.selectHostKeyLine, which both `up`'s probe path and
+// this status probe path call through scanHostKey — identical
+// ssh-keyscan output now collapses to the same chosen line and
+// host_key_match is restored.
 func ProbeRemoteStatus(ctx context.Context, executor remote.Executor, target remote.Target, savedFingerprint string, serviceName string) (SSHFact, ServiceFact) {
 	if executor == nil {
 		executor = remote.UnavailableExecutor{}
