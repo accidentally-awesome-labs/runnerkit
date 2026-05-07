@@ -428,23 +428,35 @@ func needsAnyRemoteSudo(selected map[ops.CleanupArtifact]bool) bool {
 // (e.g. command-not-found, network) return needs=false and the caller
 // keeps the existing happy path; the underlying cleanup will surface
 // the real error if any.
+//
+// Bug 28 (Plan 06-12, 2026-05-06): the real SSH executor returns
+// `err = *exec.ExitError` for ANY non-zero remote rc — that's the
+// EXPECTED case for a password-protected sudo (rc=1 + stderr marker).
+// The previous early `if err != nil { return false, nil }` guard
+// misclassified that as "no password needed" and skipped the prompt.
+// The fix: inspect `result.ExitCode` + `result.Stderr + result.Stdout`
+// REGARDLESS of err. See internal/remote/system.go:81-89 for the
+// err+ExitCode contract — exec.ExitError populates result.ExitCode;
+// other err sets result.ExitCode = -1 (treated as "unknown, fall
+// through" via the default branch below). Plan 06-07 attempt-17
+// smoke-output.log showed `probe-direct: rc=1 err=exit status 1`
+// followed by `probe: needs=false` — Bug 28 closes that cascade.
 func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, target remote.Target) (bool, error) {
 	if executor == nil {
 		return false, nil
 	}
-	result, err := executor.Run(ctx, target, remote.Command{
+	result, _ := executor.Run(ctx, target, remote.Command{
 		ID:      "down.sudo.probe",
 		Script:  "sudo -n true",
 		Timeout: 5 * time.Second,
 	})
-	if err != nil {
-		// Non-fatal — fall through to the unwrapped path; if sudo is
-		// genuinely broken the cleanup surface will surface it.
-		return false, nil
-	}
+	// Happy path: sudo passwordless (NOPASSWD / Path C / cached cred).
 	if result.ExitCode == 0 {
 		return false, nil
 	}
+	// Password-required path: non-zero exit code with marker substring.
+	// This is the Bug 28 surface — works regardless of whether the
+	// executor returned a wrapping err alongside the result.
 	stderr := strings.ToLower(result.Stderr + " " + result.Stdout)
 	for _, marker := range []string{"password is required", "a terminal is required", "no tty present"} {
 		if strings.Contains(stderr, marker) {
@@ -453,7 +465,11 @@ func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, targe
 	}
 	// Unknown non-zero — assume sudo works but in an unexpected mode and
 	// keep the unwrapped path. If it does need a password the cleanup
-	// will report the canonical sudo failure verbatim.
+	// will report the canonical sudo failure verbatim. This branch also
+	// catches executor-startup failures (dial timeout, context cancel)
+	// where result.ExitCode = -1 and err is non-nil but not an
+	// exit-status wrapper — preserves the existing graceful-failure
+	// semantics.
 	return false, nil
 }
 
