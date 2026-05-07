@@ -335,16 +335,21 @@ type hcloudStubError struct {
 	msg  string
 }
 
-func (e *hcloudStubError) Error() string  { return e.msg }
+func (e *hcloudStubError) Error() string   { return e.msg }
 func (e *hcloudStubError) StatusCode() int { return e.code }
 
 // destroyFakeRetryClient extends destroyFakeOrderedClient with a
 // per-call DeletePrimaryIP error sequence so Bug 30 retry-loop tests can
 // return 409 must_be_unassigned on call N and 404 / nil on call N+1.
+//
+// The defaultErr field, if non-nil, is returned for every call past the
+// end of deleteIPErrs — this lets the budget-exhaustion test simulate a
+// permanent 409 without enumerating an infinite slice.
 type destroyFakeRetryClient struct {
 	destroyFakeOrderedClient
 	deleteIPCallCount int
-	deleteIPErrs      []error // consumed in order; nil error or running off the end -> success
+	deleteIPErrs      []error // consumed in order; running off the end falls back to defaultErr (nil if unset)
+	defaultErr        error
 }
 
 func (f *destroyFakeRetryClient) DeletePrimaryIP(_ context.Context, _ int) error {
@@ -358,7 +363,7 @@ func (f *destroyFakeRetryClient) DeletePrimaryIP(_ context.Context, _ int) error
 	if idx < len(f.deleteIPErrs) {
 		return f.deleteIPErrs[idx]
 	}
-	return nil
+	return f.defaultErr
 }
 
 // destroyRefWithBothPrimaryIPsAutoDelete builds a state.ProviderRef
@@ -476,15 +481,16 @@ func TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned(t *testing.T) {
 // resolves before the bounded timeout, destroy surfaces the IP as
 // pending (Partial=true) — same shape as any other delete failure.
 func TestDestroy_RetryExhaustsBudgetThenSurfacesAsPartial(t *testing.T) {
-	t.Setenv("RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT", "10ms")
+	t.Setenv("RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT", "1ms")
 	stub := &hcloudStubError{code: 409, msg: "primary IP must be unassigned (must_be_unassigned, ...)"}
-	client := &destroyFakeRetryClient{
-		deleteIPErrs: []error{stub, stub, stub, stub, stub, stub, stub, stub, stub, stub},
-	}
+	client := &destroyFakeRetryClient{defaultErr: stub}
 	ref := destroyRefWithBothPrimaryIPs()
+	// Inject a real 2ms sleep so the retry loop's deadline check
+	// (1ms timeout) reliably crosses the deadline after at most a few
+	// iterations. Test still completes well under 100ms.
 	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"},
 		WithClient(client),
-		WithSleep(func(time.Duration) {}),
+		WithSleep(func(time.Duration) { time.Sleep(2 * time.Millisecond) }),
 	)
 	result, err := p.Destroy(context.Background(), ref)
 	if err != nil {

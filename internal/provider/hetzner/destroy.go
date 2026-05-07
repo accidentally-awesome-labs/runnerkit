@@ -3,7 +3,9 @@ package hetzner
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
@@ -15,6 +17,27 @@ const (
 	artifactProviderFirewall  = "provider_firewall"
 	artifactProviderPrimaryIP = "provider_primary_ip"
 )
+
+// defaultDestroyPrimaryIPTimeout bounds the Bug 30 retry loop for legacy
+// state (AutoDelete=false) where DeletePrimaryIP can transiently return
+// 409 must_be_unassigned while the auto_delete cascade is in flight.
+const defaultDestroyPrimaryIPTimeout = 30 * time.Second
+
+// destroyPrimaryIPTimeoutFromEnv resolves
+// RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT into a Duration. Empty /
+// unparseable / non-positive values fall back to
+// defaultDestroyPrimaryIPTimeout. Bug 30 (Plan 06-12, 2026-05-06).
+func destroyPrimaryIPTimeoutFromEnv() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT"))
+	if raw == "" {
+		return defaultDestroyPrimaryIPTimeout
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return defaultDestroyPrimaryIPTimeout
+	}
+	return parsed
+}
 
 func (p *Provider) Destroy(ctx context.Context, ref state.ProviderRef) (provider.DestroyResult, error) {
 	client, _, err := p.client()
@@ -92,10 +115,71 @@ func (p *Provider) Destroy(ctx context.Context, ref state.ProviderRef) (provider
 	}
 	apply(artifactProviderServer, ids["server"], client.DeleteServer, "provider_server_pending")
 	apply(artifactProviderSSHKey, ids["ssh_key"], client.DeleteSSHKey, "provider_ssh_key_pending")
-	apply(artifactProviderPrimaryIP, ids["primary_ipv4"], client.DeletePrimaryIP, "provider_primary_ip_pending")
-	apply(artifactProviderPrimaryIP, ids["primary_ipv6"], client.DeletePrimaryIP, "provider_primary_ip_pending")
+	// Bug 30 (Plan 06-12, 2026-05-06): cascade-aware primary-IP delete.
+	// When state records AutoDelete=true (the post-Plan-06-12 default
+	// for IPs auto-allocated via ServerCreatePublicNet EnableIPv4/IPv6),
+	// SKIP the explicit call entirely — the cascade triggered by
+	// server.Delete handles the IP. For legacy state (AutoDelete unset
+	// or false) we keep calling DeletePrimaryIP but wrap it in a
+	// bounded retry loop that treats 409 must_be_unassigned as a
+	// transient cascade-in-flight signal until the IP returns 404
+	// (cascade complete) or the timeout expires.
+	applyPrimaryIPDelete := makePrimaryIPDeleter(ctx, &result, client.DeletePrimaryIP, p.Sleep)
+	applyPrimaryIPDelete(ids["primary_ipv4"], ref.Cloud.PrimaryIPv4AutoDelete)
+	applyPrimaryIPDelete(ids["primary_ipv6"], ref.Cloud.PrimaryIPv6AutoDelete)
 	apply(artifactProviderFirewall, ids["firewall"], client.DeleteFirewall, "provider_firewall_pending")
 	return result, nil
+}
+
+// makePrimaryIPDeleter returns a closure that handles the Bug 30 dual
+// path: cascade-skip (AutoDelete=true) and bounded 409 retry
+// (legacy/AutoDelete=false). The closure mutates the passed-in result
+// in place to keep the call sites at the bottom of Destroy short.
+func makePrimaryIPDeleter(ctx context.Context, result *provider.DestroyResult, delete func(context.Context, int) error, sleep func(time.Duration)) func(idStr string, autoDelete bool) {
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	return func(idStr string, autoDelete bool) {
+		if strings.TrimSpace(idStr) == "" {
+			result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "skipped", Message: "not tracked"})
+			return
+		}
+		if autoDelete {
+			// Plan 06-12 Bug 30: AutoDelete=true means the
+			// auto_delete cascade triggered by server.Delete handles
+			// this IP. Skip the explicit DeletePrimaryIP call so the
+			// destroy report does not race the cascade-in-flight
+			// window (Hetzner returns 409 must_be_unassigned during
+			// that window — see isCascadeInFlightError).
+			result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "skipped", Message: "auto_delete cascade"})
+			return
+		}
+		parsed, parseErr := parseID(idStr)
+		if parseErr != nil {
+			result.Partial = true
+			result.Pending = append(result.Pending, "provider_primary_ip_pending")
+			result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "pending", Message: parseErr.Error()})
+			return
+		}
+		// Legacy fallback (AutoDelete unset/false): retry on 409
+		// must_be_unassigned until 404 (cascade complete via
+		// isAlreadyAbsentError) or the bounded timeout expires.
+		deadline := time.Now().Add(destroyPrimaryIPTimeoutFromEnv())
+		for {
+			err := delete(ctx, parsed)
+			if err == nil || isAlreadyAbsentError(err) {
+				result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "done"})
+				return
+			}
+			if !isCascadeInFlightError(err) || time.Now().After(deadline) {
+				result.Partial = true
+				result.Pending = append(result.Pending, "provider_primary_ip_pending")
+				result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifactProviderPrimaryIP, Status: "pending", Message: err.Error()})
+				return
+			}
+			sleep(1 * time.Second)
+		}
+	}
 }
 
 // parsedNonEmpty returns (parsedInt, true) when the id string is
@@ -205,4 +289,32 @@ func isAlreadyAbsentError(err error) bool {
 	}
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "404") || strings.Contains(text, "not found") || strings.Contains(text, "not_found")
+}
+
+// isCascadeInFlightError returns true when err signals the Hetzner
+// auto_delete cascade is still in flight on the server side: HTTP 409
+// with `must_be_unassigned` in the response message. Bug 30 (Plan
+// 06-12, 2026-05-06): destroy retries DeletePrimaryIP on this signal
+// until 404 (cascade complete -> isAlreadyAbsentError) or the bounded
+// RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT expires.
+//
+// Test fakes that don't implement StatusCode() but include the
+// canonical substring still match — the substring is a strong enough
+// signal (the wire-level error always includes it) and keeps unit
+// tests free of hcloud-go internals.
+func isCascadeInFlightError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "must_be_unassigned") {
+		return false
+	}
+	var target interface{ StatusCode() int }
+	if errors.As(err, &target) {
+		return target.StatusCode() == 409
+	}
+	// Substring fallback: real hcloud-go errors always implement
+	// StatusCode(), so this branch is reserved for test fakes that
+	// surface the canonical message without status wrapping.
+	return true
 }

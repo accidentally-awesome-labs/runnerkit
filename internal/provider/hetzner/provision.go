@@ -27,6 +27,10 @@ type Provider struct {
 	Env       map[string]string
 	Client    Client
 	NewClient func(token string) Client
+	// Sleep is an optional injection point for time.Sleep. Used by the
+	// Bug 30 (Plan 06-12) destroy retry loop so tests can fast-forward
+	// without burning wall-clock time. Defaults to time.Sleep when nil.
+	Sleep func(time.Duration)
 }
 
 type Option func(*Provider)
@@ -37,6 +41,13 @@ func WithClient(client Client) Option {
 
 func WithClientFactory(factory func(token string) Client) Option {
 	return func(p *Provider) { p.NewClient = factory }
+}
+
+// WithSleep injects a custom sleep implementation for tests. Bug 30
+// (Plan 06-12, 2026-05-06): the destroy retry loop on 409
+// must_be_unassigned uses this hook to fast-forward in unit tests.
+func WithSleep(sleep func(time.Duration)) Option {
+	return func(p *Provider) { p.Sleep = sleep }
 }
 
 func NewProvider(env map[string]string, opts ...Option) *Provider {
@@ -315,24 +326,35 @@ func machineFromServer(input provider.ProvisionInput, plan provider.ProvisionPla
 	}
 	resourceIDs := cloneIDs(ids)
 	cloud := state.CloudInventory{
-		Provider:          provider.HetznerProvider,
-		ServerID:          resourceIDs["server"],
-		ServerName:        plan.ResourceNames["server"],
-		ServerStatus:      serverStatus(server),
-		Region:            plan.Region,
-		Datacenter:        datacenterName(server),
-		ServerType:        plan.ServerType,
-		Image:             plan.Image,
-		PublicIPv4:        publicIPv4,
-		PublicIPv6:        publicIPv6,
-		PrimaryIPv4ID:     resourceIDs["primary_ipv4"],
-		PrimaryIPv6ID:     resourceIDs["primary_ipv6"],
-		SSHKeyID:          resourceIDs["ssh_key"],
-		SSHKeyName:        plan.ResourceNames["ssh_key"],
-		SSHKeyFingerprint: "",
-		FirewallID:        resourceIDs["firewall"],
-		FirewallName:      plan.ResourceNames["firewall"],
-		Tags:              cloneTags(plan.Tags),
+		Provider:      provider.HetznerProvider,
+		ServerID:      resourceIDs["server"],
+		ServerName:    plan.ResourceNames["server"],
+		ServerStatus:  serverStatus(server),
+		Region:        plan.Region,
+		Datacenter:    datacenterName(server),
+		ServerType:    plan.ServerType,
+		Image:         plan.Image,
+		PublicIPv4:    publicIPv4,
+		PublicIPv6:    publicIPv6,
+		PrimaryIPv4ID: resourceIDs["primary_ipv4"],
+		PrimaryIPv6ID: resourceIDs["primary_ipv6"],
+		// Bug 30 (Plan 06-12, 2026-05-06): IPs auto-allocated via
+		// ServerCreatePublicNet EnableIPv4/EnableIPv6 carry
+		// AutoDelete=true on the wire. Record the flag in state so
+		// destroy.go can skip the explicit DeletePrimaryIP call and let
+		// the auto_delete cascade (triggered by server.Delete) handle
+		// the IPs — avoiding the 409 must_be_unassigned race during the
+		// cascade window. Plan 06-11 Bug 26 locked in EnableIPv4=true,
+		// EnableIPv6=true, IPv4=nil, IPv6=nil; this flag follows from
+		// that contract.
+		PrimaryIPv4AutoDelete: resourceIDs["primary_ipv4"] != "",
+		PrimaryIPv6AutoDelete: resourceIDs["primary_ipv6"] != "",
+		SSHKeyID:              resourceIDs["ssh_key"],
+		SSHKeyName:            plan.ResourceNames["ssh_key"],
+		SSHKeyFingerprint:     "",
+		FirewallID:            resourceIDs["firewall"],
+		FirewallName:          plan.ResourceNames["firewall"],
+		Tags:                  cloneTags(plan.Tags),
 		CostProfile: state.CostProfileRef{
 			Provider:             plan.Provider,
 			Region:               plan.Region,

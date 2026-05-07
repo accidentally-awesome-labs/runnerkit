@@ -88,26 +88,39 @@ type ProviderRef struct {
 }
 
 type CloudInventory struct {
-	Provider          string            `json:"provider"`
-	ServerID          string            `json:"server_id,omitempty"`
-	ServerName        string            `json:"server_name,omitempty"`
-	ServerStatus      string            `json:"server_status,omitempty"`
-	Region            string            `json:"region,omitempty"`
-	Datacenter        string            `json:"datacenter,omitempty"`
-	ServerType        string            `json:"server_type,omitempty"`
-	Image             string            `json:"image,omitempty"`
-	PublicIPv4        string            `json:"public_ipv4,omitempty"`
-	PublicIPv6        string            `json:"public_ipv6,omitempty"`
-	PrimaryIPv4ID     string            `json:"primary_ipv4_id,omitempty"`
-	PrimaryIPv6ID     string            `json:"primary_ipv6_id,omitempty"`
-	SSHKeyID          string            `json:"ssh_key_id,omitempty"`
-	SSHKeyName        string            `json:"ssh_key_name,omitempty"`
-	SSHKeyFingerprint string            `json:"ssh_key_fingerprint,omitempty"`
-	FirewallID        string            `json:"firewall_id,omitempty"`
-	FirewallName      string            `json:"firewall_name,omitempty"`
-	Tags              map[string]string `json:"tags,omitempty"`
-	CostProfile       CostProfileRef    `json:"cost_profile,omitempty"`
-	CloudInitVersion  string            `json:"cloud_init_version,omitempty"`
+	Provider      string `json:"provider"`
+	ServerID      string `json:"server_id,omitempty"`
+	ServerName    string `json:"server_name,omitempty"`
+	ServerStatus  string `json:"server_status,omitempty"`
+	Region        string `json:"region,omitempty"`
+	Datacenter    string `json:"datacenter,omitempty"`
+	ServerType    string `json:"server_type,omitempty"`
+	Image         string `json:"image,omitempty"`
+	PublicIPv4    string `json:"public_ipv4,omitempty"`
+	PublicIPv6    string `json:"public_ipv6,omitempty"`
+	PrimaryIPv4ID string `json:"primary_ipv4_id,omitempty"`
+	PrimaryIPv6ID string `json:"primary_ipv6_id,omitempty"`
+	// Bug 30 (Plan 06-12, 2026-05-06): when Hetzner auto-allocates a
+	// primary IP via ServerCreatePublicNet EnableIPv4/EnableIPv6=true
+	// (Plan 06-11 Bug 26), the resulting PrimaryIP carries
+	// AutoDelete=true on the wire. Recording that flag here lets
+	// destroy.go skip the explicit DeletePrimaryIP calls and rely on
+	// the cascade triggered by server.Delete instead — avoids the 409
+	// `must_be_unassigned` race that surfaces while the cascade is in
+	// flight. Additive optional fields with omitempty do NOT bump
+	// SchemaVersion; pre-Plan-06-12 state files load with both flags
+	// defaulting to false, in which case destroy.go's legacy 409-retry
+	// path handles cleanup correctly.
+	PrimaryIPv4AutoDelete bool              `json:"primary_ipv4_auto_delete,omitempty"`
+	PrimaryIPv6AutoDelete bool              `json:"primary_ipv6_auto_delete,omitempty"`
+	SSHKeyID              string            `json:"ssh_key_id,omitempty"`
+	SSHKeyName            string            `json:"ssh_key_name,omitempty"`
+	SSHKeyFingerprint     string            `json:"ssh_key_fingerprint,omitempty"`
+	FirewallID            string            `json:"firewall_id,omitempty"`
+	FirewallName          string            `json:"firewall_name,omitempty"`
+	Tags                  map[string]string `json:"tags,omitempty"`
+	CostProfile           CostProfileRef    `json:"cost_profile,omitempty"`
+	CloudInitVersion      string            `json:"cloud_init_version,omitempty"`
 }
 
 type CostProfileRef struct {
