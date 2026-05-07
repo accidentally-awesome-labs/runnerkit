@@ -135,14 +135,14 @@ func SelectHostKeyLineForTest(output string) string { return selectHostKeyLine(o
 // Returns empty string when output has no eligible line.
 func selectHostKeyLine(output string) string {
 	preference := map[string]int{
-		"ssh-ed25519":           0,
-		"ecdsa-sha2-nistp521":   1,
-		"ecdsa-sha2-nistp384":   2,
-		"ecdsa-sha2-nistp256":   3,
-		"ssh-rsa":               4,
-		"rsa-sha2-512":          5,
-		"rsa-sha2-256":          6,
-		"ssh-dss":               7,
+		"ssh-ed25519":         0,
+		"ecdsa-sha2-nistp521": 1,
+		"ecdsa-sha2-nistp384": 2,
+		"ecdsa-sha2-nistp256": 3,
+		"ssh-rsa":             4,
+		"rsa-sha2-512":        5,
+		"rsa-sha2-256":        6,
+		"ssh-dss":             7,
 	}
 	bestRank := -1
 	bestLine := ""

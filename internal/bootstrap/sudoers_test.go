@@ -15,6 +15,13 @@ import (
 // renders with (a) the canonical managed-by header, (b) the SSH user
 // substituted, (c) the exact bootstrap command set per gap doc lines
 // 194-202, and (d) NO blanket NOPASSWD ALL anywhere in the output.
+//
+// Bug 27 (Plan 06-11, 2026-05-06): the svc.sh path is now a sudoers
+// `*` glob pointing at the actual runtime install directory
+// (/opt/actions-runner/runnerkit-*/svc.sh), NOT the legacy literal
+// /opt/runnerkit-runner/svc.sh that never matched the real path.
+// See TestRenderSudoersEntryUsesSvcShGlob below for the regression
+// test that locks in the new path.
 func TestRenderSudoersEntry(t *testing.T) {
 	got := RenderSudoersEntry("alice")
 	if !strings.Contains(got, "# /etc/sudoers.d/runnerkit-installer (managed by runnerkit byo-prepare)") {
@@ -33,7 +40,7 @@ func TestRenderSudoersEntry(t *testing.T) {
 		"/usr/bin/tar",
 		"/bin/systemctl",
 		"/usr/bin/systemctl",
-		"/opt/runnerkit-runner/svc.sh",
+		"/opt/actions-runner/runnerkit-*/svc.sh",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("scoped sudoers missing %q:\n%s", want, got)
@@ -46,6 +53,39 @@ func TestRenderSudoersEntry(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "\n") {
 		t.Fatalf("sudoers entry must end with newline (visudo requires trailing newline):\n%q", got)
+	}
+}
+
+// Bug 27 (Plan 06-11, 2026-05-06): the scoped sudoers entry rendered
+// by `runnerkit byo-prepare` previously granted NOPASSWD for
+// `/opt/runnerkit-runner/svc.sh`, but the actual svc.sh path at runtime
+// is `/opt/actions-runner/runnerkit-<owner>-<repo>-local/svc.sh` (the
+// directory created by install.go from the runner name). The literal
+// path never matched, so the `verify_service` step in bootstrap.Apply
+// (`cd $InstallPath && sudo ./svc.sh status`) needed Path B password
+// threading at runtime even on a Path C-prepared host — defeating the
+// "one-time prepare" promise.
+//
+// Fix: the entry uses a sudoers `*` wildcard glob that matches every
+// runnerkit-prefixed install directory. Sudoers `*` does NOT match
+// `/`, so the glob is bounded — `runnerkit-*/svc.sh` cannot escape
+// into other directories. The entry visudo-validates as a real
+// wildcard expansion (covered by TestVisudoValidates_GoodSudoersPasses
+// which now sees the new path).
+//
+// This test asserts:
+//   - the new glob path is present in the rendered output,
+//   - the legacy literal path is GONE (regression guard against any
+//     future revert).
+func TestRenderSudoersEntryUsesSvcShGlob(t *testing.T) {
+	got := RenderSudoersEntry("alice")
+	wantGlob := "/opt/actions-runner/runnerkit-*/svc.sh"
+	if !strings.Contains(got, wantGlob) {
+		t.Fatalf("Bug 27: rendered sudoers must contain glob %q so Path C grants NOPASSWD on the real svc.sh path; got:\n%s", wantGlob, got)
+	}
+	legacy := "/opt/runnerkit-runner/svc.sh"
+	if strings.Contains(got, legacy) {
+		t.Fatalf("Bug 27 regression: legacy literal path %q must NOT appear in rendered sudoers (it never matches the runtime install dir); got:\n%s", legacy, got)
 	}
 }
 

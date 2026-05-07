@@ -24,7 +24,22 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 //   - install (install -d -o serviceUser for download_runner)
 //   - tar (tar xzf for download_runner)
 //   - systemctl (service control)
-//   - /opt/runnerkit-runner/svc.sh (the runner service helper)
+//   - /opt/actions-runner/runnerkit-*/svc.sh (the runner service helper at its
+//     real runtime path — see Bug 27 below)
+//
+// Bug 27 (Plan 06-11, 2026-05-06): the svc.sh entry was previously the
+// literal `/opt/runnerkit-runner/svc.sh`, but RunnerKit installs the
+// runner under `/opt/actions-runner/runnerkit-<owner>-<repo>-local/`
+// (see install.go RenderInstallScript). The literal path never matched
+// the actual runtime path, so `verify_service` (`cd $InstallPath &&
+// sudo ./svc.sh status`) required Path B password threading at runtime
+// even on Path C-prepared hosts — defeating the "one-time prepare"
+// promise.
+//
+// The fix uses a sudoers `*` wildcard. Sudoers `*` does NOT match `/`,
+// so `runnerkit-*/svc.sh` is bounded to a single directory level under
+// `/opt/actions-runner/` and cannot escape into other directories. The
+// safety bounds match the original literal entry.
 //
 // Critical: this is NOT a blanket NOPASSWD ALL. The user retains
 // password-protected sudo for everything else.
@@ -39,7 +54,7 @@ func RenderSudoersEntry(user string) string {
   /usr/bin/install, \
   /bin/tar, /usr/bin/tar, \
   /bin/systemctl, /usr/bin/systemctl, \
-  /opt/runnerkit-runner/svc.sh
+  /opt/actions-runner/runnerkit-*/svc.sh
 `, user)
 }
 
