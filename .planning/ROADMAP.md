@@ -134,7 +134,7 @@ Plans:
 2. RunnerKit can migrate versioned state safely across supported releases or clearly block with recovery guidance.
 3. Developer can read cleanup and troubleshooting guidance for common setup, runner, GitHub, SSH, provider, and cleanup failures.
 4. A fresh user can complete at least one supported setup path in about 10 minutes, run a GitHub Actions job on RunnerKit labels, and clean up confidently.
-   **Plans**: 8 plans (4 original + 4 gap closure for BYO bootstrap)
+   **Plans**: 12 plans (4 original + 8 gap closure)
 
 Plans:
 
@@ -149,6 +149,7 @@ Plans:
 - [x] 06-09-byo-bootstrap-and-online-fixes-PLAN.md — gap closure (Tasks G..T from 06-GAP-byo-sudo-handling.md): 15 BYO bootstrap blockers across Plan 06-07 attempts 2-15 against `salar@mckee-small-desktop` (Ubuntu 24.04). Closes Bugs 4-18: ui.Prompter wiring, sudo mktemp under fs.protected_regular=2, word-boundary sudo rewrite, preflight ExitError + curl rate-limit, configure_runner Sudo flag, cred-prime wrap, su login shell cwd, ServiceNotActiveError stderr, idempotent .runner + systemd cleanup, verify_service cd, case-insensitive label match, isRunnerKitManagedRunner self-collision skip, smoke harness sudo drop. BYO smoke completes end-to-end: BYO_DURATION_SECONDS=125, runner id 24 online.
 - [x] 06-10-status-down-cloud-fixes-PLAN.md — gap closure: 5 post-up + cloud bugs surfaced during Plan 06-07 attempt-15. Bug 19 (status systemd unit name lookup), Bug 20 (status+doctor case-sensitive label drift), Bug 21 (down sudo without TTY), Bug 22 (cloud SSH host-key probe lacks retry), Bug 23 (cloud destroy ordering — orphans firewall + primary IPs). Required to unblock Plan 06-07 smoke-green.
 - [x] 06-11-status-down-sudoers-cloud-destroy-fixes-PLAN.md — gap closure: 4 surgical fixes surfaced during Plan 06-07 attempt-16 (BYO + Hetzner). Bug 24 (status SSH host-key fingerprint mismatch on multi-key sshd hosts — selectHostKeyLine deterministic algorithm-preference selector), Bug 25 (down sudo-prompt gate dropped sshReachable so probe runs even on Bug 24 false-positive), Bug 26 (cloud destroy relies on Hetzner auto_delete=true cascade for primary IPs, removes Plan 06-10 Bug 23 unassign step that hit `Server must be offline`), Bug 27 (scoped sudoers svc.sh path uses sudoers `*` glob `/opt/actions-runner/runnerkit-*/svc.sh` matching the actual runtime install dir).
+- [ ] 06-12-down-sudo-probe-cloud-init-and-destroy-cascade-fixes-PLAN.md — gap closure: 3 surgical fixes surfaced during Plan 06-07 attempt-17 BYO+cloud smoke (smoke-output.log, 2026-05-06). Bug 28 (down `probeSudoNeedsPassword` early-returns on `err = exit status N` from real SSH executor — pre-fix probe never inspects ExitCode/Stderr markers; Plan 06-11 Bug 25 unit test masked the regression with a fake executor that returned err=nil for non-zero rc). Bug 29 (cloud-up `cloud.cloudinit.wait` lacks explicit Timeout, aborts at 42s vs Hetzner cloud-init typical 60-120s; new `RUNNERKIT_CLOUD_INIT_TIMEOUT` env override aligned with Plan 06-10 Bug 22 host-key probe budget — default 300s). Bug 30 (cloud destroy `DeletePrimaryIP` races vs auto_delete cascade; Hetzner returns 409 `must_be_unassigned` (not 404) while cascade in flight — `isAlreadyAbsentError` only matches 404 so destroy reports `provider_primary_ip: pending` despite empty post-test project. Fix: skip explicit DeletePrimaryIP when `Cloud.PrimaryIPv4AutoDelete=true`/`PrimaryIPv6AutoDelete=true` (recorded at provision time per Plan 06-11 Bug 26 EnableIPv4/EnableIPv6 default); legacy state retries 409 via new `isCascadeInFlightError` predicate bounded by `RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT`).
 
 ## Progress
 
@@ -162,4 +163,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Operations, Diagnostics, and BYO Cleanup    | 4/4            | Complete    | 2026-04-29 |
 | 4. Recommended Cloud Path and Billable Cleanup | 4/4            | Complete    | 2026-05-01 |
 | 5. Scoped Ephemeral Mode and Safety Profiles   | 3/3            | Complete    | 2026-05-02 |
-| 6. Release, Upgrade, Docs, and v1 Validation   | 10/11          | Plans 06-09, 06-10, 06-11 complete (Bugs 4-27); Plan 06-07 maintainer smoke-green pending | -          |
+| 6. Release, Upgrade, Docs, and v1 Validation   | 10/12          | Plans 06-09, 06-10, 06-11 complete (Bugs 4-27); Plan 06-12 filed (Bugs 28-30) for Plan 06-07 attempt-18 unblock; Plan 06-07 maintainer smoke-green pending | -          |
