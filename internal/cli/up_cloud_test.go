@@ -595,3 +595,91 @@ func TestBuildCloudProvisionInputReadsPublicKeyFromSSHKeyFlag(t *testing.T) {
 		t.Fatalf("PublicKey = %q, want %q", input.PublicKey, publicKey)
 	}
 }
+
+// Bug 29 (Plan 06-12, 2026-05-06): the cloud-init wait command at
+// up.go:908 had no explicit Timeout, so it inherited whatever default
+// the executor applied. Plan 06-07 attempt-17 cloud smoke aborted at
+// 42s with `cloud_readiness_failed` even though Hetzner cpx22 +
+// ubuntu-24.04 cloud-init typically needs 60-120s.
+//
+// The fix gives the command an explicit Timeout aligned with
+// hetzner.HostKeyProbeOptions (default 60×5s = 300s) and exposes
+// RUNNERKIT_CLOUD_INIT_TIMEOUT as an override for slower regions /
+// images.
+//
+// This test asserts (via the runs slice on the fake executor) that
+// the cloud.cloudinit.wait command carries a non-zero Timeout >= 120s
+// by default, that RUNNERKIT_CLOUD_INIT_TIMEOUT="45s" overrides it
+// to 45s, and that an unparseable value falls back to the default.
+func TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget(t *testing.T) {
+	cases := []struct {
+		name        string
+		envValue    string
+		setEnv      bool
+		wantTimeout time.Duration
+	}{
+		{name: "default_budget", setEnv: false, wantTimeout: 5 * time.Minute},
+		{name: "override_45s", setEnv: true, envValue: "45s", wantTimeout: 45 * time.Second},
+		{name: "invalid_falls_back", setEnv: true, envValue: "not-a-duration", wantTimeout: 5 * time.Minute},
+		{name: "empty_falls_back", setEnv: true, envValue: "", wantTimeout: 5 * time.Minute},
+		{name: "zero_falls_back", setEnv: true, envValue: "0s", wantTimeout: 5 * time.Minute},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setEnv {
+				t.Setenv("RUNNERKIT_CLOUD_INIT_TIMEOUT", tc.envValue)
+			} else {
+				t.Setenv("RUNNERKIT_CLOUD_INIT_TIMEOUT", "")
+			}
+			stateDir := t.TempDir()
+			service := newFakePermittedGitHubService()
+			remoteExec := newFakeRemoteExecutor()
+			machine := cloudReadyMachineForTest()
+			cloud := &provider.FakeProvider{
+				ProvisionOut: provider.ProvisionResult{Machine: machine, CreatedResourceIDs: machine.ResourceIDs, CheckpointRequired: true},
+				WaitReadyOut: machine,
+			}
+			var out, errOut bytes.Buffer
+			cmd := NewRootCommand(Dependencies{
+				Version:        "test-version",
+				Out:            &out,
+				Err:            &errOut,
+				GitHub:         service,
+				RemoteExecutor: remoteExec,
+				Providers:      provider.NewRegistry(cloud),
+				StateBaseDir:   stateDir,
+				Sleep:          noSleep,
+			})
+			cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("up cloud returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
+			}
+			var found *remote.Command
+			for i := range remoteExec.runs {
+				if remoteExec.runs[i].ID == "cloud.cloudinit.wait" {
+					cmd := remoteExec.runs[i]
+					found = &cmd
+					break
+				}
+			}
+			if found == nil {
+				ids := []string{}
+				for _, c := range remoteExec.runs {
+					ids = append(ids, c.ID)
+				}
+				t.Fatalf("Bug 29: expected cloud.cloudinit.wait command in run list; got IDs=%v", ids)
+			}
+			if found.Timeout != tc.wantTimeout {
+				t.Fatalf("Bug 29: cloud.cloudinit.wait Timeout = %v, want %v (env=%q set=%v)", found.Timeout, tc.wantTimeout, tc.envValue, tc.setEnv)
+			}
+			if tc.wantTimeout < 120*time.Second {
+				return
+			}
+			// Default budget guard: must be >= 120s (Hetzner cpx22 typical
+			// cloud-init wall-clock with retry headroom).
+			if found.Timeout < 120*time.Second {
+				t.Fatalf("Bug 29: default cloud-init Timeout must be >= 120s; got %v", found.Timeout)
+			}
+		})
+	}
+}
