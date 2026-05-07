@@ -404,6 +404,84 @@ func TestDownEphemeralPreservesLogsBeforeRemovingFiles(t *testing.T) {
 	_ = out
 }
 
+// Bug 28 (Plan 06-12, 2026-05-06): the live attempt-17 trace showed
+// `[BUG25-TRACE] probe-direct: rc=1 err=exit status 1` followed by
+// `probe: needs=false probeErr=<nil>` — the real SSH executor returns
+// `err = *exec.ExitError` for any non-zero remote rc, and
+// `probeSudoNeedsPassword`'s early `if err != nil { return false, nil }`
+// guard at down.go:440-443 swallowed that err before the marker check
+// ran. The pre-Plan-06-11 fake executor used by
+// TestDown_SudoProbeRunsEvenWhenSSHReachableFalse only sets Results,
+// not Errors[id], so the regression slipped past CI.
+//
+// This test exercises the realistic real-SSH-executor case:
+//
+//	executor.Run("down.sudo.probe", ...) -> (
+//	    remote.Result{ExitCode: 1, Stderr: "sudo: a password is required\n"},
+//	    errors.New("exit status 1"),
+//	)
+//
+// On the pre-fix code, probe early-returns `(false, nil)` and the
+// password prompt never fires. On the post-fix code, probe inspects
+// `result.ExitCode + result.Stderr` regardless of err, returns
+// `(true, nil)`, and the prompt + sudo-password threading both run.
+func TestDown_ProbeUsesExitCodeWhenExecutorReturnsExitErrorWrapper(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := saveHealthyState(t, stateDir)
+	github := &testsupport.GitHubService{
+		RemovalToken: gh.RunnerToken{Token: "down-removal-token", ExpiresAt: time.Now().Add(time.Hour)},
+		Runners:      []gh.Runner{testsupport.HealthyRunner()},
+	}
+	exec := &testsupport.RemoteExecutor{
+		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"},
+		Results: map[string]remote.Result{
+			ops.CommandStatusSSHReachable: {ExitCode: 0},
+			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n", ExitCode: 0},
+			"down.sudo.probe":             {ExitCode: 1, Stderr: "sudo: a password is required\n"},
+			"down.runner.remove":          {ExitCode: 0},
+			"down.service.uninstall":      {ExitCode: 0},
+			"down.files.remove":           {ExitCode: 0},
+		},
+		// Bug 28: Errors[id] populated alongside Results to mimic the
+		// real SSH executor's exec.ExitError wrapping. The executor
+		// returns BOTH the result AND a non-nil err for any non-zero
+		// remote rc — see internal/remote/system.go:81-89.
+		Errors: map[string]error{
+			"down.sudo.probe": errors.New("exit status 1"),
+		},
+	}
+	prompts := &passwordRecorder{password: "hunter2"}
+	out, errOut, err := executeDownForTest(t, stateDir, github, exec, prompts, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("down with exit-status-N err wrapper returned error: %v\nstderr=%s\nstdout=%s", err, errOut, out)
+	}
+	if prompts.calls != 1 {
+		t.Fatalf("Bug 28: password prompter must fire once when probe returns err=exit-status-N + stderr marker; got calls=%d", prompts.calls)
+	}
+	threadedAny := false
+	for _, command := range exec.Commands {
+		if command.ID != "down.service.uninstall" && command.ID != "down.files.remove" {
+			continue
+		}
+		threadedAny = true
+		if !strings.Contains(command.Script, `printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | sudo -S -v`) {
+			t.Fatalf("Bug 28: command %q must thread sudo password via printf|sudo -S -v; got script:\n%s", command.ID, command.Script)
+		}
+		if command.Env == nil || command.Env["RUNNERKIT_SUDO_PASSWORD"] != "hunter2" {
+			t.Fatalf("Bug 28: command %q Env must carry RUNNERKIT_SUDO_PASSWORD=hunter2; got %#v", command.ID, command.Env)
+		}
+		if !containsString(command.RedactArgs, "hunter2") {
+			t.Fatalf("Bug 28: command %q RedactArgs must contain the sudo password literal; got %#v", command.ID, command.RedactArgs)
+		}
+	}
+	if !threadedAny {
+		t.Fatalf("Bug 28: expected at least one of down.service.uninstall / down.files.remove to be threaded; got IDs=%v", exec.CommandIDs())
+	}
+	if strings.Contains(out, "hunter2") || strings.Contains(errOut, "hunter2") {
+		t.Fatalf("Bug 28: sudo password leaked in output: stdout=%s stderr=%s", out, errOut)
+	}
+}
+
 func TestDownGitHubDeleteErrorKeepsPendingState(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)
