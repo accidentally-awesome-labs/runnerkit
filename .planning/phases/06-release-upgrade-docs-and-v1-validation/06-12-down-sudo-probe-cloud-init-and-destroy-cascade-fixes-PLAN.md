@@ -11,9 +11,13 @@ files_modified:
   - internal/cli/up_test.go
   - internal/provider/hetzner/destroy.go
   - internal/provider/hetzner/destroy_test.go
+  - internal/state/schema.go
+  - internal/state/state_test.go
+  - internal/provider/hetzner/provision.go
+  - internal/provider/hetzner/provision_test.go
 autonomous: true
 gap_closure: true
-requirements: [REL-05, DOC-04]
+requirements: [REL-05]
 must_haves:
   truths:
     - "Bug 28: `runnerkit down --repo X --yes` against a BYO host with password-protected sudo correctly prompts for the password (TTY) and threads it through `runner_files` cleanup. The sudo probe inspects `result.ExitCode` + `result.Stderr` to detect password-required, and does NOT short-circuit on a generic `err = exit status N` returned by the real SSH executor for any non-zero remote rc. Plan 06-07 attempt-17 trace (smoke-output.log lines 36-58) shows `[BUG25-TRACE] probe-direct: rc=1 err=exit status 1` followed by `probe: needs=false probeErr=<nil>` because the early `if err != nil { return false, nil }` guard at down.go:440-443 swallows the err before the marker check runs."
@@ -128,6 +132,18 @@ Three NEW bugs blocked the v1.0.0 `smoke-green` resume signal:
 | 28 | `probeSudoNeedsPassword` early-returns on `err = exit status N` from real SSH executor | `runnerkit down` BYO cleanup | Plan 06-07 attempt-17 BYO smoke 2026-05-06 | BLOCKER |
 | 29 | `cloud.cloudinit.wait` has no explicit Timeout; aborts at 42s before Hetzner cloud-init typical 60-120s | `runnerkit up --cloud hetzner` | Plan 06-07 attempt-17 cloud smoke 2026-05-06 | BLOCKER |
 | 30 | `DeletePrimaryIP` race vs auto_delete cascade returns 409 `must_be_unassigned` (not 404); `isAlreadyAbsentError` only matches 404 | `runnerkit destroy --cloud hetzner` | Plan 06-07 attempt-17 cloud smoke 2026-05-06 | BLOCKER |
+
+## Wave / Dependency Convention
+
+This plan uses `wave: 1` with `depends_on: [11]` — matching the
+phase-6 gap-closure convention (06-10 deps [09], 06-11 deps [10],
+06-12 deps [11]). The wave grid is interpreted as serial-within-phase
+because each gap closure plan is filed AFTER the previous one's smoke
+attempt fails; they cannot in practice run in parallel. We intentionally
+do NOT bump to `wave: 2` here because (a) sibling gap-closure plans use
+the same convention, and (b) the executor reads `depends_on` at runtime
+to enforce ordering. Future phases may revisit this if simultaneous
+gap-closure planning becomes useful.
 
 ## Approach
 
@@ -666,6 +682,28 @@ Plan 06-10 cross-context (preserve, do not regress):
     - Test 4 (NEW — TestIsCascadeInFlightError):
       Unit test: 409 + "must_be_unassigned" -> true; 404 + "not_found" -> false; 409 + other text -> false; nil -> false; non-status error containing "must_be_unassigned" -> true (substring fallback for test-fake errors).
     - Test 5 (EXISTING — TestDestroy_AutoDeleteCascadeNoUnassign): Plan 06-11's existing test uses `destroyRefWithBothPrimaryIPs()` which today has no AutoDelete flag. Update it OR add a new ref helper `destroyRefWithBothPrimaryIPsAutoDeleteFalse()` to keep the legacy-fallback path covered. Either way, the test must continue to assert NO unassign:* calls (Plan 06-11 contract preserved). The expected call sequence for legacy state is `[detach:firewall, delete:server, delete:ssh_key, delete:primary_ipv4, delete:primary_ipv6, delete:firewall]` — same as today, because the 404 cascade case is the happy path when AutoDelete is unset.
+    - Test 6 (NEW — TestDestroy_LegacyAutoDeleteFalseHits404FromCascade):
+      Locks in the *upgrade-mid-cycle* correctness path described under
+      "Schema-version contract" in part A of the action below. State
+      scenario: the server was provisioned by a *pre-Plan-06-12* binary,
+      so `Cloud.PrimaryIPv4AutoDelete` and `PrimaryIPv6AutoDelete` are
+      both `false` (their omitempty zero value after JSON decode).
+      However the *Hetzner-side* IP DOES have AutoDelete=true on the
+      wire (because Plan 06-11 Bug 26's `EnableIPv4: true, EnableIPv6:
+      true` PublicNet block defaults to AutoDelete=true). So when destroy
+      reaches the legacy-fallback path and calls `client.DeletePrimaryIP`,
+      the cascade has ALREADY removed the IP — the fake client returns
+      404 immediately on the FIRST call (NOT 409 must_be_unassigned, NOT
+      a retry sequence). Assertions: each of `delete:primary_ipv4` and
+      `delete:primary_ipv6` appears EXACTLY ONCE in `client.calls` (no
+      retry, because 404 hits `isAlreadyAbsentError` on the first
+      iteration); both ArtifactResult Status fields are `"done"` (NOT
+      `"pending"`); `result.Partial` is `false`; `result.Pending` is
+      empty. This is the realistic upgrade path until users either
+      re-provision or run a future state-rewrite tool to set
+      AutoDelete=true on existing entries; Plan 06-12 must handle it
+      without surfacing the legacy 409 race that doesn't actually exist
+      on the upgrade-cycle wire.
   </behavior>
   <action>
     Three coordinated changes:
@@ -679,10 +717,43 @@ Plan 06-10 cross-context (preserve, do not regress):
     PrimaryIPv6AutoDelete bool `json:"primary_ipv6_auto_delete,omitempty"`
     ```
 
-    No state migration required — missing field defaults to false, in
-    which case the legacy 409-retry path handles the cleanup correctly.
-    Use `omitempty` so existing fixtures (state.json snapshots in tests)
-    don't need updating just because the field exists.
+    **Schema-version contract — additive optional fields with `omitempty`
+    do NOT bump SchemaVersion.** The current `SchemaVersion = "2"`
+    constant (`internal/state/schema.go:10`, set by Plan 06-02) MUST
+    remain `"2"`. The contract is established by:
+
+    - `internal/state/migrations.go:22-26`: `forwardMigrations` is keyed
+      on schema-version transitions (`"1": migrateV1ToV2`). New entries
+      are added ONLY for transitions that require a transformation step.
+    - `internal/state/migrations.go:63-69`: `migrateV1ToV2` is documented
+      as an *identity migration* — *"no field semantics changed in v2,
+      but the framework + side-by-side backup is what REL-05 requires."*
+      This documents that the framework distinguishes "schema framework
+      version" (what the binary knows how to read/write) from
+      "field-level evolution" (what individual repository entries
+      contain). Optional fields with `omitempty` evolve the latter
+      without touching the former.
+
+    Concretely for Plan 06-12: existing `state.json` files written by
+    pre-Plan-06-12 binaries load WITHOUT migration. The two new fields
+    `PrimaryIPv4AutoDelete` / `PrimaryIPv6AutoDelete` are absent from
+    those files; Go's JSON decoder defaults them to `false`. The Bug 30
+    legacy-fallback path (409 retry) handles cleanup for that
+    upgrade-mid-cycle case correctly (see Test 6 below). NEW state
+    written by post-Plan-06-12 binaries records `true` because
+    `provision.go` writes the flag at create time. Both states load and
+    save without bumping SchemaVersion. This matches Go's standard
+    additive-protobuf-style evolution and is the established pattern.
+
+    Use `omitempty` so existing test fixtures (e.g.,
+    `internal/state/state_test.go:304-332` `TestCloudInventorySerializes...`
+    JSON-shape assertions) don't need updating to add the field — the
+    JSON encoder omits the false zero-value, so the existing assertions
+    at line 353 (`primary_ipv4_id` etc.) still match byte-for-byte. The
+    test file IS in `files_modified` because Plan 06-12 may extend it
+    with a sibling assertion that AutoDelete=true serializes as
+    `"primary_ipv4_auto_delete": true` and that AutoDelete=false omits
+    the key entirely (omitempty contract).
 
     **B. Record AutoDelete=true at provision time.**
 
@@ -841,6 +912,7 @@ Plan 06-10 cross-context (preserve, do not regress):
     - `TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned`
     - `TestDestroy_RetryExhaustsBudgetThenSurfacesAsPartial`
     - `TestIsCascadeInFlightError`
+    - `TestDestroy_LegacyAutoDeleteFalseHits404FromCascade`
 
     Plan 06-11 cross-check: `TestDestroy_AutoDeleteCascadeNoUnassign`'s
     expected call sequence WILL change because the new code skips the
@@ -855,7 +927,7 @@ Plan 06-10 cross-context (preserve, do not regress):
     its full call sequence.
   </action>
   <verify>
-    <automated>cd /Users/salar/Projects/spool && go test ./internal/provider/hetzner/ -run "TestDestroy_SkipsDeletePrimaryIPWhenAutoDeleteCascade|TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned|TestDestroy_RetryExhaustsBudgetThenSurfacesAsPartial|TestIsCascadeInFlightError|TestDestroy_AutoDeleteCascadeNoUnassign|TestDestroy_LegacyAutoDeleteFalseStillCallsDeletePrimaryIP|TestDestroyDeletesThenVerifyDescribesBeforeSuccess|TestDestroyTreatsAlreadyAbsentDetachAsSuccess" -count=1 -race && go test ./internal/provider/hetzner/ -count=1 -race</automated>
+    <automated>cd /Users/salar/Projects/spool && go test ./internal/provider/hetzner/ -run "TestDestroy_SkipsDeletePrimaryIPWhenAutoDeleteCascade|TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned|TestDestroy_RetryExhaustsBudgetThenSurfacesAsPartial|TestIsCascadeInFlightError|TestDestroy_LegacyAutoDeleteFalseHits404FromCascade|TestDestroy_AutoDeleteCascadeNoUnassign|TestDestroyDeletesThenVerifyDescribesBeforeSuccess|TestDestroyTreatsAlreadyAbsentDetachAsSuccess" -count=1 -race && go test ./internal/state/ -count=1 -race && go test ./internal/provider/hetzner/ -count=1 -race</automated>
   </verify>
   <acceptance_criteria>
     - `grep -n "isCascadeInFlightError" internal/provider/hetzner/destroy.go` returns at least 2 matches (definition + usage in applyPrimaryIPDelete).
@@ -895,7 +967,8 @@ After all three tasks land:
 2. **All five targeted regression tests green:**
    ```bash
    go test ./internal/cli/ -run "TestDown_ProbeUsesExitCodeWhenExecutorReturnsExitErrorWrapper|TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget" -count=1 -race
-   go test ./internal/provider/hetzner/ -run "TestDestroy_SkipsDeletePrimaryIPWhenAutoDeleteCascade|TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned|TestIsCascadeInFlightError" -count=1 -race
+   go test ./internal/provider/hetzner/ -run "TestDestroy_SkipsDeletePrimaryIPWhenAutoDeleteCascade|TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned|TestIsCascadeInFlightError|TestDestroy_LegacyAutoDeleteFalseHits404FromCascade" -count=1 -race
+   go test ./internal/state/ -count=1 -race
    ```
 
 3. **Plan 06-11 contract preserved (must NOT regress):**
@@ -914,6 +987,9 @@ After all three tasks land:
    grep -q "TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget" internal/cli/up_test.go
    grep -q "isCascadeInFlightError" internal/provider/hetzner/destroy.go
    grep -q "TestDestroy_SkipsDeletePrimaryIPWhenAutoDeleteCascade" internal/provider/hetzner/destroy_test.go
+   grep -q "TestDestroy_LegacyAutoDeleteFalseHits404FromCascade" internal/provider/hetzner/destroy_test.go
+   grep -q "PrimaryIPv4AutoDelete" internal/state/schema.go
+   grep -q "PrimaryIPv4AutoDelete" internal/provider/hetzner/provision.go
    ```
 
 5. **Live re-smoke (post-plan, maintainer-only — Plan 06-07 attempt-18):**
