@@ -234,6 +234,67 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+// Bug 25 (Plan 06-11, 2026-05-06): the Plan 06-10 Bug 21 fix gated the
+// sudo-password probe + prompt on `sshReachable && targetErr == nil &&
+// needsAnyRemoteSudo(selected)`. When collectStatus falsely reports
+// `sshReachable=false` (e.g. the Bug 24 host-key false-positive that
+// Plan 06-11 Task 1 fixes, or a genuinely flaky network at status
+// time), the sudo probe was skipped — and any later sudo-touching
+// cleanup invocation runs without `-S` threading and fails.
+//
+// The fix removes `sshReachable` from the gate so the sudo probe + the
+// password prompt run as long as the SSH target is parseable and the
+// selected cleanup actually needs remote sudo. The captured password
+// is held until the cleanup commands actually fire (which require
+// `sshReachable` and `targetErr == nil` separately for the systemd +
+// files blocks). On hosts with passwordless sudo the probe still
+// short-circuits and no prompt fires.
+//
+// Verifies:
+//   - the `down.sudo.probe` command is recorded even when collectStatus
+//     reports SSH unreachable (sshReachable=false branch),
+//   - the password prompter is invoked once when the probe stderr
+//     reports password-required,
+//   - we do NOT crash or short-circuit before the probe runs.
+func TestDown_SudoProbeRunsEvenWhenSSHReachableFalse(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := saveHealthyState(t, stateDir)
+	github := &testsupport.GitHubService{
+		RemovalToken: gh.RunnerToken{Token: "down-removal-token", ExpiresAt: time.Now().Add(time.Hour)},
+		Runners:      []gh.Runner{testsupport.HealthyRunner()},
+	}
+	// Force collectStatus to report sshReachable=false by returning a
+	// host-key fingerprint that does NOT match the saved fingerprint.
+	// ProbeRemoteStatus then returns SSHFact{Reachable: false,
+	// HostKey: "mismatch", ...} — exactly the live Bug 24 behavior.
+	exec := &testsupport.RemoteExecutor{
+		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:DIFFERENT-from-saved"},
+		Results: map[string]remote.Result{
+			ops.CommandStatusSSHReachable: {ExitCode: 0},
+			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n", ExitCode: 0},
+			"down.sudo.probe":             {ExitCode: 1, Stderr: "sudo: a password is required\n"},
+			"down.runner.remove":          {ExitCode: 0},
+			"down.service.uninstall":      {ExitCode: 0},
+			"down.files.remove":           {ExitCode: 0},
+		},
+	}
+	prompts := &passwordRecorder{password: "hunter2"}
+	_, _, err := executeDownForTest(t, stateDir, github, exec, prompts, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("down should not error when host-key mismatch falsely reports sshReachable=false; err=%v", err)
+	}
+	// The Bug 25 invariant: probe ran. With sshReachable=false the
+	// downstream cleanup short-circuits via the existing !sshReachable
+	// guard, so we don't assert command threading here — only that the
+	// probe + prompt ran independently of the reachability flag.
+	if !commandIDsContain(exec, "down.sudo.probe") {
+		t.Fatalf("Bug 25: down.sudo.probe must run even when sshReachable=false; observed IDs=%v", exec.CommandIDs())
+	}
+	if prompts.calls != 1 {
+		t.Fatalf("Bug 25: password prompter must run when probe reports password-required, regardless of sshReachable; got calls=%d", prompts.calls)
+	}
+}
+
 func TestDownPartialAndStaleGitHubOnlyFlows(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)

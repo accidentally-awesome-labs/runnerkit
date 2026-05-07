@@ -236,7 +236,17 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 	// byo-prepare), the probe exits 0 and we keep the existing
 	// unwrapped happy path.
 	sudoPassword := ""
-	if sshReachable && targetErr == nil && needsAnyRemoteSudo(selected) {
+	// Bug 25 (Plan 06-11, 2026-05-06): the sudo-password probe + prompt
+	// must run independently of `sshReachable`. The previous gate also
+	// required `sshReachable=true`, but a false-positive from the Bug 24
+	// host-key probe (or a genuinely flaky status probe) would skip the
+	// prompt — and any subsequent SSH-based cleanup that does succeed at
+	// the executor level would then run sudo without -S threading and
+	// fail with `sudo: a terminal is required`. The probe itself is
+	// cheap (5s timeout) and harmlessly times out when SSH is genuinely
+	// down, so dropping `sshReachable` from the gate fixes the Bug 24
+	// cascade without changing the passwordless-host happy path.
+	if targetErr == nil && needsAnyRemoteSudo(selected) {
 		needs, probeErr := probeSudoNeedsPassword(ctx, deps.RemoteExecutor, target)
 		if probeErr == nil && needs {
 			password, err := promptSudoPasswordForDown(ctx, deps, renderer, target)
