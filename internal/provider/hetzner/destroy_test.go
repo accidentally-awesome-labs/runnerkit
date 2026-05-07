@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
@@ -324,4 +325,248 @@ func sliceContains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// hcloudStubError mimics the hcloud-go error shape for Bug 30 tests:
+// implements StatusCode() so isCascadeInFlightError + isAlreadyAbsentError
+// match production error parsing exactly.
+type hcloudStubError struct {
+	code int
+	msg  string
+}
+
+func (e *hcloudStubError) Error() string  { return e.msg }
+func (e *hcloudStubError) StatusCode() int { return e.code }
+
+// destroyFakeRetryClient extends destroyFakeOrderedClient with a
+// per-call DeletePrimaryIP error sequence so Bug 30 retry-loop tests can
+// return 409 must_be_unassigned on call N and 404 / nil on call N+1.
+type destroyFakeRetryClient struct {
+	destroyFakeOrderedClient
+	deleteIPCallCount int
+	deleteIPErrs      []error // consumed in order; nil error or running off the end -> success
+}
+
+func (f *destroyFakeRetryClient) DeletePrimaryIP(_ context.Context, _ int) error {
+	if !sliceContains(f.calls, "delete:primary_ipv4") {
+		f.calls = append(f.calls, "delete:primary_ipv4")
+	} else {
+		f.calls = append(f.calls, "delete:primary_ipv6")
+	}
+	idx := f.deleteIPCallCount
+	f.deleteIPCallCount++
+	if idx < len(f.deleteIPErrs) {
+		return f.deleteIPErrs[idx]
+	}
+	return nil
+}
+
+// destroyRefWithBothPrimaryIPsAutoDelete builds a state.ProviderRef
+// where Cloud.PrimaryIPv4AutoDelete + PrimaryIPv6AutoDelete are both
+// true — the post-Plan-06-12 default written by provision.go for IPs
+// auto-allocated by Hetzner via EnableIPv4/EnableIPv6.
+func destroyRefWithBothPrimaryIPsAutoDelete() state.ProviderRef {
+	ids := map[string]string{
+		"server":       "101",
+		"ssh_key":      "202",
+		"firewall":     "303",
+		"primary_ipv4": "404",
+		"primary_ipv6": "505",
+	}
+	return state.ProviderRef{
+		Kind:        "hetzner",
+		Name:        "hetzner",
+		ResourceIDs: ids,
+		IDs:         ids,
+		Cloud: state.CloudInventory{
+			Provider:              "hetzner",
+			ServerID:              "101",
+			SSHKeyID:              "202",
+			FirewallID:            "303",
+			PrimaryIPv4ID:         "404",
+			PrimaryIPv6ID:         "505",
+			PrimaryIPv4AutoDelete: true,
+			PrimaryIPv6AutoDelete: true,
+		},
+	}
+}
+
+// Bug 30 (Plan 06-12, 2026-05-06): when Cloud.PrimaryIPv4AutoDelete +
+// PrimaryIPv6AutoDelete are both true (the post-Plan-06-12 provision
+// default), destroy SKIPS the explicit DeletePrimaryIP calls entirely.
+// The auto_delete=true cascade triggered by server.Delete handles the
+// IPs; verify_destroy polls each saved ID to 404 on the smoke side.
+//
+// Pre-Plan-06-12 destroy code raced the cascade and surfaced 409
+// `must_be_unassigned` as a hard failure with RKD-PROV-006 even though
+// the cascade ultimately removed the IPs (verified live 2026-05-06 —
+// project ended empty). This test locks the new contract: skip the
+// call entirely so the synchronous report matches reality.
+func TestDestroy_SkipsDeletePrimaryIPWhenAutoDeleteCascade(t *testing.T) {
+	client := &destroyFakeOrderedClient{}
+	ref := destroyRefWithBothPrimaryIPsAutoDelete()
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
+	result, err := p.Destroy(context.Background(), ref)
+	if err != nil || result.Partial {
+		t.Fatalf("Bug 30: AutoDelete=true Destroy partial=%v err=%v result=%#v calls=%v", result.Partial, err, result, client.calls)
+	}
+	want := []string{
+		"detach:firewall",
+		"delete:server",
+		"delete:ssh_key",
+		"delete:firewall",
+	}
+	if !reflect.DeepEqual(client.calls, want) {
+		t.Fatalf("Bug 30: AutoDelete cascade call order mismatch:\n got %#v\nwant %#v", client.calls, want)
+	}
+	for _, call := range client.calls {
+		if strings.HasPrefix(call, "delete:primary_") {
+			t.Fatalf("Bug 30: AutoDelete=true must NOT call DeletePrimaryIP; got %q in %v", call, client.calls)
+		}
+	}
+	// Skipped status messages must surface "auto_delete cascade" so
+	// the smoke harness + 06-VERIFICATION baseline can distinguish
+	// "skipped via cascade" from "skipped because not tracked".
+	skippedV4 := false
+	skippedV6 := false
+	for _, r := range result.Results {
+		if r.Artifact == artifactProviderPrimaryIP && r.Status == "skipped" && strings.Contains(r.Message, "auto_delete cascade") {
+			if !skippedV4 {
+				skippedV4 = true
+			} else {
+				skippedV6 = true
+			}
+		}
+	}
+	if !skippedV4 || !skippedV6 {
+		t.Fatalf("Bug 30: both primary IPs must record Status=skipped Message=auto_delete cascade; got %#v", result.Results)
+	}
+}
+
+// Bug 30 (Plan 06-12, 2026-05-06): legacy state with AutoDelete=false
+// (pre-Plan-06-12 binaries) MUST retry on 409 must_be_unassigned until
+// the cascade completes (404 → isAlreadyAbsentError) or the bounded
+// timeout expires. Sleep is injected so the test runs in <100ms.
+func TestDestroy_RetriesPrimaryIPDeleteOn409MustBeUnassigned(t *testing.T) {
+	client := &destroyFakeRetryClient{
+		deleteIPErrs: []error{
+			&hcloudStubError{code: 409, msg: "primary IP must be unassigned (must_be_unassigned, abc123)"},
+			&hcloudStubError{code: 404, msg: "404 not found"},
+		},
+	}
+	ref := destroyRefWithBothPrimaryIPs() // legacy: no AutoDelete=true
+	sleepCalls := 0
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"},
+		WithClient(client),
+		WithSleep(func(time.Duration) { sleepCalls++ }),
+	)
+	result, err := p.Destroy(context.Background(), ref)
+	if err != nil || result.Partial {
+		t.Fatalf("Bug 30: legacy retry should succeed; partial=%v err=%v result=%#v calls=%v", result.Partial, err, result, client.calls)
+	}
+	if client.deleteIPCallCount < 2 {
+		t.Fatalf("Bug 30: expected at least 2 DeletePrimaryIP calls (retry on 409); got %d (calls=%v)", client.deleteIPCallCount, client.calls)
+	}
+	if sleepCalls < 1 {
+		t.Fatalf("Bug 30: retry loop must sleep between attempts; got %d sleeps", sleepCalls)
+	}
+}
+
+// Bug 30 (Plan 06-12, 2026-05-06): when 409 must_be_unassigned never
+// resolves before the bounded timeout, destroy surfaces the IP as
+// pending (Partial=true) — same shape as any other delete failure.
+func TestDestroy_RetryExhaustsBudgetThenSurfacesAsPartial(t *testing.T) {
+	t.Setenv("RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT", "10ms")
+	stub := &hcloudStubError{code: 409, msg: "primary IP must be unassigned (must_be_unassigned, ...)"}
+	client := &destroyFakeRetryClient{
+		deleteIPErrs: []error{stub, stub, stub, stub, stub, stub, stub, stub, stub, stub},
+	}
+	ref := destroyRefWithBothPrimaryIPs()
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"},
+		WithClient(client),
+		WithSleep(func(time.Duration) {}),
+	)
+	result, err := p.Destroy(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("Destroy returned err: %v", err)
+	}
+	if !result.Partial {
+		t.Fatalf("Bug 30: budget exhaustion must yield Partial=true; got %#v", result)
+	}
+	gotPending := false
+	for _, p := range result.Pending {
+		if p == "provider_primary_ip_pending" {
+			gotPending = true
+		}
+	}
+	if !gotPending {
+		t.Fatalf("Bug 30: budget exhaustion must record provider_primary_ip_pending; got %v", result.Pending)
+	}
+}
+
+// Bug 30 (Plan 06-12, 2026-05-06): the predicate covers 409 +
+// must_be_unassigned (StatusCode-aware) and the substring fallback for
+// test-fake errors that do not implement StatusCode.
+func TestIsCascadeInFlightError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "409_must_be_unassigned", err: &hcloudStubError{code: 409, msg: "primary IP must be unassigned (must_be_unassigned, abc)"}, want: true},
+		{name: "404_not_found", err: &hcloudStubError{code: 404, msg: "404 not found"}, want: false},
+		{name: "409_other_text", err: &hcloudStubError{code: 409, msg: "conflict: server in use"}, want: false},
+		{name: "non_status_substring", err: errors.New("must_be_unassigned (... no status code ...)"), want: true},
+		{name: "non_status_unrelated", err: errors.New("dial timeout"), want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isCascadeInFlightError(tc.err)
+			if got != tc.want {
+				t.Fatalf("isCascadeInFlightError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// Bug 30 (Plan 06-12, 2026-05-06): upgrade-mid-cycle realistic case.
+// Server was provisioned by a pre-Plan-06-12 binary so AutoDelete is
+// false in state, but the Hetzner-side IP DOES have auto_delete=true on
+// the wire (Plan 06-11 Bug 26 default). When destroy reaches the
+// legacy-fallback path and calls DeletePrimaryIP, the cascade has
+// already removed the IP — fake returns 404 on the FIRST call (no
+// retry, no 409). Bug 30 must handle this without surfacing the
+// non-existent 409 race.
+func TestDestroy_LegacyAutoDeleteFalseHits404FromCascade(t *testing.T) {
+	client := &destroyFakeRetryClient{
+		deleteIPErrs: []error{
+			&hcloudStubError{code: 404, msg: "404 not found"},
+			&hcloudStubError{code: 404, msg: "404 not found"},
+		},
+	}
+	ref := destroyRefWithBothPrimaryIPs() // legacy: no AutoDelete=true
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"},
+		WithClient(client),
+		WithSleep(func(time.Duration) {}),
+	)
+	result, err := p.Destroy(context.Background(), ref)
+	if err != nil || result.Partial {
+		t.Fatalf("Bug 30 upgrade-cycle: 404 from cascade should not be partial; partial=%v err=%v result=%#v calls=%v", result.Partial, err, result, client.calls)
+	}
+	if client.deleteIPCallCount != 2 {
+		t.Fatalf("Bug 30 upgrade-cycle: each IP should be called exactly once (404 hits isAlreadyAbsent immediately); got %d (calls=%v)", client.deleteIPCallCount, client.calls)
+	}
+	doneCount := 0
+	for _, r := range result.Results {
+		if r.Artifact == artifactProviderPrimaryIP && r.Status == "done" {
+			doneCount++
+		}
+		if r.Artifact == artifactProviderPrimaryIP && r.Status == "pending" {
+			t.Fatalf("Bug 30 upgrade-cycle: 404 must NOT yield pending; got %#v", r)
+		}
+	}
+	if doneCount != 2 {
+		t.Fatalf("Bug 30 upgrade-cycle: both primary IPs must Status=done; got %d (results=%#v)", doneCount, result.Results)
+	}
 }
