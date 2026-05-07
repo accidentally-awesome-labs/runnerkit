@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 06-release-upgrade-docs-and-v1-validation-10-status-down-cloud-fixes-PLAN.md (Bugs 19-23 closed; Plan 06-07 attempt-16+ ready)
-last_updated: "2026-05-06T23:59:32.797Z"
+status: Plan 06-07 attempt-16 smoke-red; Plan 06-11 (Bugs 24-27) filed and awaiting execution
+stopped_at: "Plan 06-07 attempt-16 surfaced 4 new bugs (host-key mismatch, down sudo gate, cloud destroy ordering, sudoers svc.sh path); Plan 06-11 filed; run /gsd:execute-phase 06 --gaps-only next, then re-attempt smoke (attempt-17)"
+last_updated: "2026-05-07T00:56:00.000Z"
 last_activity: 2026-05-06
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 29
+  total_plans: 30
   completed_plans: 28
 ---
 
@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 
 ## Current Position
 
-Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 2 of 10
-Status: Ready to execute
+Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING (gap-closure)
+Plan: 9/10 complete + Plan 06-11 (Bugs 24-27) filed; Plan 06-07 still pending re-smoke
+Status: Plan 06-07 attempt-16 smoke-red 2026-05-06; awaiting Plan 06-11 execution → attempt-17
 Last activity: 2026-05-06
 
 Milestone Progress: [███████░░░] 67%
