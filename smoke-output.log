@@ -1,0 +1,117 @@
+================================================================================
+Plan 06-07 attempt-17 live smoke (2026-05-06 21:40-21:51 UTC)
+Triggered by: /gsd:execute-phase 06 --gaps-only after Plan 06-11 (Bugs 24-27) landed.
+Result: SMOKE-RED — three new bugs (28, 29, 30).
+================================================================================
+
+Pre-smoke prep:
+- byo-prepare succeeded; sudoers entry refreshed with new svc.sh glob
+  (/opt/actions-runner/runnerkit-*/svc.sh) per Plan 06-11 Bug 27 fix.
+- Hetzner project verified empty before cloud-up (no orphans from prior attempts).
+- Smoke driven via expect(1) PTY wrapper to feed sudo password where prompted
+  (no other host change vs. a normal maintainer run).
+
+================================================================================
+BYO smoke — make smoke-live-byo
+================================================================================
+Duration: 110s (target ≤ 5 min — PASS on duration)
+Status: PARTIAL — up + status + doctor green, down failed cleanup.
+
+PASSES (verifies prior fixes live):
+  ✓ runnerkit up succeeded, runner ID 26 registered (Path B sudo prompt fired
+    once via TTY, accepted password — Plan 06-06 path works).
+  ✓ /opt/actions-runner/runnerkit-*/config.sh present on remote
+  ✓ /opt/actions-runner/runnerkit-*/.runner sentinel present
+  ✓ runnerkit status — Health: ready
+  ✓ "SSH OK reachable, host key matched" ← VERIFIES Plan 06-11 Bug 24 fix live
+  ✓ "Service OK active"
+  ✓ runnerkit doctor — only time_unsynchronized warning (expected, NTP not configured)
+
+FAILURE — Bug 28 (NEW, root-caused via in-flight trace):
+  runnerkit down --yes:
+    • host_registration: pending remote_cleanup_pending
+    • runner_files: failed sudo: a terminal is required to read the password
+    • RKD-CLEAN-003 emitted
+
+  Root cause (traced via temporary fmt.Fprintf in down.go gate, since reverted):
+    [BUG25-TRACE] gate: targetErr=<nil> needsAnyRemoteSudo=true sshReachable=true
+    [BUG25-TRACE] probe-direct: rc=1 err=exit status 1
+    [BUG25-TRACE] probe: needs=false probeErr=<nil>
+
+  internal/cli/down.go:436 probeSudoNeedsPassword:
+        result, err := executor.Run(ctx, target, ...)
+        if err != nil {
+            return false, nil   ← BUG: real SSH executor returns
+                                   `err = exit status 1` for any non-zero rc;
+                                   probe early-returns "no password needed"
+                                   regardless of stderr markers.
+        }
+
+  Plan 06-11 Bug 25 fix (gate dropped sshReachable) is correct logic-wise but
+  ineffective because the probe still bails before reaching the marker check.
+  The Bug 25 unit test used a fake executor that returns err=nil for non-zero
+  exit, so the regression slipped past CI.
+
+  Fix shape: probeSudoNeedsPassword should NOT early-return on err — it should
+  inspect result.ExitCode and result.Stderr regardless (a non-zero exit is
+  expected; err is just Go's wrapper around the exit status). One-line fix +
+  a real-SSH-style executor test mode.
+
+================================================================================
+Cloud smoke — make smoke-live-cloud
+================================================================================
+Duration: 42s before failure.
+Status: RED — runner registration failed, destroy reported pending despite cascade.
+
+PASSES:
+  ✓ Empty-project precheck OK (D-12 gate 1 PASS)
+  ✓ runnerkit up provisioned 5 Hetzner resources (server, ssh-key, firewall,
+    primary-ipv4, primary-ipv6) cleanly
+  ✓ Cleanup trap fired correctly on failure → automatic destroy attempt
+  ✓ Hetzner project ended empty (verified post-test) — auto_delete cascade
+    DID work to clean up primary IPs, despite destroy reporting pending.
+    Plan 06-11 Bug 26's cascade approach works in practice.
+
+FAILURE — Bug 29 (NEW):
+  runnerkit up --cloud hetzner exited 255 after 42s with:
+    "ERROR Cloud machine is not ready for runner registration yet.
+     Fix the provider or SSH readiness issue, then rerun runnerkit up..."
+
+  42s is too short for Hetzner cloud-init (typically 60-120s). The cloud-up
+  SSH-readiness check needs a longer poll/backoff before declaring failure,
+  OR a documented retry pattern that the smoke harness honors.
+
+FAILURE — Bug 30 (NEW):
+  runnerkit destroy --yes (via trap) reported:
+    • provider_server: done
+    • provider_primary_ip: pending Primary IP must be unassigned
+      (must_be_unassigned, be1e2b9c6cf6161e3693f448ee1df45f)
+    • provider_primary_ip: pending Primary IP must be unassigned
+      (must_be_unassigned, 8e24699cb8fb14adcbf58be364793175)
+    • provider_firewall: done
+    • RKD-PROV-006 emitted
+
+  Race between server.Delete (returns synchronously but cascade is async) and
+  the explicit DeletePrimaryIP calls at internal/provider/hetzner/destroy.go:95-96.
+  The cascade eventually deletes the IPs (verified empty afterward), but the
+  destroy command reports pending and exits non-zero — the smoke trap surfaces
+  RKD-PROV-006 and the verifier can't pass.
+
+  Plan 06-11 Bug 26 comments state "explicit DeletePrimaryIP calls now race
+  against the cascade (Hetzner returns 404 once the cascade completes; our
+  isAlreadyAbsentError already treats 404 as a no-op)" — but in practice
+  Hetzner returns "must_be_unassigned" (HTTP 409 conflict), NOT 404, while the
+  cascade is still in flight. isAlreadyAbsentError doesn't match 409.
+
+  Fix shape: skip explicit DeletePrimaryIP entirely when AutoDelete=true was
+  recorded in state at provision time, OR treat must_be_unassigned as a
+  transient error and retry/poll until 404, OR power off server before
+  delete + unassign + delete (Plan 06-11 rejected this for the cascade
+  approach).
+
+================================================================================
+Hetzner final state (post-trap-destroy + cascade): EMPTY (no orphans)
+GitHub runner state: ID 26 deleted; one stale BYO host install path remains
+  at /opt/actions-runner/runnerkit-* on salar@mckee-small-desktop (cleanup
+  blocked by Bug 28).
+================================================================================

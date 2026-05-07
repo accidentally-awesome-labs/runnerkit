@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-release-upgrade-docs-and-v1-validation-11-status-down-sudoers-cloud-destroy-fixes-PLAN.md (Bugs 24-27 closed; Plan 06-07 attempt-17+ unblocked)
-last_updated: "2026-05-07T01:28:37.053Z"
-last_activity: 2026-05-07
+stopped_at: Plan 06-07 attempt-17 SMOKE-RED 2026-05-06 — Bug 28 (down probeSudoNeedsPassword swallows err=exit-status-N from real SSH executor; prompt never fires; runner_files cleanup fails sudo terminal-required), Bug 29 (cloud-up SSH-readiness gives up at 42s vs Hetzner cloud-init 60-120s), Bug 30 (cloud destroy DeletePrimaryIP races vs auto_delete cascade; Hetzner returns 409 must_be_unassigned NOT 404 while cascade in flight; isAlreadyAbsentError only handles 404). Plan 06-11 Bug 24 host-key match VERIFIED LIVE; Bug 26 cascade VERIFIED post-test (project ended empty); Bug 27 svc.sh glob installed by byo-prepare. See smoke-output.log + Plan 06-12 (Bugs 28-30) to file via /gsd:plan-phase 06 --gaps.
+last_updated: "2026-05-07T01:55:00.000Z"
+last_activity: 2026-05-06 -- Plan 06-07 attempt-17 smoke-red; Bugs 28-30 captured in smoke-output.log
 progress:
   total_phases: 6
   completed_phases: 5
