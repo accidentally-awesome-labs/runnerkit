@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Plan 06-07 attempt-17 SMOKE-RED 2026-05-06 — Bug 28 (down probeSudoNeedsPassword swallows err=exit-status-N from real SSH executor; prompt never fires; runner_files cleanup fails sudo terminal-required), Bug 29 (cloud-up SSH-readiness gives up at 42s vs Hetzner cloud-init 60-120s), Bug 30 (cloud destroy DeletePrimaryIP races vs auto_delete cascade; Hetzner returns 409 must_be_unassigned NOT 404 while cascade in flight; isAlreadyAbsentError only handles 404). Plan 06-11 Bug 24 host-key match VERIFIED LIVE; Bug 26 cascade VERIFIED post-test (project ended empty); Bug 27 svc.sh glob installed by byo-prepare. See smoke-output.log + Plan 06-12 (Bugs 28-30) to file via /gsd:plan-phase 06 --gaps.
-last_updated: "2026-05-07T01:55:00.000Z"
-last_activity: 2026-05-06 -- Plan 06-07 attempt-17 smoke-red; Bugs 28-30 captured in smoke-output.log
+stopped_at: Completed 06-release-upgrade-docs-and-v1-validation-12-down-sudo-probe-cloud-init-and-destroy-cascade-fixes-PLAN.md (Bugs 28-30 closed; Plan 06-07 attempt-18 unblocked; smoke-green path open)
+last_updated: "2026-05-07T19:16:09.709Z"
+last_activity: 2026-05-07
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 30
-  completed_plans: 29
+  total_plans: 31
+  completed_plans: 30
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 ## Current Position
 
 Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 2 of 11
+Plan: 2 of 12
 Status: Ready to execute
 Last activity: 2026-05-07
 
@@ -66,6 +66,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P08 | 5m | 2 tasks tasks | 4 files (1 production, 2 test, 1 smoke) files |
 | Phase 06-release-upgrade-docs-and-v1-validation P10 | 12m | 5 tasks tasks | 9 files (5 production, 4 test) files |
 | Phase 06-release-upgrade-docs-and-v1-validation P11 | 18m | 4 tasks (Bugs 24-27) tasks | 9 production + 5 test files files |
+| Phase 06-release-upgrade-docs-and-v1-validation P12 | 26min | 3 tasks (TDD: 6 commits) tasks | 8 files files |
 
 ## Accumulated Context
 
@@ -165,6 +166,9 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 25 — drop sshReachable from down's sudo-probe gate (down.go:239). Probe + prompt now runs whenever targetErr == nil && needsAnyRemoteSudo(selected). Closes the cascade where Bug 24's false-positive caused Plan 06-10 Bug 21's prompt to be skipped, and any later sudo-touching cleanup ran without -S threading.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 26 — cloud destroy relies on Hetzner auto_delete=true cascade for primary IPs. ServerCreatePublicNet with EnableIPv4=true, EnableIPv6=true, IPv4=nil, IPv6=nil makes Hetzner allocate fresh primary IPs that carry AutoDelete: true by default. Plan 06-10 Bug 23's manual unassign step is removed entirely (it required server power-off, surfacing live as Server must be offline for this action). Firewall detach STILL runs first (no power-off requirement). UnassignPrimaryIP method survives on Client interface as legacy-state fallback.
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 27 — scoped sudoers entry switches /opt/runnerkit-runner/svc.sh (legacy literal that never matched runtime install dir) to /opt/actions-runner/runnerkit-*/svc.sh (sudoers * wildcard glob). Sudoers * does NOT match /, so the glob is bounded to a single directory level — same safety bounds as the original literal. Maintainer must re-run runnerkit byo-prepare once after Plan 06-11 lands to refresh the entry on the smoke host before attempt-17.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-12: Bug 28 — probeSudoNeedsPassword now inspects result.ExitCode + result.Stderr/Stdout regardless of err; the early err-guard at down.go:440-443 was misclassifying password-protected sudo (rc=1 + marker + *exec.ExitError wrapper from real SSH executor) as 'no password needed'. New flow: ExitCode==0 → passwordless; ExitCode!=0 with marker substring → needs prompt; otherwise fall through (preserves graceful semantics for dial-timeout / context-cancel where ExitCode = -1).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-12: Bug 29 — cloud.cloudinit.wait command sets explicit Timeout via cloudInitTimeoutFromEnv() (default 5m, RUNNERKIT_CLOUD_INIT_TIMEOUT override). Default aligned with hetzner.HostKeyProbeOptions Attempts × Interval = 60 × 5s = 300s so cloud-up has a single coherent deadline. os.Getenv (not deps.Env) used to match internal/update/check.go RUNNERKIT_NO_UPDATE_NOTIFIER precedent and avoid a Dependencies surface change.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-12: Bug 30 — destroy is cascade-aware. New CloudInventory.PrimaryIPv4AutoDelete + PrimaryIPv6AutoDelete bool fields (additive omitempty, no schema bump from "2"); provision.go records them at create time when resourceIDs[primary_ipvN] != "" (the EnableIPv4/IPv6 PublicNet contract from Plan 06-11 Bug 26). destroy.go skips DeletePrimaryIP entirely when AutoDelete=true (Status=skipped Message="auto_delete cascade"); legacy fallback wraps the call in a bounded retry that treats 409 must_be_unassigned as transient via new isCascadeInFlightError predicate until 404 (cascade complete via isAlreadyAbsentError) or RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT (default 30s) expires. Plan 06-11 Bug 26 contract preserved (no unassign:* calls anywhere in any test path).
 
 ### Pending Todos
 
@@ -182,6 +186,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-07T01:28:37.049Z
-Stopped at: Completed 06-release-upgrade-docs-and-v1-validation-11-status-down-sudoers-cloud-destroy-fixes-PLAN.md (Bugs 24-27 closed; Plan 06-07 attempt-17+ unblocked)
+Last session: 2026-05-07T19:15:49.705Z
+Stopped at: Completed 06-release-upgrade-docs-and-v1-validation-12-down-sudo-probe-cloud-init-and-destroy-cascade-fixes-PLAN.md (Bugs 28-30 closed; Plan 06-07 attempt-18 unblocked; smoke-green path open)
 Resume file: None
