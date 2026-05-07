@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
-status: Plan 06-07 attempt-16 smoke-red; Plan 06-11 (Bugs 24-27) filed and awaiting execution
-stopped_at: "Plan 06-07 attempt-16 surfaced 4 new bugs (host-key mismatch, down sudo gate, cloud destroy ordering, sudoers svc.sh path); Plan 06-11 filed; run /gsd:execute-phase 06 --gaps-only next, then re-attempt smoke (attempt-17)"
-last_updated: "2026-05-07T00:56:00.000Z"
-last_activity: 2026-05-06
+status: executing
+stopped_at: Completed 06-release-upgrade-docs-and-v1-validation-11-status-down-sudoers-cloud-destroy-fixes-PLAN.md (Bugs 24-27 closed; Plan 06-07 attempt-17+ unblocked)
+last_updated: "2026-05-07T01:28:37.053Z"
+last_activity: 2026-05-07
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 30
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 
 ## Current Position
 
-Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING (gap-closure)
-Plan: 9/10 complete + Plan 06-11 (Bugs 24-27) filed; Plan 06-07 still pending re-smoke
-Status: Plan 06-07 attempt-16 smoke-red 2026-05-06; awaiting Plan 06-11 execution → attempt-17
-Last activity: 2026-05-06
+Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
+Plan: 2 of 11
+Status: Ready to execute
+Last activity: 2026-05-07
 
 Milestone Progress: [███████░░░] 67%
 
@@ -65,6 +65,7 @@ _Updated after each plan completion_
 | Phase 06-release-upgrade-docs-and-v1-validation P06 | 11m | 3 tasks tasks | 15 files (4 created, 11 modified) files |
 | Phase 06-release-upgrade-docs-and-v1-validation P08 | 5m | 2 tasks tasks | 4 files (1 production, 2 test, 1 smoke) files |
 | Phase 06-release-upgrade-docs-and-v1-validation P10 | 12m | 5 tasks tasks | 9 files (5 production, 4 test) files |
+| Phase 06-release-upgrade-docs-and-v1-validation P11 | 18m | 4 tasks (Bugs 24-27) tasks | 9 production + 5 test files files |
 
 ## Accumulated Context
 
@@ -160,6 +161,10 @@ Recent decisions affecting current work:
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: down probes 'sudo -n true' once before remote cleanup; on password-required stderr (markers: 'password is required', 'a terminal is required', 'no tty present') it prompts via ui.PasswordPrompter and threads the literal through wrapDownSudoCommand using the same printf|sudo -S -v cred-priming pattern bootstrap.wrapSudoCommand uses (Plan 06-09 Bug 10). NOPASSWD/Path C hosts keep the unwrapped happy path (Bug 21).
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: hetzner.ProbeHostKeyWithRetry default budget = 60 attempts × 5s = ~5min wall-clock, easily covering Hetzner cloud-init's typical 30-90s host-key install window with residential-IP retry headroom. Empty fingerprint with nil error counts as failure. Sleep is injectable for tests so they don't burn wall-clock time (Bug 22).
 - [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: cloud destroy ordering — detach firewall (RemoveResources) + unassign primary IPv4 + unassign primary IPv6 BEFORE server.Delete; then delete server, ssh_key, primary IPs, firewall last. Already-absent (404) on detach/unassign is silenced; on delete it's still treated as skipped. Client interface gained DetachFirewallFromServer + UnassignPrimaryIP backed by hcloud-go v1.59.2's Firewall.RemoveResources(FirewallResourceTypeServer) and PrimaryIP.Unassign (Bug 23).
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 24 — selectHostKeyLine in remote.scanHostKey picks a deterministic line from ssh-keyscan output by preferring algorithms in order (ed25519 > ecdsa > rsa > dss) with lexicographic tiebreak. Both up's Probe and status's ProbeHostKey route through the same selector, so identical multi-key sshd output collapses to the same chosen line and FingerprintSHA256 stays byte-stable across calls — host_key_match property restored.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 25 — drop sshReachable from down's sudo-probe gate (down.go:239). Probe + prompt now runs whenever targetErr == nil && needsAnyRemoteSudo(selected). Closes the cascade where Bug 24's false-positive caused Plan 06-10 Bug 21's prompt to be skipped, and any later sudo-touching cleanup ran without -S threading.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 26 — cloud destroy relies on Hetzner auto_delete=true cascade for primary IPs. ServerCreatePublicNet with EnableIPv4=true, EnableIPv6=true, IPv4=nil, IPv6=nil makes Hetzner allocate fresh primary IPs that carry AutoDelete: true by default. Plan 06-10 Bug 23's manual unassign step is removed entirely (it required server power-off, surfacing live as Server must be offline for this action). Firewall detach STILL runs first (no power-off requirement). UnassignPrimaryIP method survives on Client interface as legacy-state fallback.
+- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 27 — scoped sudoers entry switches /opt/runnerkit-runner/svc.sh (legacy literal that never matched runtime install dir) to /opt/actions-runner/runnerkit-*/svc.sh (sudoers * wildcard glob). Sudoers * does NOT match /, so the glob is bounded to a single directory level — same safety bounds as the original literal. Maintainer must re-run runnerkit byo-prepare once after Plan 06-11 lands to refresh the entry on the smoke host before attempt-17.
 
 ### Pending Todos
 
@@ -177,6 +182,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-06T23:59:32.793Z
-Stopped at: Completed 06-release-upgrade-docs-and-v1-validation-10-status-down-cloud-fixes-PLAN.md (Bugs 19-23 closed; Plan 06-07 attempt-16+ ready)
+Last session: 2026-05-07T01:28:37.049Z
+Stopped at: Completed 06-release-upgrade-docs-and-v1-validation-11-status-down-sudoers-cloud-destroy-fixes-PLAN.md (Bugs 24-27 closed; Plan 06-07 attempt-17+ unblocked)
 Resume file: None
