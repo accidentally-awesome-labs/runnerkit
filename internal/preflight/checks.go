@@ -145,7 +145,24 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 		// answer a sudo password prompt, so a host with sudo-binary present
 		// but a password requirement must NOT pass preflight as if it were
 		// passwordless. See gap doc 06-GAP-byo-sudo-handling.md Task A.
-		probeResult, probeErr := executor.Run(ctx, target, remote.Command{ID: "probe_sudo_n", Script: "sudo -n true"})
+		//
+		// Bug 31 (Plan 06-13, 2026-05-08): the probe Script MUST be a
+		// command that is inside `runnerkit byo-prepare`'s scoped sudoers
+		// allowlist, otherwise a Path-C-prepared host (where byo-prepare
+		// installed /etc/sudoers.d/runnerkit-installer with NOPASSWD only
+		// for the bootstrap commands) still trips the password-required
+		// warning and the up command falls through to Path B's TTY
+		// prompt -- defeating the entire one-time-prepare purpose. The
+		// prior probe `sudo -n true` was NOT in the allowlist (only
+		// apt-get/dnf/yum/useradd/install/tar/systemctl/svc.sh are; see
+		// internal/bootstrap/sudoers.go::RenderSudoersEntry). The new
+		// probe `sudo -n install --version >/dev/null` IS in the
+		// allowlist (`/usr/bin/install`) and is also a RequiredTools
+		// member, so /usr/bin/install is guaranteed present on any host
+		// that otherwise passes preflight. The Command.ID stays
+		// `probe_sudo_n` so all existing test fakes keep working.
+		// Regression test: TestCheckPrivilege_AllowsScopedSudoers.
+		probeResult, probeErr := executor.Run(ctx, target, remote.Command{ID: "probe_sudo_n", Script: "sudo -n install --version >/dev/null"})
 		// Bug 7 fix: classify based on the remote stderr regardless of
 		// whether the executor returns a non-nil err. internal/remote/system.go::SystemExecutor.Run
 		// surfaces *exec.ExitError for any non-zero remote exit, so a

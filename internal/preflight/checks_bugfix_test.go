@@ -14,12 +14,17 @@ import (
 //
 // Bug 7: internal/remote/system.go::SystemExecutor.Run returns
 // *exec.ExitError for any non-zero remote exit. The preflight switch
-// at internal/preflight/checks.go::Run requires probeErr == nil for
-// every classification branch, so a real ssh probe that exits non-zero
-// (e.g. `sudo -n true` exit 1 with stderr "sudo: a password is
-// required") never reaches the WARNING branch — it falls into the
-// default ERROR branch ("sudo probe failed: ..."). Plan 06-07 attempt-5
-// surfaced this as a hard preflight failure.
+// at internal/preflight/checks.go::Run previously required
+// probeErr == nil for every classification branch, so a real ssh
+// probe that exits non-zero (e.g. `sudo -n install --version` exit 1
+// with stderr "sudo: a password is required") would never reach the
+// WARNING branch -- it would fall into the default ERROR branch
+// ("sudo probe failed: ..."). Plan 06-07 attempt-5 surfaced this as
+// a hard preflight failure; the fix made the switch tolerant of
+// *exec.ExitError. The probe Script literal was later changed from
+// `sudo -n true` to `sudo -n install --version >/dev/null` (Plan
+// 06-13, Bug 31) so the probe binds to byo-prepare's scoped sudoers
+// allowlist; the Bug 7 stderr-classification contract is unchanged.
 //
 // Bug 8: runNetworkCheck calls `curl -fsS https://github.com/...`. The
 // `-f` flag makes curl exit 22 on HTTP 4xx, so an anonymous probe of
