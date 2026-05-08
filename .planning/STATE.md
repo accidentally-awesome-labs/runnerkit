@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-release-upgrade-docs-and-v1-validation-12-down-sudo-probe-cloud-init-and-destroy-cascade-fixes-PLAN.md (Bugs 28-30 closed; Plan 06-07 attempt-18 unblocked; smoke-green path open)
-last_updated: "2026-05-07T19:16:09.709Z"
-last_activity: 2026-05-07
+stopped_at: Plan 06-07 attempt-19 smoke-red — Bug 31 (preflight `sudo -n true` probe not in byo-prepare scoped allowlist; Path C broken end-to-end; Path B requires TTY which non-automation contexts cannot provide). v1.0.0 tag BLOCKED until Plan 06-13 lands. Evidence: .planning/phases/06-release-upgrade-docs-and-v1-validation/smoke-byo-attempt-19.log + 06-GAP-byo-sudo-handling.md Bug 31 section.
+last_updated: "2026-05-08T00:00:00.000Z"
+last_activity: 2026-05-08
 progress:
   total_phases: 6
   completed_phases: 5
@@ -186,6 +186,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-07T19:15:49.705Z
-Stopped at: Completed 06-release-upgrade-docs-and-v1-validation-12-down-sudo-probe-cloud-init-and-destroy-cascade-fixes-PLAN.md (Bugs 28-30 closed; Plan 06-07 attempt-18 unblocked; smoke-green path open)
+Last session: 2026-05-08T00:00:00.000Z
+Stopped at: Plan 06-07 attempt-19 smoke-red — Bug 31 (preflight `sudo -n true` probe not in byo-prepare scoped allowlist; Path C broken; Path B needs TTY). Next: `/gsd:plan-phase 06 --gaps` to file Plan 06-13 closing Bug 31, then attempt-20 re-smoke.
 Resume file: None

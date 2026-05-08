@@ -1429,3 +1429,140 @@ existing runner is NOT ours do they invoke `runnerNameConflict`.
   unaffected; this gap is about *bootstrap-time* sudo, not runtime),
   D-04 (live BYO smoke — directly affected), Plan 02-02 (bootstrap pinned
   runner — unaffected).
+
+## Bug 31 — preflight `sudo -n true` probe is not in byo-prepare scoped allowlist; Path C never bypasses Path B prompt (discovered 2026-05-08, Plan 06-07 attempt-19)
+
+**Discovered:** 2026-05-08 during Plan 06-07 attempt-19 against
+`salar@mckee-small-desktop` AFTER Plan 06-12 (Bugs 28-30) landed. Bundle
+target: new gap closure plan (Plan 06-13 — TBD).
+
+**Symptom:** `runnerkit byo-prepare --host user@host` succeeds (scoped
+sudoers installed at `/etc/sudoers.d/runnerkit-installer` matching the
+expected glob — apt-get/dnf/yum/useradd/install/tar/systemctl/svc.sh).
+But the very next `runnerkit up --host user@host` exits with
+`sudo_password_required` referencing RKD-BOOT-015 — i.e. it routes to
+Path B's interactive prompt as if Path C had never run.
+
+**Root cause:** `internal/preflight/checks.go:148` probes
+`sudo -n true`. `true` is **NOT** in byo-prepare's scoped allowlist
+(only `apt-get / dnf / yum / useradd / install / tar / systemctl /
+svc.sh`), so the probe exits 1 with stderr `sudo: a password is
+required` even after Path C has fully prepared the host. The preflight
+warning `host.privilege.password_required` then fires unconditionally,
+and `up`'s `promptSudoPasswordForPathB` (internal/cli/up.go:2108) gates
+on a TTY prompt regardless of scoped sudoers state.
+
+**Evidence:**
+```
+$ ssh salar@mckee-small-desktop 'sudo -n true; echo exit=$?'
+sudo: a password is required
+exit=1
+
+$ ssh salar@mckee-small-desktop 'sudo -n apt-get --version 2>&1 | head -1; echo exit=$?'
+apt 2.8.3 (amd64)
+exit=0
+
+$ ssh salar@mckee-small-desktop 'sudo -n install --version 2>&1 | head -1; echo exit=$?'
+install (GNU coreutils) 9.4
+exit=0
+
+$ ssh salar@mckee-small-desktop 'sudo -n systemctl --version 2>&1 | head -1; echo exit=$?'
+systemd 255 (255.4-1ubuntu8.14)
+exit=0
+```
+
+Scoped sudoers content (from byo-prepare run on attempt-19):
+```
+# /etc/sudoers.d/runnerkit-installer (managed by runnerkit byo-prepare)
+salar ALL=(root) NOPASSWD: \
+  /usr/bin/apt-get, /usr/bin/dnf, /usr/bin/yum, \
+  /usr/sbin/useradd, \
+  /usr/bin/install, \
+  /bin/tar, /usr/bin/tar, \
+  /bin/systemctl, /usr/bin/systemctl, \
+  /opt/actions-runner/runnerkit-*/svc.sh
+```
+
+`up --json --non-interactive` rendering of the failure (full evidence in
+`.planning/phases/06-release-upgrade-docs-and-v1-validation/smoke-byo-attempt-19.log`):
+```
+{"error":{"code":"sudo_password_required","message":"RunnerKit can't prompt for the host sudo password in non-interactive mode.","remediation":["Run `runnerkit byo-prepare --host salar@mckee-small-desktop:22` to install a scoped sudoers entry, then re-run `runnerkit up`.","RKD-BOOT-015: Remote sudo requires password — bootstrap needs scoped sudoers or interactive prompt"]},"ok":false,"redactions_applied":true}
+```
+
+The remediation is **wrong**: the user already ran byo-prepare. The
+docs anchor RKD-BOOT-015 tells them to do exactly what they just did.
+
+**Impact:**
+- Plan 06-07's "recommended Path C" path is non-functional end-to-end.
+  Maintainer cannot reach `make smoke-live` BYO success without falling
+  back to Path B (interactive TTY) — which itself does not compose with
+  the `byo-permission.sh` shell script when run under non-TTY automation
+  (e.g. CI, `tee`-piped invocation, or any orchestration that doesn't
+  forward an interactive terminal).
+- v1.0.0 release cannot be tagged: Plan 06-07 truth #1 is unsatisfied
+  ("BYO smoke completes WITHOUT manual /etc/sudoers.d/runnerkit-smoke-temp
+  NOPASSWD ALL workaround — instead, the maintainer either runs
+  `runnerkit byo-prepare` first (Path C) OR lets `runnerkit up` prompt
+  interactively (Path B)"). Path C is broken; Path B requires hardware
+  TTY which the smoke harness does not allocate.
+
+**Fix sketch (for Plan 06-13):**
+
+Option A — replace the probe with an allowlisted command:
+- Change `internal/preflight/checks.go:148` from
+  `Script: "sudo -n true"` to one of:
+  - `Script: "sudo -n install --version >/dev/null"` (installable on any
+    Linux with coreutils — already required by bootstrap)
+  - `Script: "sudo -n /bin/systemctl --version >/dev/null"` (always
+    present on systemd hosts; explicit absolute path matches sudoers
+    entry)
+- Update `TestCheckPrivilege_Passwordless` /
+  `TestCheckPrivilege_PasswordRequired` /
+  `TestCheckPrivilege_NotInSudoers` to assert against the new probe
+  command and the same exit-code/stderr classification logic (Bug 7
+  fix in checks.go:149-156 stays).
+- Add a regression test `TestCheckPrivilege_AllowsScopedSudoers` that
+  installs a scoped NOPASSWD entry containing the probe command and
+  asserts CheckPrivilege passes.
+
+Option B — detect the byo-prepare sudoers fragment directly:
+- Add `probe_sudoers_file: ls -1 /etc/sudoers.d/runnerkit-installer
+  2>/dev/null` ahead of the `sudo -n` probe.
+- If the file exists AND its content matches `bootstrap.SudoersExpected()`,
+  classify CheckPrivilege as `pass` and skip the `sudo -n` probe entirely.
+- Acceptance: byo-prepare followed by up exits 0 with no Path B prompt
+  on the smoke host.
+
+Recommendation: **Option A** is simpler, less stateful, and validates
+the actual scoped-sudoers behavior end-to-end. Option B couples
+preflight to byo-prepare's exact sudoers content which is fragile.
+
+**Acceptance criteria for Plan 06-13:**
+- `runnerkit byo-prepare --host user@host` followed by `runnerkit up
+  --host user@host --yes --non-interactive` against a host with
+  password-protected sudo (no NOPASSWD ALL) bootstraps the runner
+  end-to-end with exit 0, NO `sudo_password_required` error, NO
+  interactive prompt.
+- The smoke script `scripts/smoke/byo-permission.sh` runs to completion
+  under `tee` (no TTY) when the maintainer has previously run
+  `byo-prepare`.
+- Existing Bug 7 test (`sudo -n true` exit 1 with stderr "password is
+  required" still classified as `host.privilege.password_required`) and
+  Bug 8 test (curl probe) preserved.
+- `go test ./internal/preflight/... -count=1 -race` green.
+- Plan 06-07 attempt-20 (post-13 fix) reaches `BYO_DURATION_SECONDS=NNN`
+  and `[empty_precheck] OK` markers in `smoke-output.log`.
+
+**Why bundled with Plan 06-13 (not 06-12):** Plan 06-12 already shipped
+2026-05-08 (Bugs 28-30 — `down` sudo probe, cloud-init timeout, destroy
+cascade). Bug 31 is `up` preflight probe, a distinct surface and
+distinct gap-closure cycle. Re-opening 06-12 conflates two reviewable
+units.
+
+- Bug 31 discovered 2026-05-08 during Plan 06-07 attempt-19 against
+  the same host AFTER Plan 06-12 (Bugs 28-30) landed. Surfaced because
+  attempt-19 was the first attempt to run the BYO smoke from a
+  non-TTY automation context (Bash tool from agent harness) — prior
+  attempts 1-17 all used interactive TTY which masked the bug by
+  taking the Path B prompt. v1.0.0 release blocked until Plan 06-13
+  lands.

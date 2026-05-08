@@ -1,0 +1,3 @@
+===> [smoke-byo] Setting up isolated state dir
+===> [smoke-byo] runnerkit up --repo accidentally-awesome-labs/dat0 --host salar@mckee-small-desktop --mode persistent --yes
+Sudo password for salar@mckee-small-desktop:22: 
