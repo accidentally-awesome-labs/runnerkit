@@ -18,11 +18,11 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // the given SSH user. The output is byte-stable so the idempotency
 // check in SudoersIsPrepared can compare against the on-disk content.
 //
-// Command set per gap doc 06-GAP-byo-sudo-handling.md lines 194-202:
+// Command set per gap docs + smoke regressions:
 //   - apt-get / dnf / yum (package install for fix_dependencies)
 //   - useradd (create_runner_user)
-//   - install (install -d -o serviceUser for download_runner)
-//   - tar (tar xzf for download_runner)
+//   - install + curl + sha256sum + tar + chown + rm + su
+//     (download_runner/configure_runner bootstrap flow)
 //   - systemctl (service control)
 //   - /opt/actions-runner/runnerkit-*/svc.sh (the runner service helper at its
 //     real runtime path — see Bug 27 below)
@@ -41,6 +41,16 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // `/opt/actions-runner/` and cannot escape into other directories. The
 // safety bounds match the original literal entry.
 //
+// Bug 32 (Plan 06-14, 2026-05-08): preflight probe was fixed to use an
+// allowlisted command, but the scoped sudoers entry still omitted several
+// commands used by the non-interactive bootstrap path (`sudo curl`,
+// `sudo sha256sum -c -`, `sudo chown`, `sudo rm`, `sudo su -s /bin/bash -`).
+// In tee/non-PTY smoke execution, preflight passed yet bootstrap failed with
+// `sudo: a terminal is required ...` because those commands fell outside the
+// scoped allowlist and required password prompting. The allowlist below now
+// includes the full root-runas command surface used by Apply/RenderInstallScript
+// so Path C (`runnerkit byo-prepare`) works end-to-end in non-interactive runs.
+//
 // Critical: this is NOT a blanket NOPASSWD ALL. The user retains
 // password-protected sudo for everything else.
 //
@@ -52,6 +62,11 @@ func RenderSudoersEntry(user string) string {
   /usr/bin/apt-get, /usr/bin/dnf, /usr/bin/yum, \
   /usr/sbin/useradd, \
   /usr/bin/install, \
+  /usr/bin/curl, \
+  /usr/bin/sha256sum, \
+  /bin/chown, /usr/bin/chown, \
+  /bin/rm, /usr/bin/rm, \
+  /bin/su, /usr/bin/su, \
   /bin/tar, /usr/bin/tar, \
   /bin/systemctl, /usr/bin/systemctl, \
   /opt/actions-runner/runnerkit-*/svc.sh

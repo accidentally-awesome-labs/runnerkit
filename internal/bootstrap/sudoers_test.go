@@ -13,8 +13,8 @@ import (
 
 // TestRenderSudoersEntry asserts the scoped NOPASSWD sudoers template
 // renders with (a) the canonical managed-by header, (b) the SSH user
-// substituted, (c) the exact bootstrap command set per gap doc lines
-// 194-202, and (d) NO blanket NOPASSWD ALL anywhere in the output.
+// substituted, (c) the exact bootstrap command set, and (d) NO blanket
+// NOPASSWD ALL anywhere in the output.
 //
 // Bug 27 (Plan 06-11, 2026-05-06): the svc.sh path is now a sudoers
 // `*` glob pointing at the actual runtime install directory
@@ -36,6 +36,14 @@ func TestRenderSudoersEntry(t *testing.T) {
 		"/usr/bin/yum",
 		"/usr/sbin/useradd",
 		"/usr/bin/install",
+		"/usr/bin/curl",
+		"/usr/bin/sha256sum",
+		"/bin/chown",
+		"/usr/bin/chown",
+		"/bin/rm",
+		"/usr/bin/rm",
+		"/bin/su",
+		"/usr/bin/su",
 		"/bin/tar",
 		"/usr/bin/tar",
 		"/bin/systemctl",

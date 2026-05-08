@@ -227,7 +227,7 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 	stateRemoved := false
 	target, targetErr := targetFromState(repoState)
 	// Bug 21 (Plan 06-10, 2026-05-06): probe sudo before remote
-	// cleanup. If `sudo -n true` fails on the host (password-protected
+	// cleanup. If `sudo -n install --version >/dev/null` fails on the host (password-protected
 	// sudo, no NOPASSWD scope for rm/svc.sh on the requested paths),
 	// prompt for the sudo password (TTY required) and thread it
 	// through service-uninstall + files-remove via the same
@@ -420,7 +420,8 @@ func needsAnyRemoteSudo(selected map[ops.CleanupArtifact]bool) bool {
 	return selected[ops.ArtifactSystemdService] || selected[ops.ArtifactRunnerFiles] || selected[ops.ArtifactHostRegistration]
 }
 
-// probeSudoNeedsPassword runs `sudo -n true` on the remote host. Exit
+// probeSudoNeedsPassword runs `sudo -n install --version >/dev/null` on
+// the remote host. Exit
 // code 0 means sudo is passwordless (NOPASSWD ALL, Path C byo-prepare,
 // or a previously-cached cred). Non-zero exit + stderr containing
 // `password is required` / `a terminal is required` / `a password is
@@ -447,7 +448,7 @@ func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, targe
 	}
 	result, _ := executor.Run(ctx, target, remote.Command{
 		ID:      "down.sudo.probe",
-		Script:  "sudo -n true",
+		Script:  "sudo -n install --version >/dev/null",
 		Timeout: 5 * time.Second,
 	})
 	// Happy path: sudo passwordless (NOPASSWD / Path C / cached cred).
