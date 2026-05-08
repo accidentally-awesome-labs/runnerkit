@@ -19,7 +19,7 @@ tag. That repo must exist before the first release.
 3. The default branch must be `main` (matches `.goreleaser.yaml`
    `homebrew_casks[].repository.branch: main`).
 
-### 2. Create the `RUNNERKIT_HOMEBREW_TAP_REPO_ACCESS_TOKEN` repo secret
+### 2. Create the `HOMEBREW_TAP_GITHUB_TOKEN` repo secret
 
 The default `GITHUB_TOKEN` issued to a workflow can only push to the workflow's
 own repo. Pushing the formula update to `accidentally-awesome-labs/homebrew-tap` requires a
@@ -31,13 +31,15 @@ PAT scoped to that repo.
    - Repository permissions: `Contents: Read and write`
    - Expiration: 1 year (rotate before expiry).
    - If the org uses SAML SSO: authorize the token for `accidentally-awesome-labs`.
+   - You can use any **token name / note** in the UI (for example
+     `RUNNERKIT_HOMEBREW_TAP_REPO_ACCESS_TOKEN`) so you remember what it is for;
+     that label is only for you and is unrelated to Actions.
 2. In `accidentally-awesome-labs/runnerkit` repo settings → Secrets and variables → Actions, add:
-   - Name: `RUNNERKIT_HOMEBREW_TAP_REPO_ACCESS_TOKEN`
-   - Value: (paste the PAT)
+   - Name: **`HOMEBREW_TAP_GITHUB_TOKEN`** (this name must match the workflow)
+   - Value: (paste the PAT from step 1)
 
-`.github/workflows/release.yml` passes this secret to the process as the
-environment variable `HOMEBREW_TAP_GITHUB_TOKEN`, which is what GoReleaser reads
-from `.goreleaser.yaml`.
+GoReleaser reads that value from the environment variable
+`HOMEBREW_TAP_GITHUB_TOKEN` (see `.goreleaser.yaml`).
 
 If this secret is missing or invalid, the GoReleaser run will fail at the
 `homebrew_casks:` step with `403: Resource not accessible by integration` or
@@ -113,7 +115,7 @@ A `Verified OK` confirms the release is signed by the upstream workflow.
 | Failure | Likely cause | Fix |
 |---|---|---|
 | `signs:` step: `unable to fetch certificate from sigstore` | Workflow ran from a fork PR (OIDC stripped) | Push tag from upstream repo only |
-| `homebrew_casks:` step: `403` / `401` | `RUNNERKIT_HOMEBREW_TAP_REPO_ACCESS_TOKEN` missing, not SSO-authorized, or scoped wrong | See "One-Time Prerequisites" §2 |
+| `homebrew_casks:` step: `403` / `401` | `HOMEBREW_TAP_GITHUB_TOKEN` missing, PAT not SSO-authorized, or scoped wrong | See "One-Time Prerequisites" §2 |
 | `goreleaser` `unsupported config version` | `.goreleaser.yaml` missing `version: 2` | Add `version: 2` as the first line |
 | User reports "macOS cannot verify that this app is free from malware" | macOS Gatekeeper quarantine on unsigned cask binary | User runs `xattr -d com.apple.quarantine /opt/homebrew/bin/runnerkit` (documented in `docs/troubleshooting/README.md`) |
 
