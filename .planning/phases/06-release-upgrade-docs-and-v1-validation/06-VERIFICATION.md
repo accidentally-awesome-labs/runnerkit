@@ -5,9 +5,19 @@ status: gaps_found
 verified: 2026-05-02T00:00:00Z
 score: 6/7 plans verified (06-07 partial-blocked by Bug 3)
 created: 2026-05-04
-updated: 2026-05-05
-re_verification: false
+updated: 2026-05-08
+re_verification: true
 gaps:
+  - truth: "Plan 06-07 attempt-20 smoke can run non-interactively after Plan 06-13 without TTY-dependent sudo failure."
+    status: failed
+    reason: "2026-05-08 attempt-20 `make smoke-live` failed in BYO step with `RKD-BOOT-015` / non-TTY sudo error. In automation (`tee`/non-PTY) context, `runnerkit up --yes` could not prompt and returned 'RunnerKit needs a sudo password but no TTY is available for prompting.' Subsequent interactive maintainer run still failed in bootstrap apply with `sudo: a terminal is required ... sudo: a password is required` after preflight passed, indicating the Path-C prepared-host expectation is still not satisfied end-to-end in this smoke path. Cloud smoke did not run because BYO failed first."
+    artifacts:
+      - path: "smoke-output.log"
+        issue: "Attempt-20 run captured `ERROR RunnerKit needs a sudo password but no TTY is available for prompting` and exited from `smoke-live-byo` before cloud smoke."
+      - path: "scripts/smoke/byo-permission.sh"
+        issue: "Current smoke harness invokes `runnerkit up --yes` in a non-interactive context under tee; when password prompting is required, this path fails with RKD-BOOT-015 and cannot proceed."
+    missing:
+      - "File and execute Plan 06-14 to close the non-TTY BYO smoke blocker; then re-run Plan 06-07 with a green BYO pass before attempting cloud and stopwatch baseline fill-in."
   - truth: "BYO bootstrap completes end-to-end against a real host without manual sudoers preconfiguration."
     status: partial
     reason: "Two of three latent bugs in the BYO bootstrap path closed by Plans 06-05 + 06-06 (commits ee5c0a2 + 08b8708). Plan 06-07 attempt 1 re-smoke against salar@mckee-small-desktop on 2026-05-05 surfaced Bug 3 (`register_runner` runas mismatch — see Bug 3 entry below). BYO still non-functional in v1.0.0 until Task F lands. Source of truth: 06-GAP-byo-sudo-handling.md (Tasks A-E CLOSED; Task F OPEN)."
