@@ -18,8 +18,6 @@ jobs:
         with:
           go-version: '1.22'
       - uses: sigstore/cosign-installer@v3
-        with:
-          cosign-release: 'v3.0.6'
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: 'v2.15.4'
