@@ -15,3 +15,9 @@ cmd/_smokebin/destroy_verify/destroy_verify
 .env
 .env.local
 .env.*.local
+
+# Local tooling state and built artifacts. .pi/ + .pi-lens/ are local
+# meta/lens caches; bin/ holds locally compiled runnerkit binaries.
+.pi/
+.pi-lens/
+bin/
