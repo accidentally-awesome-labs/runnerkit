@@ -6,7 +6,7 @@ instead.
 
 ## One-Time Prerequisites
 
-Before the first `vX.Y.Z` tag can be pushed, two manual steps must be done.
+Before the first `vX.Y.Z` tag can be pushed, manual setup steps must be done.
 Both are one-time and outside CI.
 
 ### 1. Create the Homebrew tap repository
@@ -44,6 +44,24 @@ GoReleaser reads that value from the environment variable
 If this secret is missing or invalid, the GoReleaser run will fail at the
 `homebrew_casks:` step with `403: Resource not accessible by integration` or
 `401 Bad credentials`.
+
+### 3. (Optional, recommended) Configure OSS notarization secrets
+
+RunnerKit uses OSS GoReleaser's cross-platform `notarize.macos` flow. The
+notarization block is enabled only when all secrets below are present.
+
+1. Create Apple credentials:
+   - `MACOS_SIGN_P12`: base64 of your Developer ID Application `.p12`
+   - `MACOS_SIGN_PASSWORD`: password for that `.p12`
+   - `MACOS_NOTARY_KEY`: base64 of your App Store Connect API `.p8`
+   - `MACOS_NOTARY_KEY_ID`: App Store Connect key ID
+   - `MACOS_NOTARY_ISSUER_ID`: App Store Connect issuer UUID
+2. Add those 5 values as repository Actions secrets in
+   `accidentally-awesome-labs/runnerkit`.
+3. Keep `MACOS_SIGN_P12` and `MACOS_NOTARY_KEY` as single-line base64 values.
+
+When omitted, releases still work, but macOS users may need the quarantine
+workaround from `docs/troubleshooting/README.md`.
 
 ## Tag a Release
 
@@ -116,6 +134,7 @@ A `Verified OK` confirms the release is signed by the upstream workflow.
 |---|---|---|
 | `signs:` step: `unable to fetch certificate from sigstore` | Workflow ran from a fork PR (OIDC stripped) | Push tag from upstream repo only |
 | `homebrew_casks:` step: `403` / `401` | `HOMEBREW_TAP_GITHUB_TOKEN` missing, PAT not SSO-authorized, or scoped wrong | See "One-Time Prerequisites" §2 |
+| `notarize.macos:` step fails (`Unauthorized`, `Invalid credentials`, timeout) | Apple notary secrets missing/invalid | Verify the 5 `MACOS_*` secrets from "One-Time Prerequisites" §3 |
 | `goreleaser` `unsupported config version` | `.goreleaser.yaml` missing `version: 2` | Add `version: 2` as the first line |
 | User reports "macOS cannot verify that this app is free from malware" | macOS Gatekeeper quarantine on unsigned cask binary | User runs `xattr -d com.apple.quarantine /opt/homebrew/bin/runnerkit` (documented in `docs/troubleshooting/README.md`) |
 
