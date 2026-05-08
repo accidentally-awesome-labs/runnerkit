@@ -19,6 +19,23 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
+type flakyCloudInitExecutor struct {
+	base              *fakeRemoteExecutor
+	cloudInitErrCount int
+}
+
+func (f *flakyCloudInitExecutor) Probe(ctx context.Context, target remote.Target) (remote.ProbeResult, error) {
+	return f.base.Probe(ctx, target)
+}
+
+func (f *flakyCloudInitExecutor) Run(ctx context.Context, target remote.Target, command remote.Command) (remote.Result, error) {
+	if command.ID == "cloud.cloudinit.wait" && f.cloudInitErrCount > 0 {
+		f.cloudInitErrCount--
+		return remote.Result{ExitCode: 255, Stderr: "ssh transport not ready"}, errors.New("exit status 255")
+	}
+	return f.base.Run(ctx, target, command)
+}
+
 func TestUpMissingCloudIntentWithYesFailsBeforeMutation(t *testing.T) {
 	stateDir := t.TempDir()
 	service := newFakePermittedGitHubService()
@@ -618,11 +635,11 @@ func TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget(t *testing.T) {
 		setEnv      bool
 		wantTimeout time.Duration
 	}{
-		{name: "default_budget", setEnv: false, wantTimeout: 5 * time.Minute},
+		{name: "default_budget", setEnv: false, wantTimeout: 10 * time.Minute},
 		{name: "override_45s", setEnv: true, envValue: "45s", wantTimeout: 45 * time.Second},
-		{name: "invalid_falls_back", setEnv: true, envValue: "not-a-duration", wantTimeout: 5 * time.Minute},
-		{name: "empty_falls_back", setEnv: true, envValue: "", wantTimeout: 5 * time.Minute},
-		{name: "zero_falls_back", setEnv: true, envValue: "0s", wantTimeout: 5 * time.Minute},
+		{name: "invalid_falls_back", setEnv: true, envValue: "not-a-duration", wantTimeout: 10 * time.Minute},
+		{name: "empty_falls_back", setEnv: true, envValue: "", wantTimeout: 10 * time.Minute},
+		{name: "zero_falls_back", setEnv: true, envValue: "0s", wantTimeout: 10 * time.Minute},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -681,5 +698,32 @@ func TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget(t *testing.T) {
 				t.Fatalf("Bug 29: default cloud-init Timeout must be >= 120s; got %v", found.Timeout)
 			}
 		})
+	}
+}
+
+func TestWaitCloudTargetReady_RetriesTransientCloudInitSSHError(t *testing.T) {
+	t.Setenv("RUNNERKIT_CLOUD_INIT_TIMEOUT", "30s")
+	base := newFakeRemoteExecutor()
+	exec := &flakyCloudInitExecutor{base: base, cloudInitErrCount: 2}
+	machine := cloudReadyMachineForTest()
+	deps := Dependencies{
+		RemoteExecutor: exec,
+		Sleep:          noSleep,
+	}
+	report, hostKey, readyMachine, err := waitCloudTargetReady(context.Background(), deps, machine)
+	if err != nil {
+		t.Fatalf("waitCloudTargetReady returned error after transient cloud-init SSH failures: %v", err)
+	}
+	if hostKey.Fingerprint == "" {
+		t.Fatal("expected normalized host key fingerprint")
+	}
+	if !report.Passed() {
+		t.Fatalf("preflight report should pass: %#v", report.Results)
+	}
+	if readyMachine.Target.Host == "" {
+		t.Fatalf("ready machine target host must be populated: %#v", readyMachine.Target)
+	}
+	if exec.cloudInitErrCount != 0 {
+		t.Fatalf("expected transient cloud-init SSH errors to be exhausted, remaining=%d", exec.cloudInitErrCount)
 	}
 }

@@ -914,12 +914,16 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 	// — Hetzner cpx22 + ubuntu-24.04 cloud-init typically needs
 	// 60-120s. RUNNERKIT_CLOUD_INIT_TIMEOUT overrides for slower
 	// regions / images.
-	result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{
-		ID:      "cloud.cloudinit.wait",
-		Script:  "cloud-init status --wait || test -f /var/lib/cloud/instance/boot-finished",
-		Timeout: cloudInitTimeoutFromEnv(),
-	})
+	result, err := runCloudInitWaitWithRetry(ctx, deps, target)
 	if err != nil {
+		stderr := strings.TrimSpace(result.Stderr)
+		if stderr != "" {
+			return preflight.Report{}, hostKey, machine, remote.RemoteError{
+				CommandID: "cloud.cloudinit.wait",
+				ExitCode:  result.ExitCode,
+				Message:   "cloud-init readiness failed: " + stderr,
+			}
+		}
 		return preflight.Report{}, hostKey, machine, err
 	}
 	if result.ExitCode != 0 {
@@ -935,18 +939,47 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 	return report, hostKey, machine, nil
 }
 
-// defaultCloudInitTimeout aligns with hetzner.HostKeyProbeOptions
-// Attempts × Interval = 60 × 5s = 300s. The cloud SSH host-key install
-// and cloud-init completion windows are both bounded by this wall-clock
-// so cloud-up has a single coherent deadline.
-const defaultCloudInitTimeout = 5 * time.Minute
+// runCloudInitWaitWithRetry tolerates transient SSH transport failures while
+// cloud-init is still converging. In live Hetzner smoke runs the host can pass
+// provider readiness yet still return intermittent ssh exit-status-255 failures
+// for the first few attempts.
+func runCloudInitWaitWithRetry(ctx context.Context, deps Dependencies, target remote.Target) (remote.Result, error) {
+	timeout := cloudInitTimeoutFromEnv()
+	command := remote.Command{
+		ID:      "cloud.cloudinit.wait",
+		Script:  "cloud-init status --wait || test -f /var/lib/cloud/instance/boot-finished",
+		Timeout: timeout,
+	}
+	deadline := time.Now().Add(timeout)
+	interval := 2 * time.Second
+	var lastErr error
+	for {
+		result, err := deps.RemoteExecutor.Run(ctx, target, command)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return result, lastErr
+		}
+		if sleepErr := deps.Sleep(ctx, interval); sleepErr != nil {
+			return result, sleepErr
+		}
+	}
+}
+
+// defaultCloudInitTimeout is intentionally longer than the host-key
+// probe budget to absorb slower cloud-init/user-data convergence under
+// real Hetzner load. Host key visibility can precede SSH auth readiness,
+// so cloud.cloudinit.wait must have additional runway.
+const defaultCloudInitTimeout = 10 * time.Minute
 
 // cloudInitTimeoutFromEnv resolves RUNNERKIT_CLOUD_INIT_TIMEOUT into a
 // usable Duration. Empty / unparseable / non-positive values fall back
 // to defaultCloudInitTimeout. Bug 29 (Plan 06-12, 2026-05-06): the live
 // attempt-17 smoke aborted at 42s because the cloud.cloudinit.wait
-// command had no explicit Timeout. The default 300s gives Hetzner
-// cpx22 + ubuntu-24.04 cloud-init (typical 60-120s) headroom; smoke
+// command had no explicit Timeout. The default 10m gives Hetzner
+// cpx22 + ubuntu-24.04 cloud-init + SSH-auth convergence headroom; smoke
 // harnesses can override with a smaller value via the env var.
 func cloudInitTimeoutFromEnv() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("RUNNERKIT_CLOUD_INIT_TIMEOUT"))

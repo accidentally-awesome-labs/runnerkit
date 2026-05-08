@@ -9,8 +9,12 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 )
 
-var readinessPollInterval = 500 * time.Millisecond
-var readinessMaxAttempts = 60
+// Bug 33 (Plan 06-15, 2026-05-08): the previous readiness budget was
+// 60 attempts x 500ms (~30s), which is too short for normal Hetzner
+// server boot + public networking readiness in live smoke runs. Use a
+// 5-minute default budget aligned with other cloud readiness guards.
+var readinessPollInterval = 2 * time.Second
+var readinessMaxAttempts = 150
 
 // WaitReady waits for Hetzner-provider readiness only: create action completion,
 // server running state, and assigned public networking. SSH/cloud-init/preflight
