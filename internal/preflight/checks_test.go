@@ -195,3 +195,70 @@ func TestCheckPrivilege_SudoMissing(t *testing.T) {
 		t.Fatalf("message should reference sudo requirement: %q", result.Message)
 	}
 }
+
+// TestCheckPrivilege_AllowsScopedSudoers asserts that the probe at
+// internal/preflight/checks.go:148 uses a Script literal that is
+// present in byo-prepare's scoped sudoers allowlist (per
+// internal/bootstrap/sudoers.go::RenderSudoersEntry). Bug 31
+// (Plan 06-13, 2026-05-08): the prior literal `sudo -n true` was
+// NOT in the allowlist, so a Path-C-prepared host (byo-prepare ran
+// successfully) still fell through to Path B's TTY prompt during
+// `runnerkit up`. The fix swaps the Script to
+// `sudo -n install --version >/dev/null` because /usr/bin/install
+// IS in the byo-prepare allowlist (and is also a RequiredTools
+// member, so it is guaranteed present on hosts that pass earlier
+// preflight steps).
+//
+// Test has two assertions:
+//  1. Behavioral: a fake executor returning ExitCode=0 + the
+//     live-smoke-confirmed install --version stdout classifies as
+//     SeverityPass (passwordless sudo). (See gap doc Bug 31
+//     lines 1465-1467 for the exact `install (GNU coreutils)
+//     9.4` evidence.) This branch alone passes pre+post fix
+//     because the fake keys on Command.ID rather than Script.
+//  2. Source-code binding: the checks.go source contains the new
+//     literal `sudo -n install --version` AND does NOT contain
+//     the old literal `Script: "sudo -n true"`. This is the RED
+//     gate that fails on the pre-fix code and passes after Task 2.
+//
+// See: .planning/phases/06-release-upgrade-docs-and-v1-validation/06-GAP-byo-sudo-handling.md
+// (Bug 31 lines 1433-1554) and Plan 06-13.
+func TestCheckPrivilege_AllowsScopedSudoers(t *testing.T) {
+	// Sub-assertion 1: behavioral (independent of Script literal)
+	probe := passingProbe("ubuntu", "x86_64")
+	exec := fakePreflightExecutor{probe: probe, runResults: map[string]remote.Result{
+		"probe_sudo_n": {ExitCode: 0, Stdout: "install (GNU coreutils) 9.4\n"},
+	}}
+	target := remote.Target{User: "salar", Host: "mckee-small-desktop", Port: 22}
+	report, err := Run(context.Background(), exec, target, Options{})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	result, ok := report.Result(CheckPrivilege)
+	if !ok {
+		t.Fatalf("report missing %q result (Bug 31 / Plan 06-13): %#v", CheckPrivilege, report.Results)
+	}
+	if result.Severity != SeverityPass {
+		t.Fatalf("Path-C-prepared host probe should classify as SeverityPass; got %q (Bug 31 / Plan 06-13)", result.Severity)
+	}
+	if !report.Passed() {
+		t.Fatalf("report.Passed() should be true on Path-C-prepared host (Bug 31 / Plan 06-13): %#v", report.Results)
+	}
+	if !strings.Contains(strings.ToLower(result.Message), "passwordless sudo") {
+		t.Fatalf("message should mention passwordless sudo: %q (Bug 31 / Plan 06-13)", result.Message)
+	}
+
+	// Sub-assertion 2: source-code binding to byo-prepare allowlist
+	// (RED gate -- fails pre-fix because checks.go still has
+	// `Script: "sudo -n true"`).
+	src, srcErr := readChecksGoSource()
+	if srcErr != nil {
+		t.Fatalf("read checks.go source: %v", srcErr)
+	}
+	if !strings.Contains(src, "sudo -n install --version") {
+		t.Fatalf("checks.go missing new probe literal `sudo -n install --version` — Bug 31 (Plan 06-13) requires the privilege probe to use a command in byo-prepare's scoped allowlist. See .planning/phases/06-release-upgrade-docs-and-v1-validation/06-GAP-byo-sudo-handling.md Bug 31.")
+	}
+	if strings.Contains(src, `Script: "sudo -n true"`) {
+		t.Fatalf("checks.go still uses old probe literal `Script: \"sudo -n true\"` — Bug 31 (Plan 06-13) replaced this with `sudo -n install --version >/dev/null` because `true` is NOT in byo-prepare's scoped sudoers allowlist (see internal/bootstrap/sudoers.go::RenderSudoersEntry).")
+	}
+}
