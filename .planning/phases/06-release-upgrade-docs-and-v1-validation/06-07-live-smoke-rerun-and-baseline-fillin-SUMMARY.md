@@ -1,46 +1,47 @@
 ---
 phase: 06-release-upgrade-docs-and-v1-validation
 plan: 07
-result: smoke-red
+result: smoke-green
 completed: 2026-05-08
-resume_signal: "smoke-red byo non-tty sudo blocker persists"
+resume_signal: "smoke-green baseline collected (cost/sign-off pending maintainer fill)"
 ---
 
-# Plan 06-07 Summary (Attempt-20)
+# Plan 06-07 Summary (Attempt-21)
 
-Plan 06-07 attempt-20 did not reach baseline fill-in. The execution failed at
-the BYO smoke gate before cloud smoke started, so verification and release-note
-durations remain intentionally unfilled.
+Plan 06-07 attempt-21 completed end-to-end. BYO and cloud live smokes both
+passed in one run, D-12 gate checks passed, and stopwatch baseline durations
+were captured in verification artifacts.
 
 ## Outcome
 
-- **Resume signal:** `smoke-red byo non-tty sudo blocker persists`
-- **BYO smoke:** failed
-- **Cloud smoke:** not executed (blocked by BYO failure)
-- **10-minute stopwatch baseline:** not collected
+- **Resume signal:** `smoke-green baseline collected (cost/sign-off pending maintainer fill)`
+- **BYO smoke:** passed
+- **Cloud smoke:** passed
+- **10-minute stopwatch baseline:** collected (BYO + Hetzner durations)
 
 ## Evidence
 
 From `smoke-output.log`:
 
-- `ERROR RunnerKit needs a sudo password but no TTY is available for prompting.`
-- `RKD-BOOT-015`
-- Subsequent run showed bootstrap stderr:
-  `sudo: a terminal is required to read the password ... sudo: a password is required`
-
-## Path B / Path C note
-
-- Attempt ran in non-interactive automation context (`tee` / no PTY).
-- Path B prompting cannot proceed without TTY by design.
-- Path C expectation remains unmet in this exact smoke execution path and needs
-  a focused closure pass.
+- BYO up/status/doctor/down all completed.
+- BYO duration: `131s`; GitHub runner ID: `33`.
+- Cloud up/status/doctor/destroy completed.
+- Cloud duration: `162s`; GitHub runner ID: `34`.
+- D-12 gate 1: empty-project precheck passed.
+- D-12 gate 2: destroy-verify 404 polling passed.
+- Captured cloud resource IDs:
+  `server:129984812`, `ssh_key:112006318`, `firewall:10948144`,
+  `primary_ipv4:129944803`, `primary_ipv6:129944804`.
 
 ## Artifacts Updated
 
 - Updated: `.planning/phases/06-release-upgrade-docs-and-v1-validation/06-VERIFICATION.md`
-  (new 2026-05-08 smoke-red gap entry, updated metadata)
-- Added gap plan: `.planning/phases/06-release-upgrade-docs-and-v1-validation/06-14-byo-non-tty-sudo-gap-closure-PLAN.md`
+  (filled BYO + cloud baseline runtime fields and gate statuses)
+- Updated: `RELEASE-NOTES-v1.0.0.md`
+  (filled stopwatch table wall-clock values)
 
 ## Next Step
 
-Execute Plan 06-14 to resolve non-TTY BYO sudo failure, then rerun Plan 06-07.
+- Maintainer fills Hetzner project + EUR cost from dashboard.
+- Maintainer signs the verification baseline.
+- Proceed with release sign-off/tag path when those manual fields are complete.

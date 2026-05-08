@@ -727,3 +727,32 @@ func TestWaitCloudTargetReady_RetriesTransientCloudInitSSHError(t *testing.T) {
 		t.Fatalf("expected transient cloud-init SSH errors to be exhausted, remaining=%d", exec.cloudInitErrCount)
 	}
 }
+
+func TestWaitCloudTargetReady_UsesRootForCloudInitWait(t *testing.T) {
+	base := newFakeRemoteExecutor()
+	machine := cloudReadyMachineForTest()
+	deps := Dependencies{
+		RemoteExecutor: base,
+		Sleep:          noSleep,
+	}
+	_, _, _, err := waitCloudTargetReady(context.Background(), deps, machine)
+	if err != nil {
+		t.Fatalf("waitCloudTargetReady returned error: %v", err)
+	}
+	seenCloudInitWait := false
+	for i, cmd := range base.runs {
+		if cmd.ID == "cloud.cloudinit.wait" {
+			seenCloudInitWait = true
+			if i >= len(base.runTargets) {
+				t.Fatalf("missing recorded run target for cloud.cloudinit.wait")
+			}
+			if base.runTargets[i].User != "root" {
+				t.Fatalf("cloud.cloudinit.wait must run as root to avoid runnerkit-admin creation race; got user=%q", base.runTargets[i].User)
+			}
+			break
+		}
+	}
+	if !seenCloudInitWait {
+		t.Fatalf("expected cloud.cloudinit.wait command in runs: %#v", base.runs)
+	}
+}

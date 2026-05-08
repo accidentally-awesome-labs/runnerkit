@@ -6,7 +6,7 @@ wave: 1
 depends_on: [15]
 gap_closure: true
 requirements: [REL-05]
-status: proposed
+status: completed
 ---
 
 # Plan 06-16: Cloud SSH Auth Convergence Investigation

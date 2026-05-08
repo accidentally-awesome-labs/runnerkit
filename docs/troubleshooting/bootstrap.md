@@ -390,6 +390,14 @@ runnerkit doctor --repo owner/repo
 If `doctor` reports a more specific code (RKD-BOOT-003, RKD-BOOT-009,
 RKD-AUTH-002), follow that fix first, then re-run `runnerkit up`.
 
+For slower cloud regions/images where cloud-init convergence is delayed, you
+can increase the readiness budget:
+
+```bash
+export RUNNERKIT_CLOUD_INIT_TIMEOUT=15m
+runnerkit up --repo owner/repo --cloud hetzner
+```
+
 ***
 
 <a name="rkd-boot-015"></a>

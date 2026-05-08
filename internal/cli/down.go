@@ -32,6 +32,11 @@ type cleanupResult struct {
 	Message  string `json:"message,omitempty"`
 }
 
+var (
+	errGitHubRunnerAmbiguous = errors.New("github_runner_ambiguous")
+	errGitHubRunnerNotFound  = errors.New("github_runner_not_found")
+)
+
 func newDownCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
 	opts := &downOptions{}
 	cmd := &cobra.Command{Use: "down"}
@@ -118,7 +123,16 @@ func runDownWithoutState(ctx context.Context, deps Dependencies, renderer *ui.Re
 	}
 	id, err := selectStaleRunnerWithoutState(runners, opts)
 	if err != nil {
-		_ = renderer.Error("github_runner_ambiguous", err.Error(), []string{"Pass --github-runner-id <id> to delete exactly one stale GitHub runner."})
+		code := "github_runner_ambiguous"
+		remediation := []string{"Pass --github-runner-id <id> to delete exactly one stale GitHub runner."}
+		if errors.Is(err, errGitHubRunnerNotFound) {
+			code = "github_runner_not_found"
+			remediation = []string{
+				"Confirm the runner still exists in GitHub, then retry with --github-runner-id <id>.",
+				"Or pass --runner-name <name> when only one stale RunnerKit runner with that name exists.",
+			}
+		}
+		_ = renderer.Error(code, err.Error(), remediation)
 		return NewExitError(ExitSafetyGate, err)
 	}
 	plan := ops.CleanupPlan{Repo: repo.FullName, DryRun: opts.dryRun, Artifacts: []ops.CleanupArtifactPlan{{Artifact: ops.ArtifactGitHubRunner, Action: fmt.Sprintf("delete GitHub runner id %d", id), DefaultSelected: true, RequiresConfirmation: true}}}
@@ -158,7 +172,10 @@ func selectStaleRunnerWithoutState(runners []gh.Runner, opts *downOptions) (int6
 		if len(matches) == 1 {
 			return matches[0].ID, nil
 		}
-		return 0, errors.New("github_runner_ambiguous")
+		if len(matches) == 0 {
+			return 0, fmt.Errorf("%w: no stale RunnerKit GitHub runner matched --runner-name %q", errGitHubRunnerNotFound, opts.runnerName)
+		}
+		return 0, errGitHubRunnerAmbiguous
 	}
 	return 0, errors.New("Pass --github-runner-id <id> to delete a stale GitHub runner when local state is missing.")
 }

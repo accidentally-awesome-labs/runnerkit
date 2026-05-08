@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -97,5 +99,17 @@ func TestUpgrade_HumanContract(t *testing.T) {
 	}
 	if !strings.Contains(text, "Upgrade instructions") {
 		t.Fatalf("upgrade human output missing 'Upgrade instructions' header: %q", text)
+	}
+}
+
+func TestLookupLatestSilent_IgnoresMalformedCache(t *testing.T) {
+	stateDir := t.TempDir()
+	path := filepath.Join(stateDir, "update-check.json")
+	if err := os.WriteFile(path, []byte("{not-json"), 0o600); err != nil {
+		t.Fatalf("write malformed cache: %v", err)
+	}
+	deps := Dependencies{StateBaseDir: stateDir}
+	if got := lookupLatestSilent(deps); got != "" {
+		t.Fatalf("lookupLatestSilent malformed cache = %q, want empty string", got)
 	}
 }

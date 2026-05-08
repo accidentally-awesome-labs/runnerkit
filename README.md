@@ -9,11 +9,18 @@ RunnerKit is distributed via two channels (D-01).
 ### Homebrew (macOS, Linux)
 
 ```bash
-brew install accidentally-awesome-labs/runnerkit/runnerkit
+brew tap accidentally-awesome-labs/tap
+brew install --cask runnerkit
 ```
 
-This taps the official cask repo (`accidentally-awesome-labs/homebrew-runnerkit`) and installs the
-latest release. Upgrade with `brew upgrade runnerkit`.
+This uses the official tap repo (`accidentally-awesome-labs/homebrew-tap`) and installs the
+latest release. Fully-qualified install also works:
+
+```bash
+brew install --cask accidentally-awesome-labs/tap/runnerkit
+```
+
+Upgrade with `brew upgrade --cask runnerkit`.
 
 ### GitHub Releases (all supported platforms)
 

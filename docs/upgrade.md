@@ -15,7 +15,7 @@ This prints the right command for your install channel.
 
 | Install method                                          | Upgrade command                                                                                                                                                                          |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Homebrew tap (`brew install accidentally-awesome-labs/runnerkit/runnerkit`) | `brew upgrade runnerkit`                                                                                                                                                                 |
+| Homebrew tap (`brew tap accidentally-awesome-labs/tap && brew install --cask runnerkit`) | `brew upgrade --cask runnerkit`                                                                                                                                                          |
 | GitHub Releases binary                                  | Download the latest release, verify the cosign signature and SHA256 checksum, then replace the binary on your `PATH`. See [README install section](../README.md) for the exact commands. |
 
 `runnerkit upgrade` does NOT replace its own binary (per RunnerKit decision
@@ -90,22 +90,25 @@ you need to stay on the older format, downgrade RunnerKit too.
 Before installing a downloaded release binary, verify integrity:
 
 ```
-# Download the release binary, the checksums file, and the cosign signature.
-curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_linux_amd64.tar.gz
-curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt
-curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt.sig
-curl -fLO https://github.com/accidentally-awesome-labs/runnerkit/releases/download/vX.Y.Z/runnerkit_vX.Y.Z_checksums.txt.pem
+# Replace v1.0.0 with the desired release tag.
+TAG=v1.0.0
+OS=linux
+ARCH=amd64
+
+# Download the release archive, checksums, and sigstore bundle.
+curl -fLO "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_${OS}_${ARCH}.tar.gz"
+curl -fLO "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
+curl -fLO "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
 
 # Verify SHA256 checksum.
-sha256sum -c runnerkit_vX.Y.Z_checksums.txt --ignore-missing
+sha256sum -c "runnerkit_${TAG#v}_checksums.txt" --ignore-missing
 
 # Verify cosign keyless signature (requires cosign installed).
 cosign verify-blob \
-  --certificate runnerkit_vX.Y.Z_checksums.txt.pem \
-  --signature runnerkit_vX.Y.Z_checksums.txt.sig \
-  --certificate-identity-regexp "https://github.com/accidentally-awesome-labs/runnerkit" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  runnerkit_vX.Y.Z_checksums.txt
+  --bundle "runnerkit_${TAG#v}_checksums.txt.sigstore.json" \
+  --certificate-identity "https://github.com/accidentally-awesome-labs/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "runnerkit_${TAG#v}_checksums.txt"
 ```
 
 If `sha256sum -c` or `cosign verify-blob` fails, do NOT install the

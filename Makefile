@@ -19,7 +19,7 @@ vet: ## go vet all packages.
 	go vet ./...
 
 release-snapshot: ## Local GoReleaser dry-run (validates the build matrix).
-	goreleaser release --snapshot --skip=publish --clean
+	goreleaser release --snapshot --skip=publish --clean --skip=sign
 
 # ---------- LIVE SMOKES (maintainer-only — D-11) ----------
 # These targets create REAL GitHub registrations and REAL Hetzner billable

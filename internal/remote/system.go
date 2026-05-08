@@ -182,7 +182,20 @@ func sshOutput(ctx context.Context, target Target, script string) (string, error
 }
 
 func sshArgs(target Target, remoteCommand string) []string {
-	args := []string{"-p", strconv.Itoa(target.Port), "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"}
+	// Plan 06-16 (Bug 34): live Hetzner smoke hit persistent
+	// `Host key verification failed` due stale entries in the operator's
+	// global known_hosts when cloud IPs were recycled. RunnerKit already
+	// probes and persists SSH host fingerprints in state, so system ssh
+	// calls should not depend on ambient known_hosts trust. Disable
+	// known_hosts file writes/reads here and rely on RunnerKit's explicit
+	// host-key checks.
+	args := []string{
+		"-p", strconv.Itoa(target.Port),
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=10",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+	}
 	if strings.TrimSpace(target.KeyPath) != "" {
 		args = append(args, "-i", target.KeyPath)
 	}

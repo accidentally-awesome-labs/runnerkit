@@ -149,3 +149,22 @@ func TestDoctorEphemeralCompletedRecommendsCleanup(t *testing.T) {
 		}
 	})
 }
+
+func TestDoctorHandlesInvalidSavedHostRefWithoutCrashing(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := testsupport.HealthyRepositoryState()
+	repo.Machine.HostRef = "not-a-valid-target"
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(repo)); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	github := &testsupport.GitHubService{
+		Runners: []gh.Runner{testsupport.HealthyRunner()},
+	}
+	out, errOut, err := executeStatusForTest(t, stateDir, github, doctorRemote(true), "doctor", "--repo", repo.Repo.FullName, "--verbose", "--no-color")
+	if err != nil {
+		t.Fatalf("doctor with invalid host ref should render findings, got err=%v stderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "install_path_missing") || !strings.Contains(out, "work_dir_missing") {
+		t.Fatalf("doctor missing degraded-path findings for invalid host ref:\n%s", out)
+	}
+}

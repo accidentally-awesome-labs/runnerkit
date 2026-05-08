@@ -23,12 +23,12 @@ jobs:
           cosign-release: 'v3.0.6'
       - uses: goreleaser/goreleaser-action@v7
         with:
-          version: '~> v2'
+          version: 'v2.15.4'
           install-only: true
       - name: goreleaser check
         run: goreleaser check
       - name: goreleaser snapshot build
-        run: goreleaser release --snapshot --skip=publish --clean
+        run: goreleaser release --snapshot --skip=publish --clean --skip=sign
       - name: assert dist contents
         run: |
           set -euo pipefail

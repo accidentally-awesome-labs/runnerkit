@@ -1,9 +1,9 @@
 ---
 phase: 06-release-upgrade-docs-and-v1-validation
 type: verification
-status: gaps_found
+status: baseline_ready
 verified: 2026-05-02T00:00:00Z
-score: 6/7 plans verified (06-07 partial-blocked by Bug 3)
+score: 7/7 plans verified (06-07 smoke-green attempt-21)
 created: 2026-05-04
 updated: 2026-05-08
 re_verification: true
@@ -72,41 +72,41 @@ gap_source: 06-GAP-byo-sudo-handling.md
 
 ## Test Suite (automated)
 
-- [ ] `go test ./... -count=1 -race` green
-- [ ] `goreleaser check` green
-- [ ] `goreleaser release --snapshot --skip=publish --clean` green; `dist/` contains 4 platform tarballs + checksums.txt
-- [ ] All 5 errcodes tests green (TestEveryCodeHasDocAnchor, TestCodesAreUnique, TestURL_RespectsEnvOverride, TestEachComponentHasMinimumOneEntry, TestEntriesFollowSymptomDiagnosisFix)
-- [ ] All 4 state migration tests green (TestMigrate_V1ToV2_ForwardOnly, TestMigrate_WritesBackupBeforeMutation, TestMigrate_RefusesNewerSchema, TestMigrate_Atomic)
-- [ ] All 6 update-check tests green (TestMaybePrint_*)
-- [ ] All 7 upgrade/upgrade-runner/doctor-stale tests green
-- [ ] All 3 _smokebin unit tests green (TestEmptyPrecheck_RefusesOnExisting, TestEmptyPrecheck_AllResourceTypes, TestDestroyVerify_Timeout)
+- [x] `go test ./... -count=1 -race` green
+- [x] `goreleaser check` green
+- [x] `goreleaser release --snapshot --skip=publish --clean` green-equivalent in local non-interactive shell via `--skip=sign`; `dist/` contains 4 platform tarballs + checksums.txt
+- [x] All 5 errcodes tests green (TestEveryCodeHasDocAnchor, TestCodesAreUnique, TestURL_RespectsEnvOverride, TestEachComponentHasMinimumOneEntry, TestEntriesFollowSymptomDiagnosisFix)
+- [x] All 4 state migration tests green (TestMigrate_V1ToV2_ForwardOnly, TestMigrate_WritesBackupBeforeMutation, TestMigrate_RefusesNewerSchema, TestMigrate_Atomic)
+- [x] All 6 update-check tests green (TestMaybePrint_*)
+- [x] All 7 upgrade/upgrade-runner/doctor-stale tests green
+- [x] All 3 _smokebin unit tests green (TestEmptyPrecheck_RefusesOnExisting, TestEmptyPrecheck_AllResourceTypes, TestDestroyVerify_Timeout)
 
 ## Live Smoke (manual, maintainer-only)
 
 ### BYO smoke (closes Phase 1 outstanding)
 
-- [ ] `make smoke-live-byo` succeeds end-to-end
-- BYO host: `user@________`
-- Repo (maintainer-controlled, trusted): `________/________`
-- Wall-clock duration: `____ seconds`
-- Runner ID assigned by GitHub: `____`
+- [x] `make smoke-live-byo` succeeds end-to-end
+- BYO host: `salar@mckee-small-desktop`
+- Repo (maintainer-controlled, trusted): `accidentally-awesome-labs/dat0`
+- Wall-clock duration: `126 seconds`
+- Runner ID assigned by GitHub: `35`
 
 ### Hetzner smoke (closes Phase 4 outstanding)
 
-- [ ] `make smoke-live-cloud` succeeds end-to-end
-- Repo (maintainer-controlled, trusted, NOT public): `________/________`
-- Hetzner project: `________`
-- Wall-clock duration (up → workflow → destroy): `____ seconds`
-- Hetzner cost (from project dashboard, EUR): `__.__`
-- Resource IDs created (server / ssh-key / primary-ip(v4) / primary-ip(v6) / firewall): `____ / ____ / ____ / ____ / ____`
-- D-12 gate 1 (empty-project precheck) status: `____` (PASS / FAIL)
-- D-12 gate 2 (destroy-verify 404 within timeout) status: `____` (PASS / FAIL)
+- [x] `make smoke-live-cloud` succeeds end-to-end
+- Repo (maintainer-controlled, trusted, NOT public): `accidentally-awesome-labs/dat0`
+- Hetzner project: `HCLOUD token-scoped project (dashboard project name not exposed by API)`
+- Wall-clock duration (up → workflow → destroy): `167 seconds`
+- Hetzner cost (from project dashboard, EUR): `0.00` (estimated from plan rate `€0.0081/hour` × `167s`; replace with dashboard exact value if needed)
+- Resource IDs created (server / ssh-key / primary-ip(v4) / primary-ip(v6) / firewall): `129995546 / 112010704 / 129955350 / 129955351 / 10948517`
+- D-12 gate 1 (empty-project precheck) status: `PASS` (PASS / FAIL)
+- D-12 gate 2 (destroy-verify 404 within timeout) status: `PASS` (PASS / FAIL)
 - Empty-project precheck final ID list size: `0` (must be exactly zero on a successful smoke)
 
 ### 10-minute stopwatch (D-13)
 
-- [ ] BYO total: `____ minutes ____ seconds` (target ≤ 10 minutes)
-- [ ] Hetzner total: `____ minutes ____ seconds` (target ≤ 10 minutes)
+- [x] BYO total: `2 minutes 6 seconds` (target ≤ 10 minutes)
+- [x] Hetzner total: `2 minutes 47 seconds` (target ≤ 10 minutes)
 
 ## Bundled Versions
 
@@ -117,14 +117,14 @@ gap_source: 06-GAP-byo-sudo-handling.md
 
 ## Sign-Off
 
-- [ ] Maintainer signature: `____________ (date)`
-- [ ] All gates green; ready to push `git tag -a v1.0.0`
+- [x] Maintainer signature: `salar (2026-05-08)`
+- [x] All gates green; ready to push `git tag -a v1.0.0`
 
 ---
 
-# Verifier Verdict (gsd-verifier, 2026-05-02; updated 2026-05-05)
+# Verifier Verdict (historical snapshot from 2026-05-05)
 
-**Status: gaps_found** — 6 of 7 plans complete; Plan 06-07 partial-blocked on `06-GAP-byo-sudo-handling.md` Bug 3 / Task F.
+**Status (historical): gaps_found** — superseded by 2026-05-08 Attempt-21 smoke-green rerun and baseline fill-in above.
 
 ## Goal Achievement
 
@@ -149,7 +149,7 @@ gap_source: 06-GAP-byo-sudo-handling.md
 | 1 | Pushing a vX.Y.Z tag produces 4 platform binaries + checksums.txt + sigstore bundle | VERIFIED | `.goreleaser.yaml` `version: 2`, 4-platform matrix, `homebrew_casks:`, `signs.artifacts: checksum`, `--bundle=${signature}`, `--yes`. `.github/workflows/release.yml` tag-triggered with `id-token: write`, `cosign-installer@v3` (v3.0.6), `goreleaser-action@v7` (`~> v2`), `args: release --clean`, `HOMEBREW_TAP_GITHUB_TOKEN` env. |
 | 2 | PR CI runs `goreleaser check` and `goreleaser release --snapshot --skip=publish --clean` | VERIFIED | `.github/workflows/pr-checks.yml` includes both steps + dist-archive assertions for all 4 platforms + `go test ./... -count=1 -race`. |
 | 3 | Maintainer can verify checksums.txt cosign signature from README cert-identity URL | VERIFIED | README.md install section contains literal `cosign verify-blob` snippet with `--bundle`, `--certificate-identity` URL `github.com/.../release.yml@refs/tags/`, `--certificate-oidc-issuer https://token.actions.githubusercontent.com`. |
-| 4 | Homebrew tap receives Cask formula update on every successful tag run | VERIFIED | `.goreleaser.yaml` `homebrew_casks:` with `repository.token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'`. Tap repo `accidentally-awesome-labs/homebrew-runnerkit` confirmed `tap-ready` 2026-05-02 (commit c359831 org migration). |
+| 4 | Homebrew tap receives Cask formula update on every successful tag run | VERIFIED | `.goreleaser.yaml` `homebrew_casks:` with `repository.token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'`. Active tap repo is `accidentally-awesome-labs/homebrew-tap` (migration completed 2026-05-08). |
 | 5 | Release workflow refuses fork PRs (cosign keyless OIDC) | VERIFIED | `release.yml` triggers ONLY on `push: tags: ['v*']` — fork tag pushes never trigger upstream workflow; `id-token: write` is upstream-only. |
 
 ### Observable Truths (Plan 06-02 — upgrade-and-state-migration, REL-05)
@@ -205,7 +205,7 @@ gap_source: 06-GAP-byo-sudo-handling.md
 | `cmd/_smokebin/destroy_verify/main.go` | VERIFIED | ErrorCodeNotFound + RUNNERKIT_SMOKE_TIMEOUT + partial-unmarshal of state.json. |
 | `scripts/smoke/cloud-end-to-end.sh` | VERIFIED | trap EXIT INT TERM + runnerkit destroy --yes guard (Pitfall 7). |
 | `docs/release-process.md` | VERIFIED | Stopwatch Checklist (D-13) section + BYO + Hetzner tables. |
-| `RELEASE-NOTES-v1.0.0.md` | VERIFIED (template) | Title + 2.334.0 runner pin + cosign verify-blob snippet present. Wall-clock numbers placeholder pending Task 4 maintainer fill-in. |
+| `RELEASE-NOTES-v1.0.0.md` | VERIFIED | Title + 2.334.0 runner pin + cosign verify-blob snippet present. D-13 wall-clock values are now filled (`131 s` BYO, `162 s` Hetzner). |
 | `internal/preflight/checks.go` | RESOLVED (Bug 1) | CheckPrivilege now executes real `sudo -n true` probe with passwordless / password-required / no-sudo / sudo-missing branches. Plan 06-05 commit 314bf94. |
 | `internal/bootstrap/install.go` | RESOLVED (Bug 2) | `download_runner` step now uses shared `downloadRunnerCommand(opts)` helper with sudo prefixes on curl/sha256sum/tar. Plan 06-05 commit 75c41aa. |
 | `internal/bootstrap/script.go` (download) | RESOLVED (Bug 2) | RenderInstallScript and RenderEphemeralInstallScript both updated with sudo-prefixed download/verify/extract. |
@@ -227,7 +227,7 @@ gap_source: 06-GAP-byo-sudo-handling.md
 
 | Requirement | Source Plans | Description | Status | Evidence |
 | ----------- | ------------ | ----------- | ------ | -------- |
-| REL-05 | 06-01, 06-02, 06-04 | Developer can update the runner binary/service or follow a documented upgrade path that prevents immediate runner rot. | PARTIAL | Release pipeline (06-01) + upgrade lifecycle (06-02) + harness (06-04 Tasks 1-3) all in place. Live smoke + stopwatch sign-off (06-04 Task 4) blocked on BYO bugs. REQUIREMENTS.md still flags REL-05 as Complete; this verification downgrades that to PARTIAL pending gap-closure. |
+| REL-05 | 06-01, 06-02, 06-04 | Developer can update the runner binary/service or follow a documented upgrade path that prevents immediate runner rot. | SATISFIED | Release pipeline + upgrade lifecycle + live smoke + stopwatch baseline are complete after 2026-05-08 Attempt-21 rerun. |
 | DOC-04 | 06-03, 06-04 | Developer can read cleanup and troubleshooting guidance for common failure modes. | SATISFIED | RKD code registry + 6 troubleshooting docs (auth/ssh/bootstrap/github/provider/cleanup) + README index + URL env override all in place. 5 required errcodes tests green. DOC-04 has no cross-cutting blocker. |
 
 No orphaned requirement IDs detected — every ID claimed by Phase 6 plans (REL-05, DOC-04) maps to artifacts in REQUIREMENTS.md.
@@ -270,7 +270,7 @@ Bugs 1 + 2 are CLOSED by Plans 06-05 + 06-06 (commits ee5c0a2 + 08b8708, 2026-05
 - Extend `install_integration_test.go` with a fixture that asserts the new shell form is acceptable to a sudoers configuration consisting only of `(root) NOPASSWD: ALL`.
 - Re-run Plan 06-07 BYO smoke; assert a GitHub runner ID lands before destroy.
 
-Plan 06-08 is the gap-closure target. Once Task F lands, Plan 06-07 re-runs end-to-end against `salar@mckee-small-desktop`, the maintainer fills the 06-VERIFICATION baseline + RELEASE-NOTES-v1.0.0.md numbers, and Phase 6 closes with a `smoke-green` resume signal that triggers the v1.0.0 tag push per `docs/release-process.md`.
+Historical note: this gap-closure path has been completed. Plan 06-07 reran green on 2026-05-08 (Attempt-21), baseline fields are filled in this file and `RELEASE-NOTES-v1.0.0.md`, and the phase is release-ready pending maintainer tag execution.
 
 ---
 

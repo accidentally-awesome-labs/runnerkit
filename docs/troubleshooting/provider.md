@@ -108,8 +108,9 @@ See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troub
 
 ### Diagnosis
 
-RunnerKit reads the Hetzner Cloud API token from the `HCLOUD_TOKEN`
-environment variable (no other discovery paths in v1).
+RunnerKit reads the Hetzner Cloud API token from `HCLOUD_TOKEN` (preferred)
+or `HETZNER_CLOUD_TOKEN` (alias). No config-file or state-file discovery
+path is used for provider credentials in v1.
 
 ### Fix
 
@@ -121,6 +122,7 @@ Then export it for the current shell:
 
 ```bash
 export HCLOUD_TOKEN=...
+# or: export HETZNER_CLOUD_TOKEN=...
 runnerkit up --repo owner/repo --cloud hetzner
 ```
 

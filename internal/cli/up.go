@@ -914,7 +914,13 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 	// — Hetzner cpx22 + ubuntu-24.04 cloud-init typically needs
 	// 60-120s. RUNNERKIT_CLOUD_INIT_TIMEOUT overrides for slower
 	// regions / images.
-	result, err := runCloudInitWaitWithRetry(ctx, deps, target)
+	// Run cloud-init wait as root: Hetzner injects the uploaded SSH key for
+	// root at provision time, while the configured profile SSH user
+	// (runnerkit-admin) is created by cloud-init itself. Waiting as root avoids
+	// an auth race where runnerkit-admin does not exist yet.
+	waitTarget := target
+	waitTarget.User = "root"
+	result, err := runCloudInitWaitWithRetry(ctx, deps, waitTarget)
 	if err != nil {
 		stderr := strings.TrimSpace(result.Stderr)
 		if stderr != "" {

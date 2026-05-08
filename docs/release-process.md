@@ -14,7 +14,7 @@ Both are one-time and outside CI.
 GoReleaser publishes the Cask formula update to a separate repo on every
 tag. That repo must exist before the first release.
 
-1. Create a public GitHub repo named `accidentally-awesome-labs/homebrew-runnerkit`.
+1. Create a public GitHub repo named `accidentally-awesome-labs/homebrew-tap`.
 2. Initialize with a `Casks/` directory (empty file is fine: `Casks/.gitkeep`).
 3. The default branch must be `main` (matches `.goreleaser.yaml`
    `homebrew_casks[].repository.branch: main`).
@@ -22,12 +22,12 @@ tag. That repo must exist before the first release.
 ### 2. Create the HOMEBREW_TAP_GITHUB_TOKEN repo secret
 
 The default `GITHUB_TOKEN` issued to a workflow can only push to the workflow's
-own repo. Pushing the formula update to `accidentally-awesome-labs/homebrew-runnerkit` requires a
+own repo. Pushing the formula update to `accidentally-awesome-labs/homebrew-tap` requires a
 PAT scoped to that repo.
 
 1. On <https://github.com/settings/tokens?type=beta> create a fine-grained personal access token with:
    - Resource owner: `accidentally-awesome-labs`
-   - Repository access: only `accidentally-awesome-labs/homebrew-runnerkit`
+   - Repository access: only `accidentally-awesome-labs/homebrew-tap`
    - Repository permissions: `Contents: Read and write`
    - Expiration: 1 year (rotate before expiry).
 2. In `accidentally-awesome-labs/runnerkit` repo settings → Secrets and variables → Actions, add:
@@ -55,6 +55,10 @@ Before pushing a tag, the maintainer must:
    added by Plan 06-04 in this same file. Record wall-clock numbers honestly.
 3. **Verify CI green:** Confirm the `pr-checks` workflow passed on the merge
    commit. This proves `goreleaser check` and the snapshot build matrix work.
+   For local, non-interactive verification, it is acceptable to run
+   `goreleaser release --snapshot --skip=publish --clean --skip=sign` when
+   keyless cosign device flow is not available. Tag releases in upstream CI
+   MUST keep signing enabled (no `--skip=sign`).
 4. **Confirm the bundled runner pin:** `internal/bootstrap/package.go`
    `RunnerVersion` is a known-good GitHub Actions runner version (currently
    `2.334.0`). Bumping is a separate PR.
@@ -77,7 +81,7 @@ The release workflow will:
 2. Generate `runnerkit_v1.0.0_checksums.txt`.
 3. Sign the checksums file with cosign keyless (OIDC) → `runnerkit_v1.0.0_checksums.txt.sigstore.json`.
 4. Publish the GitHub Release with all assets.
-5. Push the Cask formula update to `accidentally-awesome-labs/homebrew-runnerkit`.
+5. Push the Cask formula update to `accidentally-awesome-labs/homebrew-tap`.
 
 ### Post-tag verification
 

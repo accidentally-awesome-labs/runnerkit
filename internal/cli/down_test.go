@@ -322,6 +322,15 @@ func TestDownPartialAndStaleGitHubOnlyFlows(t *testing.T) {
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("ambiguous runner-name should block ExitCode=%d err=%v", ExitCode(err), err)
 	}
+
+	missingByName := &testsupport.GitHubService{Runners: []gh.Runner{{ID: 3, Name: "unrelated-runner", Labels: []string{"self-hosted"}}}}
+	_, _, err = executeDownForTest(t, t.TempDir(), missingByName, downRemote(0), nil, false, "down", "--repo", repo.Repo.FullName, "--runner-name", "runnerkit-owner-repo-local", "--yes", "--no-color")
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("missing runner-name should block with safety gate ExitCode=%d err=%v", ExitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "github_runner_not_found") {
+		t.Fatalf("missing runner-name should return github_runner_not_found marker, got err=%v", err)
+	}
 }
 
 func TestDownEphemeralBYOPreservesLogsBeforeFileRemoval(t *testing.T) {

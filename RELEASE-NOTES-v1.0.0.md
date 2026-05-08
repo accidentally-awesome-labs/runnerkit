@@ -29,7 +29,8 @@ See [README.md](README.md#install) for the full install matrix.
 
 ```bash
 # Homebrew
-brew install accidentally-awesome-labs/runnerkit/runnerkit
+brew tap accidentally-awesome-labs/tap
+brew install --cask runnerkit
 
 # Or download from GitHub Releases and verify with cosign:
 TAG=v1.0.0
@@ -46,8 +47,8 @@ Measured by the maintainer on a clean machine before tagging.
 
 | Path                     | Wall-clock | Notes                          |
 | ------------------------ | ---------- | ------------------------------ |
-| BYO persistent           | `____ s`   | (maintainer fills)             |
-| Hetzner cloud persistent | `____ s`   | Hetzner cost: `__.__ EUR`      |
+| BYO persistent           | `126 s`    | Runner ID: `35`                |
+| Hetzner cloud persistent | `167 s`    | Hetzner cost: `0.00 EUR` (est. from plan rate; replace with dashboard exact value if needed) |
 
 ## Outstanding Live Smokes Closed
 

@@ -92,6 +92,7 @@ type fakeRemoteExecutor struct {
 	probe      remote.ProbeResult
 	probeCalls int
 	runs       []remote.Command
+	runTargets []remote.Target
 	runResults map[string]remote.Result
 	runErrs    map[string]error
 }
@@ -110,8 +111,9 @@ func (f *fakeRemoteExecutor) Probe(context.Context, remote.Target) (remote.Probe
 	return f.probe, nil
 }
 
-func (f *fakeRemoteExecutor) Run(_ context.Context, _ remote.Target, command remote.Command) (remote.Result, error) {
+func (f *fakeRemoteExecutor) Run(_ context.Context, target remote.Target, command remote.Command) (remote.Result, error) {
 	f.runs = append(f.runs, command)
+	f.runTargets = append(f.runTargets, target)
 	if f.runResults != nil {
 		if result, ok := f.runResults[command.ID]; ok {
 			return result, f.runErrs[command.ID]

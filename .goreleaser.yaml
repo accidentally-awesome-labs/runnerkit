@@ -36,10 +36,9 @@ signs:
 
 homebrew_casks:
   - name: runnerkit
-    binary: runnerkit
     repository:
       owner: accidentally-awesome-labs
-      name: homebrew-runnerkit
+      name: homebrew-tap
       branch: main
       token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
     directory: Casks
