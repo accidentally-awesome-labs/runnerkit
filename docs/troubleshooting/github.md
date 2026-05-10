@@ -1,6 +1,6 @@
 # Troubleshooting: GitHub Runner
 
-Stable codes for this component: `RKD-GH-001`..`RKD-GH-007`. Anchors are
+Stable codes for this component: `RKD-GH-001`..`RKD-GH-008`. Anchors are
 stable across renames (D-15).
 
 ***
@@ -236,3 +236,62 @@ runnerkit doctor --repo owner/repo
 ```
 
 Apply the more-specific fix first, then retry `recover --reregister`.
+
+***
+
+<a name="rkd-gh-008"></a>
+## RKD-GH-008: Self-hosted runner workflow fails — `sudo` needs a password / TTY
+
+**Severity:** info  
+**Component:** github
+
+### Symptom
+
+A GitHub Actions workflow running on your **self-hosted** RunnerKit machine
+fails on the first step that runs `sudo`, often `sudo apt-get install …`:
+
+```
+sudo: a terminal is required to read the password
+sudo: a password is required
+```
+
+The same workflow succeeds on **`ubuntu-latest`** (hosted).
+
+### Diagnosis
+
+Jobs execute as the runner service user — RunnerKit defaults this to
+**`runnerkit-runner`** (`internal/bootstrap/script.go`, `DefaultServiceUser`).
+GitHub-hosted runners ship with passwordless `sudo` for their job user; a
+plain Linux box usually does **not**. CI has **no TTY**, so `sudo` cannot
+prompt.
+
+This is separate from **`runnerkit byo-prepare`**: that command installs a
+scoped sudoers entry for the **SSH login user** who runs `runnerkit up`, not
+for **`runnerkit-runner`**.
+
+### Fix
+
+Pick one:
+
+**A — Scoped sudoers for package managers (recommended)**  
+As root on the runner host, install e.g. `/etc/sudoers.d/runnerkit-runner-ci`
+(mode `0440`, validate with `visudo -cf`) granting **`runnerkit-runner`**
+passwordless `sudo` only for installs:
+
+```
+runnerkit-runner ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt, /usr/bin/dnf, /usr/bin/yum
+```
+
+Adjust paths if `command -v apt-get` differs on your distro. Then re-run the
+workflow.
+
+**B — Avoid `sudo` in CI**  
+Pre-install packages on the host (or use a container job whose image already
+contains dependencies) so workflow steps do not invoke `sudo`.
+
+**C — Match hosted runners (broad)**  
+Some teams use `runnerkit-runner ALL=(ALL) NOPASSWD: ALL`. Easiest for
+workflows that call many privileged commands; weakest isolation — prefer A
+when possible.
+
+***

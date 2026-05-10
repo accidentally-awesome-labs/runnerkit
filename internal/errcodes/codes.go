@@ -80,6 +80,7 @@ var (
 	GHRunnerRegisterFailed          = Code{ID: "RKD-GH-005", Severity: SeverityError, Title: "Runner registration failed", File: "github.md", Anchor: "rkd-gh-005"}
 	GHDeregisterStaleFailed         = Code{ID: "RKD-GH-006", Severity: SeverityWarning, Title: "Stale GitHub runner deregistration failed", File: "github.md", Anchor: "rkd-gh-006"}
 	GHRecoverReregisterFailed       = Code{ID: "RKD-GH-007", Severity: SeverityError, Title: "recover --reregister failed", File: "github.md", Anchor: "rkd-gh-007"}
+	GHSelfHostedWorkflowSudo        = Code{ID: "RKD-GH-008", Severity: SeverityInfo, Title: "Self-hosted runner workflow sudo requires password or TTY", File: "github.md", Anchor: "rkd-gh-008"}
 
 	// PROV
 	ProvProviderError             = Code{ID: "RKD-PROV-001", Severity: SeverityWarning, Title: "Hetzner provider returned error during status", File: "provider.md", Anchor: "rkd-prov-001"}
@@ -119,7 +120,7 @@ var Registry = []Code{
 	BootDiskLow, BootToolsMissing, BootTimeUnsynchronized, BootPreflightUnsupportedDistro, BootPreflightFailed,
 	BootRunnerUserCreateFailed, BootRunnerPackageInstallFailed, BootRunnerOnlineVerifyTimeout, BootSudoPasswordRequired,
 	GHRunnerOffline, GHDuplicateCandidates, GHLabelDrift, GHRegistrationTokenCreateFailed, GHRunnerRegisterFailed,
-	GHDeregisterStaleFailed, GHRecoverReregisterFailed,
+	GHDeregisterStaleFailed, GHRecoverReregisterFailed, GHSelfHostedWorkflowSudo,
 	ProvProviderError, ProvResourceMissing, ProvDrift, ProvHCloudTokenMissing, ProvHCloudQuotaExceeded,
 	ProvHCloudPartialDestroy, ProvBillableResourceLingering,
 	CleanCleanupPending, CleanEphemeralCleanupPending, CleanDownFilesRemoveFailed, CleanEphemeralLogPreserveFailed, CleanDestroyPartial,
