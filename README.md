@@ -120,9 +120,9 @@ Use the BYO persistent runner quickstart when you already have SSH access to a t
 runnerkit up --repo owner/name --host user@host
 ```
 
-See [docs/byo-quickstart.md](docs/byo-quickstart.md) for prerequisites, safety notes, the workflow label snippet, and troubleshooting.
+See [docs/byo-quickstart.md](docs/byo-quickstart.md) for prerequisites, safety notes, the workflow label snippet, and troubleshooting. For OS/arch targeting and self-hosted vs hosted differences, see [docs/runner-platforms.md](docs/runner-platforms.md).
 
-First-time BYO setup against a sudo-with-password host? See [Sudo Setup](docs/byo-quickstart.md#sudo-setup) — `runnerkit byo-prepare --host user@host` installs a scoped sudoers entry once, then every `runnerkit up` runs passwordlessly.
+First-time BYO setup against a sudo-with-password host? See [Sudo Setup](docs/byo-quickstart.md#sudo-setup) — `runnerkit byo-prepare --host user@host` installs a scoped sudoers entry once, then every `runnerkit up` runs passwordlessly. If repository workflows use `sudo apt-get` on the runner, add `--grant-ci-sudo` on **Linux** so the job user matches hosted-runner ergonomics ([RKD-GH-008](docs/troubleshooting/github.md#rkd-gh-008)).
 
 ## Recommended cloud runner quickstart
 

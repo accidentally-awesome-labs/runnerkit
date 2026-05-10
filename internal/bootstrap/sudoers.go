@@ -125,7 +125,7 @@ fi
 // scoped sudoers entry. Used by `runnerkit byo-prepare --remove`.
 func RemoteSudoersRemoveScript() string {
 	return `set -euo pipefail
-sudo rm -f ` + SudoersFilePath + `
+sudo rm -f ` + SudoersFilePath + ` ` + RunnerCISudoersFilePath + `
 `
 }
 

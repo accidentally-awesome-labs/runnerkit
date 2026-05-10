@@ -145,8 +145,8 @@ func TestByoPrepare_Remove(t *testing.T) {
 	for _, c := range remoteExec.runs {
 		if c.ID == "remove_sudoers" {
 			sawRemove = true
-			if !strings.Contains(c.Script, bootstrap.SudoersFilePath) {
-				t.Fatalf("remove_sudoers command does not target SudoersFilePath: %s", c.Script)
+			if !strings.Contains(c.Script, bootstrap.SudoersFilePath) || !strings.Contains(c.Script, bootstrap.RunnerCISudoersFilePath) {
+				t.Fatalf("remove_sudoers must rm both installer + CI sudoers paths: %s", c.Script)
 			}
 		}
 	}
@@ -191,6 +191,89 @@ func TestByoPrepare_NonInteractiveFailsWithoutTTY(t *testing.T) {
 	}
 	if got := ExitCode(err); got != ExitInputRequired {
 		t.Fatalf("ExitCode() = %d, want %d", got, ExitInputRequired)
+	}
+}
+
+// TestByoPrepare_GrantCI_Idempotent skips all installs when installer + CI sudoers match.
+func TestByoPrepare_GrantCI_Idempotent(t *testing.T) {
+	remoteExec := newScriptedRemoteExecutor()
+	remoteExec.runResults["read_sudoers"] = remote.Result{
+		ExitCode: 0,
+		Stdout:   bootstrap.RenderSudoersEntry("alice"),
+	}
+	remoteExec.runResults["detect_kernel"] = remote.Result{ExitCode: 0, Stdout: "Linux\n"}
+	remoteExec.runResults["read_ci_sudoers"] = remote.Result{
+		ExitCode: 0,
+		Stdout:   bootstrap.RenderRunnerCISudoersEntry(bootstrap.DefaultServiceUser),
+	}
+	prompter := &recordingPasswordPrompter{password: "p@ss"}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		TTY:            ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:        prompter,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"byo-prepare", "--host", "alice@example.com", "--grant-ci-sudo", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("grant-ci idempotent byo-prepare: %v\nstderr=%s", err, errOut.String())
+	}
+	for _, c := range remoteExec.runs {
+		if c.ID == "install_sudoers" || c.ID == "install_ci_sudoers" {
+			t.Fatalf("unexpected install command %s on full idempotent hit", c.ID)
+		}
+	}
+	if prompter.passwordCalls != 0 {
+		t.Fatalf("password prompted on idempotent run: %d", prompter.passwordCalls)
+	}
+}
+
+// TestByoPrepare_GrantCI_InstallsOnlyCIWhenInstallerPresent installs CI sudoers when bootstrap sudoers already exist.
+func TestByoPrepare_GrantCI_InstallsOnlyCIWhenInstallerPresent(t *testing.T) {
+	remoteExec := newScriptedRemoteExecutor()
+	remoteExec.runResults["read_sudoers"] = remote.Result{
+		ExitCode: 0,
+		Stdout:   bootstrap.RenderSudoersEntry("alice"),
+	}
+	remoteExec.runResults["detect_kernel"] = remote.Result{ExitCode: 0, Stdout: "Linux\n"}
+	remoteExec.runResults["read_ci_sudoers"] = remote.Result{ExitCode: 1}
+	remoteExec.runResults["install_ci_sudoers"] = remote.Result{ExitCode: 0}
+
+	prompter := &recordingPasswordPrompter{password: "p@ss"}
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		TTY:            ui.TerminalCapabilities{StdinTTY: true, StdoutTTY: true, Width: 80},
+		Prompts:        prompter,
+		RemoteExecutor: remoteExec,
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs([]string{"byo-prepare", "--host", "alice@example.com", "--grant-ci-sudo", "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected success: %v stderr=%s", err, errOut.String())
+	}
+	var sawMain, sawCI bool
+	for _, c := range remoteExec.runs {
+		switch c.ID {
+		case "install_sudoers":
+			sawMain = true
+		case "install_ci_sudoers":
+			sawCI = true
+			if !strings.Contains(c.Env["RUNNERKIT_CI_SUDOERS_CONTENT"], "runnerkit-runner ALL=(root) NOPASSWD:") {
+				t.Fatalf("CI sudoers content missing service user NOPASSWD line")
+			}
+		}
+	}
+	if sawMain {
+		t.Fatal("installer sudoers should not reinstall when already prepared")
+	}
+	if !sawCI {
+		t.Fatal("expected install_ci_sudoers")
 	}
 }
 

@@ -275,7 +275,15 @@ Pick one:
 
 **A — Scoped sudoers for package managers (recommended, any Linux distro)**  
 
-`sudoers` only accepts **absolute paths** to executables. Those paths differ
+One-shot install from your laptop (same SSH target as `runnerkit up`):
+
+```bash
+runnerkit byo-prepare --host user@host --grant-ci-sudo
+```
+
+That writes `/etc/sudoers.d/runnerkit-runner-ci` with NOPASSWD only for common package-manager binaries (covers Debian, Fedora/RHEL, openSUSE, Arch, Alpine paths — see source `internal/bootstrap/ci_sudoers.go`). Use `--service-user` if it must match a non-default runner account.
+
+**Manual alternative:** `sudoers` only accepts **absolute paths** to executables. Those paths differ
 by distribution (e.g. Alpine’s `apk` is often `/sbin/apk`, not
 `/usr/bin/apk`). There is no single file that means “all package managers on
 all distros” — you must list each binary you want to allow, using the paths

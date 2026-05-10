@@ -32,7 +32,15 @@ Run this once per BYO host. RunnerKit prompts locally for the sudo password, ins
 runnerkit byo-prepare --host user@host
 ```
 
-After this completes, every subsequent `runnerkit up --host user@host` runs passwordlessly.
+Optional — **same Linux host** will also run **repository workflows** that invoke `sudo apt-get` / `dnf` / … as the Actions runner user (`runnerkit-runner` by default). GitHub-hosted runners allow that without a password; self-hosted machines usually do not. Install a **second scoped sudoers file** for CI package installs only:
+
+```bash
+runnerkit byo-prepare --host user@host --grant-ci-sudo
+```
+
+Use `--service-user` if you changed the runner service account from the default. See [RKD-GH-008](troubleshooting/github.md#rkd-gh-008) and [runner platforms](runner-platforms.md).
+
+After `byo-prepare` completes, every subsequent `runnerkit up --host user@host` runs passwordlessly for bootstrap.
 
 To revert:
 
