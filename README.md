@@ -80,6 +80,10 @@ sudo install -m 0755 runnerkit /usr/local/bin/runnerkit
 Troubleshooting install verification failures: see
 [docs/troubleshooting/README.md](docs/troubleshooting/README.md).
 
+## Maintainers: releases
+
+Shippable binaries and the Homebrew cask update **only** when an annotated **`v*`** tag is pushed on the upstream repo (not merely merging to `main`). See [docs/release-process.md](docs/release-process.md) for the full pipeline, secrets, and verification; [CLAUDE.md](CLAUDE.md) has a short checklist for agents.
+
 ## Safety: persistent vs ephemeral
 
 Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows. The lower-case validation phrase used throughout the docs is: persistent self-hosted runners.

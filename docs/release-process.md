@@ -4,6 +4,22 @@ This document is for the upstream RunnerKit maintainer. End users do not run
 any of these steps — see the user-facing [README.md](../README.md#install)
 instead.
 
+## Shipping changes through user channels
+
+Code merged to `main` is the source tree, but **installable artifacts only advance when you push a version tag.** Until then, users who install via **Homebrew** or **GitHub Releases** stay on the **previous** tagged release.
+
+| Channel | What updates it |
+| --- | --- |
+| **GitHub Releases** (`releases/download/vX.Y.Z/…`) | Annotated tag `vX.Y.Z` pushed to **upstream** `runnerkit` → release workflow |
+| **Homebrew cask** (`accidentally-awesome-labs/homebrew-tap`, `brew install --cask runnerkit`) | Same workflow — GoReleaser commits `Casks/runnerkit.rb` (needs `HOMEBREW_TAP_GITHUB_TOKEN`) |
+| **Docs on `main`** | Live on GitHub immediately; they may describe behavior **newer** than the latest tag until you release |
+
+**Version tags:** Use SemVer `vMAJOR.MINOR.PATCH` aligned with user-visible impact (patch for fixes and small additive CLI; minor/major when behavior or compatibility warrants it). The tag message should summarize what shipped.
+
+**Operational flow:** merge to `main` → pre-tag checklist below → `git tag -a vX.Y.Z -m "…"` → `git push origin vX.Y.Z` → watch Actions → verify Release assets and tap bump.
+
+**Agents / automation:** Do not assume `main` equals “released.” For a concise checklist, see [CLAUDE.md](../CLAUDE.md) in the repo root.
+
 ## One-Time Prerequisites
 
 Before the first `vX.Y.Z` tag can be pushed, manual setup steps must be done.
