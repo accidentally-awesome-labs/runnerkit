@@ -273,17 +273,59 @@ for **`runnerkit-runner`**.
 
 Pick one:
 
-**A — Scoped sudoers for package managers (recommended)**  
-As root on the runner host, install e.g. `/etc/sudoers.d/runnerkit-runner-ci`
-(mode `0440`, validate with `visudo -cf`) granting **`runnerkit-runner`**
-passwordless `sudo` only for installs:
+**A — Scoped sudoers for package managers (recommended, any Linux distro)**  
 
-```
-runnerkit-runner ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt, /usr/bin/dnf, /usr/bin/yum
-```
+`sudoers` only accepts **absolute paths** to executables. Those paths differ
+by distribution (e.g. Alpine’s `apk` is often `/sbin/apk`, not
+`/usr/bin/apk`). There is no single file that means “all package managers on
+all distros” — you must list each binary you want to allow, using the paths
+**on that host**.
 
-Adjust paths if `command -v apt-get` differs on your distro. Then re-run the
-workflow.
+1. On the self-hosted runner machine, as a user with root (or in a root shell),
+   discover which package tools exist and print a comma-separated list:
+
+   ```bash
+   u=runnerkit-runner
+   for c in apt-get apt dnf yum microdnf zypper pacman apk; do
+     p=$(command -v -- "$c" 2>/dev/null) || continue
+     case "$p" in /*) printf '%s\n' "$p";; esac
+   done | sort -u | paste -sd, -
+   ```
+
+2. Create `/etc/sudoers.d/runnerkit-runner-ci` (mode **0440**, owned by
+   **root**). One line, using the comma list from step 1 (example shape only —
+   **your** paths must come from the command above):
+
+   ```
+   runnerkit-runner ALL=(root) NOPASSWD: /usr/bin/apt-get,/usr/bin/apt,/usr/bin/dnf
+   ```
+
+3. Validate and fix permissions:
+
+   ```bash
+   sudo chown root:root /etc/sudoers.d/runnerkit-runner-ci
+   sudo chmod 0440 /etc/sudoers.d/runnerkit-runner-ci
+   sudo visudo -cf /etc/sudoers.d/runnerkit-runner-ci
+   ```
+
+4. If workflows also call **`sudo` + something else** (for example
+   `systemctl`, `snap`, `rpm`, `zypper` under a path not caught above), add
+   those **exact** paths too (`command -v systemctl`, etc.), or use fix **B**
+   / **C** below.
+
+**Coverage notes**
+
+| Family | Typical tools (discover with `command -v`) |
+| ------ | ------------------------------------------- |
+| Debian / Ubuntu | `apt-get`, `apt` |
+| RHEL / Fedora / derivatives | `dnf`, `yum`, sometimes `microdnf` |
+| openSUSE / SLES | `zypper` (path may be `/usr/sbin/zypper`) |
+| Arch | `pacman` |
+| Alpine | `apk` (often `/sbin/apk`) |
+
+Unusual or immutable systems (NixOS, Guix, minimal read-only images): prefer
+**B** — install dependencies outside the workflow or run jobs in a container
+image that already includes tools so CI never needs `sudo`.
 
 **B — Avoid `sudo` in CI**  
 Pre-install packages on the host (or use a container job whose image already
