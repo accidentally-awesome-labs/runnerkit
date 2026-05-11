@@ -152,6 +152,9 @@ func TestVersionJSONContract(t *testing.T) {
 	if payload["ok"] != true || payload["command"] != "version" || payload["version"] != "test-version" || payload["redactions_applied"] != true {
 		t.Fatalf("unexpected version payload: %#v", payload)
 	}
+	if payload["schema_version"] != float64(1) {
+		t.Fatalf("version json missing schema_version: %#v", payload)
+	}
 }
 
 func TestInvalidFlagMapsToExitCodeTwo(t *testing.T) {

@@ -23,6 +23,8 @@ archives:
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
   algorithm: sha256
+  extra_files:
+    - glob: ./install.sh
 
 signs:
   - cmd: cosign
@@ -71,6 +73,8 @@ release:
   draft: false
   prerelease: auto
   name_template: '{{ .Tag }}'
+  extra_files:
+    - glob: ./install.sh
 
 snapshot:
   version_template: '{{ incpatch .Version }}-SNAPSHOT-{{.ShortCommit}}'

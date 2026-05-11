@@ -28,6 +28,7 @@ func recoveryRemote(activeState string) *testsupport.RemoteExecutor {
 			"recover.service.reinstall":   {ExitCode: 0},
 			"recover.service.verify":      {ExitCode: 0},
 			"recover.service.stop":        {ExitCode: 0},
+			"recover.service.uninstall":   {ExitCode: 0},
 			"recover.runner.remove":       {ExitCode: 0},
 			"recover.runner.configure":    {ExitCode: 0},
 			"recover.runner.start":        {ExitCode: 0},
@@ -107,7 +108,7 @@ func TestRecoverReregisterUpdatesGitHubRunnerID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recover reregister returned error: %v\nstderr=%s", err, errOut)
 	}
-	for _, want := range []string{"recover.service.stop", "recover.runner.remove", "recover.runner.configure", "recover.runner.start"} {
+	for _, want := range []string{"recover.service.stop", "recover.service.uninstall", "recover.runner.remove", "recover.runner.configure", "recover.runner.start"} {
 		if !commandIDsContain(remoteExec, want) {
 			t.Fatalf("reregister missing command %q in %#v", want, remoteExec.CommandIDs())
 		}

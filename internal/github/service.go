@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"sync"
@@ -16,6 +17,7 @@ type ServiceOptions struct {
 	BaseURL       string
 	HTTPClient    *http.Client
 	Redactor      *redact.Redactor
+	Logger        *slog.Logger
 }
 
 // Service composes auth discovery, repository metadata, and runner-management checks.
@@ -25,6 +27,7 @@ type Service struct {
 	baseURL       string
 	httpClient    *http.Client
 	redactor      *redact.Redactor
+	log           *slog.Logger
 
 	mu         sync.Mutex
 	credential *Credential
@@ -45,6 +48,7 @@ func NewService(opts ServiceOptions) *Service {
 		baseURL:       opts.BaseURL,
 		httpClient:    opts.HTTPClient,
 		redactor:      redactor,
+		log:           opts.Logger,
 	}
 }
 
@@ -134,6 +138,7 @@ func (s *Service) client(ctx context.Context) (*Client, Credential, error) {
 		Token:      credential.Token,
 		HTTPClient: s.httpClient,
 		Redactor:   s.redactor,
+		Log:        s.log,
 	})
 	return client, credential, nil
 }

@@ -265,9 +265,9 @@ GitHub-hosted runners ship with passwordless `sudo` for their job user; a
 plain Linux box usually does **not**. CI has **no TTY**, so `sudo` cannot
 prompt.
 
-This is separate from **`runnerkit byo-prepare`**: that command installs a
-scoped sudoers entry for the **SSH login user** who runs `runnerkit up`, not
-for **`runnerkit-runner`**.
+This is separate from **`install.sh`** for the SSH user: that drop-in covers
+the bootstrap/compute surface for the login user, not package-manager sudo for
+**`runnerkit-runner`**.
 
 ### Fix
 
@@ -275,13 +275,13 @@ Pick one:
 
 **A — Scoped sudoers for package managers (recommended, any Linux distro)**  
 
-One-shot install from your laptop (same SSH target as `runnerkit up`):
+On the runner host (root), run `install.sh` with CI grants — same artifact as bootstrap uses for the SSH user:
 
 ```bash
-runnerkit byo-prepare --host user@host --grant-ci-sudo
+sudo RUNNERKIT_GRANT_CI_SUDO=1 RUNNERKIT_SERVICE_USER=runnerkit-runner bash -s < install.sh
 ```
 
-That writes `/etc/sudoers.d/runnerkit-runner-ci` with NOPASSWD only for common package-manager binaries (covers Debian, Fedora/RHEL, openSUSE, Arch, Alpine paths — see source `internal/bootstrap/ci_sudoers.go`). Use `--service-user` if it must match a non-default runner account.
+(or download `install.sh` from the RunnerKit release and pass `RUNNERKIT_GRANT_CI_SUDO=1`). That writes `/etc/sudoers.d/runnerkit-runner-ci` with NOPASSWD only for common package-manager binaries (see `internal/bootstrap/ci_sudoers.go`).
 
 **Manual alternative:** `sudoers` only accepts **absolute paths** to executables. Those paths differ
 by distribution (e.g. Alpine’s `apk` is often `/sbin/apk`, not

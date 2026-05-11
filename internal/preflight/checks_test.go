@@ -109,13 +109,11 @@ func TestCheckPrivilege_Passwordless(t *testing.T) {
 	}
 }
 
-// TestCheckPrivilege_PasswordRequired asserts that when `sudo -n true`
+// TestCheckPrivilege_PasswordRequired asserts that when the sudo probe
 // stderr indicates a password prompt is required, the report contains
 // a SeverityWarning result (NOT failure) with stable ID
-// host.privilege.password_required and remediation referencing
-// `runnerkit byo-prepare` plus the interactive prompt fallback.
-// Warning severity is required so report.Passed() stays true and the
-// bootstrap path remains reachable for Path B fallback (Plan 06-06).
+// host.privilege.password_required and remediation referencing one-time host install.
+// Warning severity keeps report.Passed() true so the CLI can emit a dedicated host_install_required error.
 func TestCheckPrivilege_PasswordRequired(t *testing.T) {
 	probe := passingProbe("ubuntu", "x86_64")
 	exec := fakePreflightExecutor{probe: probe, runResults: map[string]remote.Result{
@@ -131,12 +129,12 @@ func TestCheckPrivilege_PasswordRequired(t *testing.T) {
 		t.Fatalf("report missing %q result: %#v", CheckPrivilegePasswordReq, report.Results)
 	}
 	if result.Severity != SeverityWarning {
-		t.Fatalf("severity = %q, want %q (warning so Path B fallback can run)", result.Severity, SeverityWarning)
+		t.Fatalf("severity = %q, want %q", result.Severity, SeverityWarning)
 	}
 	if !report.Passed() {
-		t.Fatalf("report.Passed() should be true for password-required warning so Path B can take over: %#v", report.Results)
+		t.Fatalf("report.Passed() should be true for password-required warning: %#v", report.Results)
 	}
-	for _, want := range []string{"runnerkit byo-prepare", "interactive"} {
+	for _, want := range []string{"runnerkit init", "releases"} {
 		if !strings.Contains(strings.ToLower(result.Remediation), strings.ToLower(want)) {
 			t.Fatalf("remediation does not mention %q: %q", want, result.Remediation)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -27,6 +28,9 @@ type Provider struct {
 	Env       map[string]string
 	Client    Client
 	NewClient func(token string) Client
+	// Log receives optional structured lifecycle events when non-nil and
+	// enabled at info (see WithLogger).
+	Log *slog.Logger
 	// Sleep is an optional injection point for time.Sleep. Used by the
 	// Bug 30 (Plan 06-12) destroy retry loop so tests can fast-forward
 	// without burning wall-clock time. Defaults to time.Sleep when nil.
@@ -48,6 +52,12 @@ func WithClientFactory(factory func(token string) Client) Option {
 // must_be_unassigned uses this hook to fast-forward in unit tests.
 func WithSleep(sleep func(time.Duration)) Option {
 	return func(p *Provider) { p.Sleep = sleep }
+}
+
+// WithLogger attaches an optional slog.Logger for Hetzner provision/destroy
+// lifecycle events (bounded fields only — no secrets).
+func WithLogger(log *slog.Logger) Option {
+	return func(p *Provider) { p.Log = log }
 }
 
 func NewProvider(env map[string]string, opts ...Option) *Provider {
@@ -96,6 +106,14 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 	}
 	if strings.TrimSpace(input.PublicKey) == "" {
 		return provider.ProvisionResult{}, fmt.Errorf("public SSH key is required for Hetzner cloud provisioning")
+	}
+	if p.Log != nil && p.Log.Enabled(ctx, slog.LevelInfo) {
+		p.Log.InfoContext(ctx, "hetzner.provision.begin",
+			slog.String("repo", input.RepoFullName),
+			slog.String("runner", input.RunnerName),
+			slog.String("state_id", input.StateID),
+			slog.String("region", profile.Region),
+		)
 	}
 
 	plan := provider.HetznerProvisionPlan(input)
@@ -155,11 +173,90 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 		return provider.ProvisionResult{}, provisionError("server", input, plan, resourceIDs, server, err)
 	}
 	machine := machineFromServer(input, plan, resourceIDs, server)
+	if p.Log != nil && p.Log.Enabled(ctx, slog.LevelInfo) {
+		p.Log.InfoContext(ctx, "hetzner.provision.end",
+			slog.String("repo", input.RepoFullName),
+			slog.String("server_id", resourceIDs["server"]),
+			slog.Bool("checkpoint_required", true),
+		)
+	}
 	return provider.ProvisionResult{Machine: machine, CreatedResourceIDs: cloneIDs(resourceIDs), CheckpointRequired: true}, nil
 }
 
-func (p *Provider) Describe(_ context.Context, ref state.ProviderRef) (provider.ProviderStatus, error) {
-	return provider.ProviderStatus{Kind: ref.Kind, Region: ref.Region, Found: false}, nil
+func (p *Provider) Describe(ctx context.Context, ref state.ProviderRef) (provider.ProviderStatus, error) {
+	client, _, err := p.client()
+	if err != nil {
+		return provider.ProviderStatus{}, err
+	}
+	ids := mergedProviderIDs(ref)
+	serverIDStr := ids["server"]
+	if strings.TrimSpace(serverIDStr) == "" {
+		return provider.ProviderStatus{Kind: hetznerKind(ref), Region: ref.Region, Found: false}, nil
+	}
+	parsed, parseErr := parseID(serverIDStr)
+	if parseErr != nil {
+		return provider.ProviderStatus{
+			Kind:   hetznerKind(ref),
+			Region: ref.Region,
+			Found:  false,
+			Error:  parseErr.Error(),
+		}, nil
+	}
+	server, err := client.GetServer(ctx, parsed)
+	if err != nil {
+		if isAlreadyAbsentError(err) {
+			return provider.ProviderStatus{Kind: hetznerKind(ref), Region: ref.Region, Found: false}, nil
+		}
+		return provider.ProviderStatus{}, err
+	}
+	if server == nil {
+		return provider.ProviderStatus{Kind: hetznerKind(ref), Region: ref.Region, Found: false}, nil
+	}
+	ipv4, ipv6 := publicIPs(server)
+	publicHost := ipv4
+	if publicHost == "" {
+		publicHost = ipv6
+	}
+	region := ref.Region
+	if server.Datacenter != nil && server.Datacenter.Location != nil && server.Datacenter.Location.Name != "" {
+		region = server.Datacenter.Location.Name
+	}
+	serverType := ""
+	if server.ServerType != nil {
+		serverType = server.ServerType.Name
+	}
+	imageName := ""
+	if server.Image != nil {
+		imageName = server.Image.Name
+	}
+	return provider.ProviderStatus{
+		Kind:              hetznerKind(ref),
+		Found:             true,
+		Status:            serverStatus(server),
+		Region:            region,
+		ServerType:        serverType,
+		Image:             imageName,
+		PublicHost:        publicHost,
+		BillableResources: billableResourceLinesFromIDs(ids),
+		Drift:             nil,
+	}, nil
+}
+
+func hetznerKind(ref state.ProviderRef) string {
+	if strings.TrimSpace(ref.Kind) != "" {
+		return ref.Kind
+	}
+	return provider.HetznerProvider
+}
+
+func billableResourceLinesFromIDs(ids map[string]string) []string {
+	out := []string{}
+	for _, key := range []string{"server", "ssh_key", "firewall", "primary_ipv4", "primary_ipv6"} {
+		if v := strings.TrimSpace(ids[key]); v != "" {
+			out = append(out, key+":"+v)
+		}
+	}
+	return out
 }
 
 func (p *Provider) client() (Client, TokenSource, error) {

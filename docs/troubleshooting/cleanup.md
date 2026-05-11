@@ -176,6 +176,12 @@ Some destroy steps (provider, GitHub, remote, local state) succeeded but
 at least one did not. RunnerKit keeps cleanup checkpoints until everything
 verifies clean.
 
+When `remote_cleanup_pending` appears with host-side runner removal output
+(`Uninstall service first` / `Unconfigure service first`), the runner service
+metadata on the host is still configured. RunnerKit now runs
+`svc.sh uninstall` before `config.sh remove` for BYO/cloud/recover flows, but
+legacy hosts or out-of-band edits can still leave stale `.service` markers.
+
 ### Fix
 
 Look at `runnerkit doctor` to see which step is still pending (likely
@@ -184,6 +190,14 @@ or [RKD-CLEAN-003](#rkd-clean-003) above). Apply the relevant fix, then
 re-run:
 
 ```bash
+runnerkit destroy --repo owner/repo --yes
+```
+
+For deeper diagnostics, enable structured logs while rerunning:
+
+```bash
+RUNNERKIT_LOG=debug \
+RUNNERKIT_LOG_DEST=file:/tmp/runnerkit-debug.jsonl \
 runnerkit destroy --repo owner/repo --yes
 ```
 

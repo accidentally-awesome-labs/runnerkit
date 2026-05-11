@@ -411,7 +411,7 @@ runnerkit up --repo owner/repo --cloud hetzner
 `runnerkit up --host user@host` warns during preflight:
 
 ```
-[warning] host.privilege.password_required: sudo requires a password — RunnerKit will prompt or use byo-prepare
+[warning] host.privilege.password_required: sudo requires a password — run the one-time host install.
 ```
 
 Or the bootstrap step fails with `bootstrap_failed` and the surfaced
@@ -427,30 +427,22 @@ command fails.
 
 ### Fix
 
-**Recommended — `runnerkit byo-prepare`** (one-time scoped sudoers entry):
+**Recommended — one-time `install.sh` on the runner host**
+
+From your workstation, print the copy-paste line:
 
 ```bash
-runnerkit byo-prepare --host user@host
+runnerkit init --print-install-command
 ```
 
-Installs `/etc/sudoers.d/runnerkit-installer` (mode 0440) with NOPASSWD only
-for the bootstrap command set (`apt-get`/`dnf`/`yum`, `useradd`, `install`,
-`tar`, `systemctl`, `svc.sh`). Validated with `visudo -c` before atomic
-rename — a malformed sudoers file can never be persisted. Idempotent — safe
-to re-run. Use `--remove` to revert.
+SSH to the host and run that `curl … install.sh | sudo bash` command (or download `install.sh` from the release linked in your RunnerKit version and verify checksums). This writes `/etc/sudoers.d/runnerkit-installer` with NOPASSWD scoped to RunnerKit bootstrap commands only; `visudo -c` gates the write.
 
-**Fallback — interactive password prompt** (no host-side preconfiguration):
+Then re-run `runnerkit up` / `runnerkit register` / `runnerkit down` from the workstation — no sudo password over SSH.
+
+To revert on the host:
 
 ```bash
-runnerkit up --repo owner/name --host user@host
-# RunnerKit: "Sudo password for user@host:" → type password → bootstrap proceeds
+sudo rm -f /etc/sudoers.d/runnerkit-installer
 ```
 
-RunnerKit prompts locally for the sudo password during preflight. The
-password is registered with the redactor immediately so it never leaks into
-logs, JSON output, or error messages, and is zeroed from process memory
-after bootstrap returns. `--non-interactive` (or piping stdin) disables
-this fallback — use `runnerkit byo-prepare` for non-TTY contexts.
-
-See [docs/byo-quickstart.md#sudo-setup](../byo-quickstart.md#sudo-setup)
-for the full Path C → Path B decision tree.
+See [BYO quickstart — Sudo setup](../byo-quickstart.md#sudo-setup-one-time-on-the-host).

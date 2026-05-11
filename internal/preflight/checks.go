@@ -175,7 +175,7 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 		case probeErr == nil && probeResult.ExitCode == 0:
 			report.Results = append(report.Results, pass(CheckPrivilege, "Passwordless sudo available for setup commands."))
 		case strings.Contains(probeResult.Stderr, "password is required") || strings.Contains(probeResult.Stderr, "a terminal is required"):
-			report.Results = append(report.Results, warning(CheckPrivilegePasswordReq, "sudo requires a password — RunnerKit will prompt or use byo-prepare.", "Run `runnerkit byo-prepare --host user@host` to install a scoped sudoers entry, or re-run `runnerkit up` interactively to be prompted for the sudo password."))
+			report.Results = append(report.Results, warning(CheckPrivilegePasswordReq, "sudo requires a password — run the one-time host install.", "SSH to the host and run `runnerkit init --print-install-command`, or open install.sh from GitHub releases, then retry runnerkit up/register."))
 		case strings.Contains(probeResult.Stderr, "may not run sudo"):
 			report.Results = append(report.Results, failure(CheckPrivilegeNoSudo, "User is not in sudoers on the remote host.", "Add the SSH user to sudoers or pick a host where they are."))
 		default:

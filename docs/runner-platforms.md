@@ -46,6 +46,6 @@ Use **matrix** only across runners that actually exist in your org/repo settings
 | | GitHub-hosted (`ubuntu-latest`, etc.) | RunnerKit self-hosted |
 | --- | --- | --- |
 | OS images | Curated, uniform | Your machine / VM |
-| `sudo` in workflows | Passwordless for job user | Often **not** — run [`runnerkit byo-prepare --grant-ci-sudo`](byo-quickstart.md) on **Linux** hosts so workflow `sudo apt-get` works without a TTY ([RKD-GH-008](troubleshooting/github.md#rkd-gh-008)) |
+| `sudo` in workflows | Passwordless for job user | Often **not** — on **Linux**, run [`install.sh` with `RUNNERKIT_GRANT_CI_SUDO=1`](byo-quickstart.md#sudo-setup-one-time-on-the-host) so workflow `sudo apt-get` works without a TTY ([RKD-GH-008](troubleshooting/github.md#rkd-gh-008)) |
 
 For isolation-sensitive workloads, prefer **ephemeral** runners ([safety](safety.md)) or hosted runners — don’t mix untrusted PR code with persistent machines.

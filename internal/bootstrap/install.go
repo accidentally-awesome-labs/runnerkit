@@ -46,19 +46,6 @@ type Options struct {
 	EphemeralServiceName    string
 	EphemeralTTLServiceName string
 	EphemeralTTLTimerName   string
-
-	// SudoPassword, when non-empty, causes Apply / ApplyEphemeral to
-	// render sudo-prefixed commands as
-	//   printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | sudo -S <cmd>
-	// The literal password value is passed via remote.Command.Env (NOT
-	// interpolated into Script) and appended to RedactArgs so the
-	// executor scrubs it from any captured stderr. Empty preserves the
-	// existing NOPASSWD-style sudo invocation (Plan 06-05 behavior).
-	// The caller (CLI) MUST register the value with redact.SudoPassword
-	// before passing it here and zero the buffer in a deferred cleanup
-	// after Apply returns. This is Plan 06-06 Path B's transport for
-	// the prompted sudo password.
-	SudoPassword string
 }
 
 type Result struct {
@@ -84,50 +71,6 @@ func (e ServiceNotActiveError) Error() string {
 	return "runner_service_not_active"
 }
 
-// wrapSudoCommand applies Path B's `sudo -S` wrapping to a single
-// remote.Command when opts.SudoPassword is set. The literal password
-// flows via Env (not Script), so the rendered Script string is safe
-// to log: only the env-var name appears. RedactArgs is extended so the
-// executor scrubs the password from any captured stderr regardless.
-//
-// Behavior is deliberately a no-op when c.Sudo is false or
-// SudoPassword is empty — Path B should never wrap non-sudo commands
-// and Plan 06-05's NOPASSWD-style invocation must be preserved when
-// the host is byo-prepared (no password needed).
-//
-// Bug 10 fix (Plan 06-07 attempt-7, 2026-05-05): the previous wrapper
-// piped the password into a brace group containing the rewritten
-// script. That structure broke any inner `printf X | sudo Y` pattern
-// (e.g. `printf 'CHECKSUM' | sudo sha256sum -c -` from
-// RenderInstallScript) because the inner pipe overrides sudo's
-// stdin. Ubuntu's sudo defaults (use_pty + tty-scoped timestamp
-// cache) did not reliably cache cred across SSH sessions, so sudo -S
-// re-prompted, read from the inner printf, and treated the checksum
-// string as a wrong password attempt.
-//
-// The fix aligns this wrapper with byo-prepare's proven structure
-// (internal/cli/byo_prepare.go::runByoPrepareInstall): prime sudo's
-// cred cache once with a dedicated `printf | sudo -S -v` invocation,
-// then run the rewritten script WITHOUT an outer brace-group pipe.
-// Each subsequent sudo -S hits the freshly-primed cred and does not
-// read its stdin, so inner pipes reach their intended destination.
-//
-// Note: the rewrite also catches `sudo -u` because `sudo -S -u USER`
-// is the supported form.
-func wrapSudoCommand(c remote.Command, opts Options) remote.Command {
-	if opts.SudoPassword == "" || !c.Sudo {
-		return c
-	}
-	rewritten := RewriteSudoForPasswordPipe(c.Script)
-	c.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | sudo -S -v\n" + rewritten
-	if c.Env == nil {
-		c.Env = map[string]string{}
-	}
-	c.Env["RUNNERKIT_SUDO_PASSWORD"] = opts.SudoPassword
-	c.RedactArgs = append(c.RedactArgs, opts.SudoPassword)
-	return c
-}
-
 func Plan(opts Options) workflow.Plan { return workflow.BootstrapPlan() }
 
 func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts Options) (Result, error) {
@@ -145,7 +88,6 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 	}
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
-		command = wrapSudoCommand(command, opts) // Path B: pipe sudo password via stdin when set.
 		result, err := exec.Run(ctx, target, command)
 		out.Commands = append(out.Commands, result)
 		if err != nil || result.ExitCode != 0 {
@@ -189,7 +131,6 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 	}
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
-		command = wrapSudoCommand(command, opts) // Path B: pipe sudo password via stdin when set.
 		result, err := exec.Run(ctx, target, command)
 		out.Commands = append(out.Commands, result)
 		if err != nil || result.ExitCode != 0 {

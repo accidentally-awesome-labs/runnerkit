@@ -165,11 +165,11 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	}
 	add("logs_available", SeverityPass, "logs", "bounded systemd journal and runner diag collection is available", logsCmd)
 	// Plan 06-06: surface whether the host has been prepared via
-	// `runnerkit byo-prepare` (Path C). Severity is pass/info — the
+	// one-time host install. Severity is pass/info — the
 	// absence is not an error since Path B (interactive prompt) is a
 	// valid alternative.
 	if checks.BYOHostPrepared {
-		add("byo_host_prepared", SeverityPass, "remote", bootstrap.SudoersFilePath+" exists on remote host (runnerkit byo-prepare applied)", "runnerkit byo-prepare --host "+repoState.Machine.HostRef+" --remove # to revert")
+		add("byo_host_prepared", SeverityPass, "remote", bootstrap.SudoersFilePath+" exists on remote host (runnerkit host install applied)", "sudo rm -f "+bootstrap.SudoersFilePath+" # on host to revert")
 	}
 	return report
 }

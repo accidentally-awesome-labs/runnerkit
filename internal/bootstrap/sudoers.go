@@ -9,7 +9,7 @@ import (
 )
 
 // SudoersFilePath is the canonical absolute path of the scoped sudoers
-// entry that `runnerkit byo-prepare` installs (Plan 06-06 Path C). The
+// entry that `install.sh` / scoped bootstrap installs. The
 // file is owned by root, mode 0440, and grants the SSH user passwordless
 // sudo for the minimum command set required by `runnerkit up` bootstrap.
 const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
@@ -57,7 +57,7 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // Caller MUST ensure user is the SSH user from a previously-validated
 // remote.Target. No sanitization is done here.
 func RenderSudoersEntry(user string) string {
-	return fmt.Sprintf(`# /etc/sudoers.d/runnerkit-installer (managed by runnerkit byo-prepare)
+	return fmt.Sprintf(`# /etc/sudoers.d/runnerkit-installer (managed by runnerkit install.sh)
 %s ALL=(root) NOPASSWD: \
   /usr/bin/apt-get, /usr/bin/dnf, /usr/bin/yum, \
   /usr/sbin/useradd, \

@@ -263,9 +263,15 @@ journalctl -u %[3]s -n 500 --no-pager | sudo tee %[1]s/systemd-journal.log >/dev
 
 func RenderRemoveConfigScript(installPath string, serviceUser string) string {
 	serviceUser = defaultString(serviceUser, DefaultServiceUser)
-	return "set -euo pipefail\n" +
-		"cd " + installPath + "\n" +
-		"sudo -u " + serviceUser + " RUNNERKIT_REMOVAL_TOKEN=\"$RUNNERKIT_REMOVAL_TOKEN\" ./config.sh remove --token \"$RUNNERKIT_REMOVAL_TOKEN\"\n"
+	installPath = defaultString(strings.TrimSpace(installPath), "/opt/actions-runner")
+	// Match RenderInstallScript: invoke config.sh via `sudo su -s /bin/bash - <user> -c "..."`
+	// so Path C scoped sudoers (NOPASSWD on /bin/su) applies. `sudo -u`
+	// targets a different sudoers vector and commonly fails with
+	// "a terminal is required" on non-interactive SSH sessions.
+	return fmt.Sprintf(`set -euo pipefail
+cd %[1]s
+sudo su -s /bin/bash - %[2]s -c "cd %[1]s && RUNNERKIT_REMOVAL_TOKEN=\"$RUNNERKIT_REMOVAL_TOKEN\" ./config.sh remove --token \"$RUNNERKIT_REMOVAL_TOKEN\""
+`, installPath, serviceUser)
 }
 
 func RenderReconfigureScript(opts Options) string {
@@ -273,9 +279,12 @@ func RenderReconfigureScript(opts Options) string {
 	installPath := defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName))
 	workDir := defaultString(opts.WorkDir, filepath.Join("/var/lib/runnerkit/work", opts.RunnerName))
 	labels := strings.Join(opts.Labels, ",")
-	return "set -euo pipefail\n" +
-		"cd " + installPath + "\n" +
-		"sudo -u " + serviceUser + " RUNNERKIT_REGISTRATION_TOKEN=\"$RUNNERKIT_REGISTRATION_TOKEN\" ./config.sh --unattended --url " + opts.RepoURL + " --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name " + opts.RunnerName + " --labels " + labels + " --work " + workDir + " --replace\n"
+	// Same run-as pattern as RenderInstallScript / RenderRemoveConfigScript
+	// for Path C scoped sudoers.
+	return fmt.Sprintf(`set -euo pipefail
+cd %[1]s
+sudo su -s /bin/bash - %[2]s -c "cd %[1]s && RUNNERKIT_REGISTRATION_TOKEN=\"$RUNNERKIT_REGISTRATION_TOKEN\" ./config.sh --unattended --url %[3]s --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name %[4]s --labels %[5]s --work %[6]s --replace"
+`, installPath, serviceUser, opts.RepoURL, opts.RunnerName, labels, workDir)
 }
 
 func defaultString(value string, fallback string) string {

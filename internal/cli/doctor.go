@@ -73,8 +73,7 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 	workResult, workErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.path.work", Script: workScript, Timeout: 10 * time.Second})
 	_, _ = deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.preflight", Script: "true", Timeout: 5 * time.Second})
 	report, _ := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{RunnerName: repoState.Runner.Name, AllowUnknownLinux: true})
-	// Plan 06-06: probe whether `runnerkit byo-prepare` was applied
-	// (Path C) — the presence of /etc/sudoers.d/runnerkit-installer
+	// Probe whether one-time host install applied — presence of /etc/sudoers.d/runnerkit-installer
 	// is enough to emit the informational `byo_host_prepared` finding.
 	byoResult, byoErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.byo_host_prepared", Script: "test -f " + bootstrap.SudoersFilePath, Timeout: 5 * time.Second})
 	checks := ops.DeepChecks{InstallPathOK: installErr == nil && installResult.ExitCode == 0, WorkDirOK: workErr == nil && workResult.ExitCode == 0, Preflight: report, BYOHostPrepared: byoErr == nil && byoResult.ExitCode == 0}

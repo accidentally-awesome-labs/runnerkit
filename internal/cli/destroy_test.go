@@ -131,7 +131,7 @@ func TestDestroyCompleteRemovesStateAfterProviderVerification(t *testing.T) {
 	if _, found, loadErr := state.NewStore(stateDir).GetRepository(repo.Repo.FullName); loadErr != nil || found {
 		t.Fatalf("state should be removed found=%v err=%v", found, loadErr)
 	}
-	if github.DeleteRunnerCalls != 1 || cloud.DestroyCalls != 1 || cloud.VerifyDestroyedCalls != 1 {
+	if github.DeleteRunnerCalls != 1 || cloud.DestroyCalls != 1 || cloud.VerifyDestroyedCalls < 1 {
 		t.Fatalf("cleanup calls mismatch github=%#v cloud=%#v", github, cloud)
 	}
 }
@@ -155,6 +155,9 @@ func TestDestroyProviderVerificationFailureKeepsStateWithResourceIDs(t *testing.
 	joined := strings.Join(loaded.Cleanup.ProviderResourceIDs, ",")
 	if !strings.Contains(joined, "server:srv-123") || len(loaded.Operations) == 0 {
 		t.Fatalf("partial state lost provider IDs or checkpoints: %#v", loaded)
+	}
+	if cloud.VerifyDestroyedCalls != verifyDestroyedMaxAttempts {
+		t.Fatalf("expected VerifyDestroyed retry exhaustion calls=%d got=%d", verifyDestroyedMaxAttempts, cloud.VerifyDestroyedCalls)
 	}
 }
 

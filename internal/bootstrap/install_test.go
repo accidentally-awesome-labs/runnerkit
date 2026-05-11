@@ -125,63 +125,6 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 	}
 }
 
-// TestApply_WithSudoPassword_UsesSudoMinusSPipedFromHeredoc asserts the
-// Plan 06-06 Path B contract: when Options.SudoPassword is non-empty,
-// each sudo-prefixed command's Script is wrapped so it pipes the
-// password from the env-var $RUNNERKIT_SUDO_PASSWORD into `sudo -S`.
-// The literal password value MUST flow through Env (not be embedded
-// in Script) and MUST be appended to RedactArgs so the executor
-// scrubs it from any captured stderr.
-func TestApply_WithSudoPassword_UsesSudoMinusSPipedFromHeredoc(t *testing.T) {
-	password := "correct horse battery staple"
-	exec := &recordingExecutor{}
-	opts := Options{
-		RunnerName:   "runnerkit-owner-repo",
-		RepoURL:      "https://github.com/owner/repo",
-		Labels:       []string{"x"},
-		ServiceUser:  "runnerkit-runner",
-		RunnerToken:  "registration-token-x",
-		Package:      RunnerPackage{Filename: "runner.tgz", URL: "https://example.invalid/runner.tgz", SHA256: "abc"},
-		SudoPassword: password,
-	}
-	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
-		t.Fatalf("Apply returned error: %v", err)
-	}
-	if len(exec.commands) == 0 {
-		t.Fatal("no commands recorded")
-	}
-	sawSudoMinusS := false
-	for _, c := range exec.commands {
-		if !c.Sudo {
-			continue
-		}
-		// The wrapped script must reference sudo -S and the env var,
-		// but NOT contain the literal password value.
-		if strings.Contains(c.Script, password) {
-			t.Fatalf("command %q leaked literal password into Script:\n%s", c.ID, c.Script)
-		}
-		if strings.Contains(c.Script, "sudo -S") && strings.Contains(c.Script, "RUNNERKIT_SUDO_PASSWORD") {
-			sawSudoMinusS = true
-			if c.Env["RUNNERKIT_SUDO_PASSWORD"] != password {
-				t.Fatalf("command %q missing password Env: %#v", c.ID, c.Env)
-			}
-			redacted := false
-			for _, ra := range c.RedactArgs {
-				if ra == password {
-					redacted = true
-					break
-				}
-			}
-			if !redacted {
-				t.Fatalf("command %q missing password in RedactArgs: %#v", c.ID, c.RedactArgs)
-			}
-		}
-	}
-	if !sawSudoMinusS {
-		t.Fatalf("no sudo command was wrapped with sudo -S + RUNNERKIT_SUDO_PASSWORD env in any of %d commands", len(exec.commands))
-	}
-}
-
 // TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605 asserts
 // that when Options.SudoPassword is empty, none of the rendered
 // commands are wrapped with `sudo -S` or carry the
@@ -216,28 +159,6 @@ func TestApply_WithSudoPassword_UsesSudoMinusSPipedFromHeredoc(t *testing.T) {
 // so inner `printf X | sudo Y` patterns work because sudo lets the
 // printf reach Y.
 //
-// Bug 10 fix: align wrapSudoCommand with byo-prepare's proven
-// structure.
-func TestWrapSudoCommand_InnerStdinPipePreserved(t *testing.T) {
-	t.Parallel()
-	cmd := remote.Command{
-		ID:     "test",
-		Script: "printf 'CHECKSUM  FILE' | sudo sha256sum -c -",
-		Sudo:   true,
-	}
-	wrapped := wrapSudoCommand(cmd, Options{SudoPassword: "secret"})
-
-	if !strings.Contains(wrapped.Script, "printf 'CHECKSUM  FILE' | sudo -S sha256sum -c -") {
-		t.Fatalf("inner `printf | sudo sha256sum -c -` pipe must remain intact end-to-end:\n%s", wrapped.Script)
-	}
-	if strings.Contains(wrapped.Script, "| { ") {
-		t.Fatalf("wrap still uses outer brace-group pipe — Bug 10 not closed:\n%s", wrapped.Script)
-	}
-	if !strings.Contains(wrapped.Script, "sudo -S -v") {
-		t.Fatalf("expected dedicated `sudo -S -v` cred-priming invocation before script body:\n%s", wrapped.Script)
-	}
-}
-
 // Bug 15 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
 // Plan 06-07 attempt-12 against salar@mckee-small-desktop got past
@@ -414,7 +335,7 @@ func TestApplyConfigureRunnerCommand_HasSudoTrue(t *testing.T) {
 	for _, c := range exec.commands {
 		if c.ID == "configure_runner" {
 			if !c.Sudo {
-				t.Fatalf("configure_runner must have Sudo: true so wrapSudoCommand wraps `sudo curl/sha256sum/chown/su` for Path B password threading. Got Sudo=%v", c.Sudo)
+				t.Fatalf("configure_runner must have Sudo: true so scoped NOPASSWD sudo applies to `sudo curl/sha256sum/chown/su`. Got Sudo=%v", c.Sudo)
 			}
 			return
 		}

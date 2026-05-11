@@ -22,7 +22,7 @@ const RunnerCISudoersFilePath = "/etc/sudoers.d/runnerkit-runner-ci"
 //
 // This is NOT a blanket NOPASSWD ALL.
 func RenderRunnerCISudoersEntry(serviceUser string) string {
-	return fmt.Sprintf(`# %s (managed by runnerkit byo-prepare --grant-ci-sudo)
+	return fmt.Sprintf(`# %s (managed by runnerkit install.sh --grant-ci-sudo)
 %s ALL=(root) NOPASSWD: \
   /usr/bin/apt-get, /usr/bin/apt, /bin/apt, \
   /usr/bin/dnf, /usr/bin/yum, /usr/bin/microdnf, \

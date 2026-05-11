@@ -32,14 +32,17 @@ const (
 	destroyIncompleteCopyTemplate   = "Cleanup incomplete. RunnerKit kept state with pending cleanup checkpoints so you can rerun runnerkit destroy --repo %s."
 	destroyCompleteCopy             = "Cloud runner destroyed. GitHub runner is absent and RunnerKit-created Hetzner resources are deleted or verified non-billable."
 
-	pendingGitHubCleanup              = "github_cleanup_pending"
-	pendingRemoteCleanup              = "remote_cleanup_pending"
-	pendingProviderServer             = "provider_server_pending"
-	pendingProviderSSHKey             = "provider_ssh_key_pending"
-	pendingProviderFirewall           = "provider_firewall_pending"
-	pendingProviderPrimaryIP          = "provider_primary_ip_pending"
-	pendingProviderVerification       = "provider_verification_pending"
-	pendingEphemeralLogPreservation   = "ephemeral_log_preservation_pending"
+	pendingGitHubCleanup            = "github_cleanup_pending"
+	pendingRemoteCleanup            = "remote_cleanup_pending"
+	pendingProviderServer           = "provider_server_pending"
+	pendingProviderSSHKey           = "provider_ssh_key_pending"
+	pendingProviderFirewall         = "provider_firewall_pending"
+	pendingProviderPrimaryIP        = "provider_primary_ip_pending"
+	pendingProviderVerification     = "provider_verification_pending"
+	pendingEphemeralLogPreservation = "ephemeral_log_preservation_pending"
+
+	verifyDestroyedMaxAttempts = 12
+	verifyDestroyedRetryDelay  = 1500 * time.Millisecond
 )
 
 func newDestroyCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
@@ -154,6 +157,10 @@ func applyCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Rend
 	status := collectStatus(ctx, deps, store.Path(), repoState, true)
 	sshReachable := status.Observed.SSH.Reachable
 	target, targetErr := targetFromState(repoState)
+	resolvedUnit := repoState.Machine.ServiceName
+	if sshReachable && targetErr == nil {
+		resolvedUnit = ops.ResolveActionsRunnerSystemdUnit(ctx, deps.RemoteExecutor, target, repoState.Machine.ServiceName)
+	}
 
 	// Ephemeral cloud runners preserve _diag and journal logs to the
 	// host log archive before file removal so cloud destroy never
@@ -178,11 +185,15 @@ func applyCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Rend
 			results = append(results, cleanupResult{Artifact: string(ops.ArtifactCloudRemoteRunner), Status: "pending", Message: pendingRemoteCleanup})
 		} else {
 			renderer.Redactor().Register(redact.RunnerRemovalToken, removal.Token)
-			result, runErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "destroy.remote_runner", Script: cloudDestroyRemoteScript(repoState), Env: map[string]string{"RUNNERKIT_REMOVAL_TOKEN": removal.Token}, RedactArgs: []string{removal.Token}, Timeout: 90 * time.Second})
+			result, runErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "destroy.remote_runner", Script: cloudDestroyRemoteScript(repoState, resolvedUnit), Env: map[string]string{"RUNNERKIT_REMOVAL_TOKEN": removal.Token}, RedactArgs: []string{removal.Token}, Timeout: 90 * time.Second})
 			if runErr != nil || result.ExitCode != 0 {
 				partial = true
 				pending = appendUnique(pending, pendingRemoteCleanup)
-				results = append(results, cleanupResult{Artifact: string(ops.ArtifactCloudRemoteRunner), Status: "pending", Message: pendingRemoteCleanup})
+				msg := pendingRemoteCleanup
+				if detail := remoteCleanupDetail(renderer.Redactor(), result); detail != "" {
+					msg += " (" + detail + ")"
+				}
+				results = append(results, cleanupResult{Artifact: string(ops.ArtifactCloudRemoteRunner), Status: "pending", Message: msg})
 			} else {
 				results = append(results, cleanupResult{Artifact: string(ops.ArtifactCloudRemoteRunner), Status: "done"})
 			}
@@ -222,7 +233,7 @@ func applyCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Rend
 			pending = appendUnique(pending, item)
 		}
 	}
-	providerVerification, verifyErr := cloudProvider.VerifyDestroyed(ctx, repoState.Provider)
+	providerVerification, verifyErr := verifyDestroyedWithRetry(ctx, deps, cloudProvider, repoState.Provider)
 	billable := providerVerification.BillableResources
 	if billable == nil {
 		billable = []string{}
@@ -254,9 +265,41 @@ func applyCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Rend
 	return results, verification, false, pending, stateRemoved, nil
 }
 
-func cloudDestroyRemoteScript(repoState rkstate.RepositoryState) string {
+func cloudDestroyRemoteScript(repoState rkstate.RepositoryState, systemdUnit string) string {
+	install := shellQuote(repoState.Machine.InstallPath)
+	work := shellQuote(repoState.Machine.WorkDir)
+	u := shellQuote(systemdUnit)
+	svc := "set -euo pipefail\ncd " + install + " && sudo ./svc.sh stop || true\nsudo systemctl stop " + u + " || true\nsleep 3\n"
+	teardown := "cd " + install + " && sudo ./svc.sh uninstall || true\nsudo systemctl disable --now " + u + " || true\n"
 	remove := bootstrap.RenderRemoveConfigScript(repoState.Machine.InstallPath, bootstrap.DefaultServiceUser)
-	return remove + "\ncd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh stop || true\ncd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh uninstall || true\nsudo systemctl disable --now " + shellQuote(repoState.Machine.ServiceName) + " || true\nsudo rm -rf -- " + shellQuote(repoState.Machine.InstallPath) + " " + shellQuote(repoState.Machine.WorkDir) + "\n"
+	rm := "sudo rm -rf -- " + install + " " + work + "\n"
+	return svc + "\n" + teardown + "\n" + remove + "\n" + rm
+}
+
+func verifyDestroyedWithRetry(ctx context.Context, deps Dependencies, cloud provider.Provider, ref rkstate.ProviderRef) (provider.VerificationResult, error) {
+	sleep := deps.Sleep
+	if sleep == nil {
+		sleep = func(_ context.Context, d time.Duration) error {
+			time.Sleep(d)
+			return nil
+		}
+	}
+	var last provider.VerificationResult
+	var lastErr error
+	for attempt := 0; attempt < verifyDestroyedMaxAttempts; attempt++ {
+		v, err := cloud.VerifyDestroyed(ctx, ref)
+		last, lastErr = v, err
+		if err == nil && v.OK {
+			return v, nil
+		}
+		if attempt == verifyDestroyedMaxAttempts-1 {
+			break
+		}
+		if err := sleep(ctx, verifyDestroyedRetryDelay); err != nil {
+			return last, err
+		}
+	}
+	return last, lastErr
 }
 
 func keepCloudDestroyState(store rkstate.Store, repoState rkstate.RepositoryState, pending []string) error {

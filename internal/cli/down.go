@@ -77,7 +77,7 @@ func runDown(deps Dependencies, jsonOutput bool, noColor bool, opts *downOptions
 	if err != nil {
 		return err
 	}
-	results, partial, pending, stateRemoved, err := applyCleanup(ctx, deps, renderer, store, repoState, selected)
+	results, partial, pending, stateRemoved, err := applyCleanup(ctx, deps, renderer, store, repoState, selected, jsonOutput)
 	if err != nil {
 		return err
 	}
@@ -234,7 +234,7 @@ func renderCleanupPlanHuman(renderer *ui.Renderer, plan ops.CleanupPlan) error {
 	return renderer.Step(1, 1, "cleanup plan", lines...)
 }
 
-func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer, store rkstate.Store, repoState rkstate.RepositoryState, selected map[ops.CleanupArtifact]bool) ([]cleanupResult, bool, []string, bool, error) {
+func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer, store rkstate.Store, repoState rkstate.RepositoryState, selected map[ops.CleanupArtifact]bool, jsonOutput bool) ([]cleanupResult, bool, []string, bool, error) {
 	renderer.Redactor().Register(redact.MachineRef, repoState.Machine.HostRef)
 	status := collectStatus(ctx, deps, store.Path(), repoState, true)
 	sshReachable := status.Observed.SSH.Reachable
@@ -252,44 +252,104 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 	// On hosts where sudo IS passwordless (NOPASSWD ALL or Path C
 	// byo-prepare), the probe exits 0 and we keep the existing
 	// unwrapped happy path.
-	sudoPassword := ""
-	// Bug 25 (Plan 06-11, 2026-05-06): the sudo-password probe + prompt
-	// must run independently of `sshReachable`. The previous gate also
-	// required `sshReachable=true`, but a false-positive from the Bug 24
-	// host-key probe (or a genuinely flaky status probe) would skip the
-	// prompt — and any subsequent SSH-based cleanup that does succeed at
-	// the executor level would then run sudo without -S threading and
-	// fail with `sudo: a terminal is required`. The probe itself is
-	// cheap (5s timeout) and harmlessly times out when SSH is genuinely
-	// down, so dropping `sshReachable` from the gate fixes the Bug 24
-	// cascade without changing the passwordless-host happy path.
 	if targetErr == nil && needsAnyRemoteSudo(selected) {
 		needs, probeErr := probeSudoNeedsPassword(ctx, deps.RemoteExecutor, target)
 		if probeErr == nil && needs {
-			password, err := promptSudoPasswordForDown(ctx, deps, renderer, target)
-			if err != nil {
-				return nil, false, nil, false, err
-			}
-			sudoPassword = password
+			err := RenderHostInstallRequired(renderer, jsonOutput, deps.Version)
+			return nil, false, nil, false, err
 		}
 	}
-	if selected[ops.ArtifactHostRegistration] && sshReachable && targetErr == nil {
-		removal, err := deps.GitHub.CreateRemovalToken(ctx, repoState.Repo)
-		if err != nil {
-			return nil, false, nil, false, NewExitError(ExitGitHubAuth, err)
+	needsRunnerStop := selected[ops.ArtifactSystemdService] || selected[ops.ArtifactHostRegistration] || selected[ops.ArtifactRunnerFiles]
+	needsSvcTeardown := selected[ops.ArtifactSystemdService] || selected[ops.ArtifactHostRegistration]
+	resolvedUnit := repoState.Machine.ServiceName
+	if sshReachable && targetErr == nil && needsRunnerStop {
+		resolvedUnit = ops.ResolveActionsRunnerSystemdUnit(ctx, deps.RemoteExecutor, target, repoState.Machine.ServiceName)
+	}
+	// Bug 19 (GitHub unit naming): stop the *resolved* actions.runner.* unit
+	// before other runner teardown. For `config.sh remove`, the Actions
+	// runner requires `./svc.sh uninstall` first — current runners emit
+	// "Uninstall service first" otherwise (actions/runner#1022 documents
+	// related "Unconfigure service first" stale-.service cases; upstream
+	// resolution is uninstall, then remove).
+	if sshReachable && targetErr == nil && needsRunnerStop {
+		stopScript := renderBYORunnerStopScript(repoState.Machine.InstallPath, resolvedUnit)
+		stopRes, stopErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.service.stop", Script: stopScript, Timeout: 60 * time.Second})
+		var teardownRes remote.Result
+		var teardownErr error
+		preremoveUninstall := selected[ops.ArtifactHostRegistration] && needsSvcTeardown
+		systemdOnlyUninstall := needsSvcTeardown && !selected[ops.ArtifactHostRegistration]
+		if preremoveUninstall {
+			teardownScript := renderBYORunnerSvcTeardownScript(repoState.Machine.InstallPath, resolvedUnit)
+			teardownRes, teardownErr = deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.service.uninstall", Script: teardownScript, Timeout: 60 * time.Second})
 		}
-		renderer.Redactor().Register(redact.RunnerRemovalToken, removal.Token)
-		result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.runner.remove", Script: bootstrap.RenderRemoveConfigScript(repoState.Machine.InstallPath, bootstrap.DefaultServiceUser), Env: map[string]string{"RUNNERKIT_REMOVAL_TOKEN": removal.Token}, RedactArgs: []string{removal.Token}, Timeout: 60 * time.Second})
-		if err != nil || result.ExitCode != 0 {
-			if isAlreadyAbsent(result.Stdout + " " + result.Stderr) {
-				results = append(results, cleanupResult{Artifact: string(ops.ArtifactHostRegistration), Status: "skipped", Message: "already absent"})
-			} else {
-				partial = true
-				pending = append(pending, "remote_cleanup_pending")
-				results = append(results, cleanupResult{Artifact: string(ops.ArtifactHostRegistration), Status: "pending", Message: "remote_cleanup_pending"})
+		if selected[ops.ArtifactHostRegistration] {
+			removal, err := deps.GitHub.CreateRemovalToken(ctx, repoState.Repo)
+			if err != nil {
+				return nil, false, nil, false, NewExitError(ExitGitHubAuth, err)
 			}
-		} else {
-			results = append(results, cleanupResult{Artifact: string(ops.ArtifactHostRegistration), Status: "done"})
+			renderer.Redactor().Register(redact.RunnerRemovalToken, removal.Token)
+			removeScript := bootstrap.RenderRemoveConfigScript(repoState.Machine.InstallPath, bootstrap.DefaultServiceUser)
+			result, err := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.runner.remove", Script: removeScript, Env: map[string]string{"RUNNERKIT_REMOVAL_TOKEN": removal.Token}, RedactArgs: []string{removal.Token}, Timeout: 60 * time.Second})
+			if err != nil || result.ExitCode != 0 {
+				detail := remoteCleanupDetail(renderer.Redactor(), result)
+				if isAlreadyAbsent(result.Stdout + " " + result.Stderr) {
+					results = append(results, cleanupResult{Artifact: string(ops.ArtifactHostRegistration), Status: "skipped", Message: "already absent"})
+				} else {
+					partial = true
+					pending = append(pending, "remote_cleanup_pending")
+					msg := "remote_cleanup_pending"
+					if detail != "" {
+						msg += " (" + detail + ")"
+					}
+					results = append(results, cleanupResult{Artifact: string(ops.ArtifactHostRegistration), Status: "pending", Message: msg})
+				}
+			} else {
+				results = append(results, cleanupResult{Artifact: string(ops.ArtifactHostRegistration), Status: "done"})
+			}
+		}
+		if systemdOnlyUninstall {
+			teardownScript := renderBYORunnerSvcTeardownScript(repoState.Machine.InstallPath, resolvedUnit)
+			teardownRes, teardownErr = deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "down.service.uninstall", Script: teardownScript, Timeout: 60 * time.Second})
+		}
+		if selected[ops.ArtifactSystemdService] {
+			combined := mergeSystemdCleanupStatuses(statusFromRemoteResult(stopRes, stopErr), statusFromRemoteResult(teardownRes, teardownErr))
+			if combined == "failed" {
+				partial = true
+				pending = appendUnique(pending, "remote_cleanup_pending")
+			}
+			msg := "stop: " + shortRunnerCleanupMsg(stopRes, stopErr)
+			if needsSvcTeardown {
+				msg += "; uninstall: " + shortRunnerCleanupMsg(teardownRes, teardownErr)
+			}
+			results = append(results, cleanupResult{Artifact: string(ops.ArtifactSystemdService), Status: combined, Message: strings.TrimSpace(msg)})
+		}
+		if selected[ops.ArtifactRunnerFiles] {
+			// Preserve ephemeral _diag and journal logs to the host archive
+			// directory before removing the install path. We never block
+			// file removal on the preservation step; failures are recorded
+			// as a pending checkpoint via Cleanup.Notes/Operations below.
+			if repoState.Runner.Mode == "ephemeral" {
+				preserveResult, preserveErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{
+					ID:      "ephemeral.logs.preserve",
+					Script:  bootstrap.RenderEphemeralLogPreservationScript(repoState.Machine.InstallPath, repoState.Ephemeral.LogArchivePath, repoState.Machine.ServiceName),
+					Sudo:    true,
+					Timeout: 60 * time.Second,
+				})
+				if preserveErr != nil || preserveResult.ExitCode != 0 {
+					partial = true
+					pending = appendUnique(pending, "ephemeral_log_preservation_pending")
+				}
+			}
+			installPath, workDir, blocked, reason := ops.SafeRunnerPaths(repoState)
+			if blocked {
+				results = append(results, cleanupResult{Artifact: string(ops.ArtifactRunnerFiles), Status: "blocked", Message: reason})
+				partial = true
+			} else {
+				script := "sudo rm -rf -- " + shellQuote(installPath) + " " + shellQuote(workDir)
+				cmd := remote.Command{ID: "down.files.remove", Script: script, Timeout: 60 * time.Second}
+				result, err := deps.RemoteExecutor.Run(ctx, target, cmd)
+				results = append(results, cleanupResult{Artifact: string(ops.ArtifactRunnerFiles), Status: statusFromRemoteResult(result, err), Message: idempotentMessage(result)})
+			}
 		}
 	}
 	if selected[ops.ArtifactGitHubRunner] {
@@ -312,40 +372,6 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 		repoState.UpdatedAt = deps.Clock()
 		_ = store.UpdateRepository(repoState)
 		return results, partial, pending, false, nil
-	}
-	if selected[ops.ArtifactSystemdService] && targetErr == nil {
-		script := "cd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh stop || true\ncd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh uninstall || true\nsudo systemctl disable --now " + shellQuote(repoState.Machine.ServiceName) + " || true"
-		cmd := wrapDownSudoCommand(remote.Command{ID: "down.service.uninstall", Script: script, Timeout: 60 * time.Second}, sudoPassword)
-		result, err := deps.RemoteExecutor.Run(ctx, target, cmd)
-		results = append(results, cleanupResult{Artifact: string(ops.ArtifactSystemdService), Status: statusFromRemoteResult(result, err), Message: idempotentMessage(result)})
-	}
-	if selected[ops.ArtifactRunnerFiles] && targetErr == nil {
-		// Preserve ephemeral _diag and journal logs to the host archive
-		// directory before removing the install path. We never block
-		// file removal on the preservation step; failures are recorded
-		// as a pending checkpoint via Cleanup.Notes/Operations below.
-		if repoState.Runner.Mode == "ephemeral" {
-			preserveResult, preserveErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{
-				ID:      "ephemeral.logs.preserve",
-				Script:  bootstrap.RenderEphemeralLogPreservationScript(repoState.Machine.InstallPath, repoState.Ephemeral.LogArchivePath, repoState.Machine.ServiceName),
-				Sudo:    true,
-				Timeout: 60 * time.Second,
-			})
-			if preserveErr != nil || preserveResult.ExitCode != 0 {
-				partial = true
-				pending = appendUnique(pending, "ephemeral_log_preservation_pending")
-			}
-		}
-		installPath, workDir, blocked, reason := ops.SafeRunnerPaths(repoState)
-		if blocked {
-			results = append(results, cleanupResult{Artifact: string(ops.ArtifactRunnerFiles), Status: "blocked", Message: reason})
-			partial = true
-		} else {
-			script := "sudo rm -rf -- " + shellQuote(installPath) + " " + shellQuote(workDir)
-			cmd := wrapDownSudoCommand(remote.Command{ID: "down.files.remove", Script: script, Timeout: 60 * time.Second}, sudoPassword)
-			result, err := deps.RemoteExecutor.Run(ctx, target, cmd)
-			results = append(results, cleanupResult{Artifact: string(ops.ArtifactRunnerFiles), Status: statusFromRemoteResult(result, err), Message: idempotentMessage(result)})
-		}
 	}
 	if selected[ops.ArtifactLocalState] && !partial {
 		removed, err := store.RemoveRepository(repoState.Repo.FullName)
@@ -410,6 +436,57 @@ func idempotentMessage(result remote.Result) string {
 		return "already absent"
 	}
 	return strings.TrimSpace(text)
+}
+
+func renderBYORunnerStopScript(installPath, systemdUnit string) string {
+	return "cd " + shellQuote(installPath) + " && sudo ./svc.sh stop || true\nsudo systemctl stop " + shellQuote(systemdUnit) + " || true\nsleep 3\n"
+}
+
+func renderBYORunnerSvcTeardownScript(installPath, systemdUnit string) string {
+	return "cd " + shellQuote(installPath) + " && sudo ./svc.sh uninstall || true\nsudo systemctl disable --now " + shellQuote(systemdUnit) + " || true\n"
+}
+
+func mergeSystemdCleanupStatuses(stopStatus, teardownStatus string) string {
+	if stopStatus == "failed" || teardownStatus == "failed" {
+		return "failed"
+	}
+	if stopStatus == "pending" || teardownStatus == "pending" {
+		return "pending"
+	}
+	if stopStatus == "done" || teardownStatus == "done" {
+		return "done"
+	}
+	return "skipped"
+}
+
+func remoteCleanupDetail(red *redact.Redactor, result remote.Result) string {
+	s := strings.TrimSpace(result.Stdout + " " + result.Stderr)
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.TrimSpace(s)
+	if red != nil {
+		s = red.String(s)
+	}
+	if len(s) > 400 {
+		return s[:400] + "…"
+	}
+	return s
+}
+
+func shortRunnerCleanupMsg(res remote.Result, err error) string {
+	if err != nil {
+		return strings.TrimSpace(err.Error())
+	}
+	msg := strings.TrimSpace(res.Stdout + " " + res.Stderr)
+	if isAlreadyAbsent(msg) {
+		return "already absent"
+	}
+	if res.ExitCode != 0 && msg != "" {
+		return msg
+	}
+	if res.ExitCode != 0 {
+		return "non-zero exit"
+	}
+	return "ok"
 }
 
 func appendUnique(values []string, value string) []string {
@@ -489,67 +566,6 @@ func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, targe
 	// exit-status wrapper — preserves the existing graceful-failure
 	// semantics.
 	return false, nil
-}
-
-// promptSudoPasswordForDown is the down-command analogue of
-// promptSudoPasswordForPathB (cli/up.go::Plan 06-06). It enforces TTY
-// + password-prompter capability, registers the literal with the
-// renderer's redactor, and points users at `runnerkit byo-prepare`
-// when the prompt cannot run. We keep this helper local to down.go so
-// changes to up.go's flow don't accidentally couple to cleanup.
-func promptSudoPasswordForDown(ctx context.Context, deps Dependencies, renderer *ui.Renderer, target remote.Target) (string, error) {
-	rkdLine := errcodes.FormatLine(errcodes.BootSudoPasswordRequired)
-	if !deps.TTY.StdinTTY || deps.Prompts == nil {
-		remediation := []string{
-			"Run `runnerkit byo-prepare --host " + target.Display() + "` to install a scoped sudoers entry, then re-run `runnerkit down`.",
-			rkdLine,
-		}
-		_ = renderer.Error("sudo_password_required", "RunnerKit needs a sudo password for remote cleanup but no TTY is available for prompting.", remediation)
-		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but no TTY"))
-	}
-	passwordPrompter, ok := deps.Prompts.(ui.PasswordPrompter)
-	if !ok {
-		remediation := []string{
-			"Run `runnerkit byo-prepare --host " + target.Display() + "` first; this RunnerKit build's prompter does not support sudo password input.",
-			rkdLine,
-		}
-		_ = renderer.Error("sudo_password_required", "RunnerKit's prompter does not implement password input.", remediation)
-		return "", NewExitError(ExitInputRequired, errors.New("sudo password required but prompter has no Password method"))
-	}
-	password, err := passwordPrompter.Password(ctx, ui.Prompt{Message: "Sudo password for " + target.Display() + ":"})
-	if err != nil {
-		return "", err
-	}
-	if password == "" {
-		_ = renderer.Error("sudo_password_required", "RunnerKit received an empty sudo password.", []string{
-			"Run `runnerkit byo-prepare --host " + target.Display() + "` to install a scoped sudoers entry, or re-run `runnerkit down` and enter the host's sudo password when prompted.",
-			rkdLine,
-		})
-		return "", NewExitError(ExitInputRequired, errors.New("empty sudo password"))
-	}
-	renderer.Redactor().Register(redact.SudoPassword, password)
-	return password, nil
-}
-
-// wrapDownSudoCommand applies the same printf|sudo -S -v cred-priming
-// wrapper bootstrap.wrapSudoCommand uses (Plan 06-09 Bug 10). The
-// password flows via Env (not Script) so the rendered Script is safe
-// to log: only the env-var name appears. RedactArgs is extended so the
-// executor scrubs the password from any captured stderr regardless.
-// No-op when sudoPassword is empty — preserves the existing
-// passwordless happy path.
-func wrapDownSudoCommand(cmd remote.Command, sudoPassword string) remote.Command {
-	if sudoPassword == "" {
-		return cmd
-	}
-	rewritten := bootstrap.RewriteSudoForPasswordPipe(cmd.Script)
-	cmd.Script = "printf '%s\\n' \"$RUNNERKIT_SUDO_PASSWORD\" | sudo -S -v\n" + rewritten
-	if cmd.Env == nil {
-		cmd.Env = map[string]string{}
-	}
-	cmd.Env["RUNNERKIT_SUDO_PASSWORD"] = sudoPassword
-	cmd.RedactArgs = append(cmd.RedactArgs, sudoPassword)
-	return cmd
 }
 
 func cleanupPayload(repo string, dryRun bool, plan ops.CleanupPlan, results []cleanupResult, partial bool, pending []string, stateRemoved bool) map[string]any {

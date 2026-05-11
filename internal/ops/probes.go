@@ -23,6 +23,11 @@ const (
 	// runners.
 	CommandStatusSystemdListUnits    = "status.systemd.list_units"
 	CommandStatusSystemdShowResolved = "status.systemd.show.resolved"
+
+	// resolveRunnerUnitShow / resolveRunnerUnitList support
+	// ResolveActionsRunnerSystemdUnit for BYO/cloud cleanup (Bug 19 parity).
+	resolveRunnerUnitShow = "resolve.runner_unit.show"
+	resolveRunnerUnitList = "resolve.runner_unit.list"
 )
 
 // ProbeRemoteStatus collects the live SSH + service health for status/doctor.
@@ -106,6 +111,42 @@ func ProbeRemoteStatus(ctx context.Context, executor remote.Executor, target rem
 		}
 	}
 	return ssh, service
+}
+
+// ResolveActionsRunnerSystemdUnit returns the live systemd unit name for
+// GitHub's actions.runner.*.service on the remote host. GitHub's svc.sh
+// installs actions.runner.<owner-repo>.<runner-name>.service while
+// RunnerKit state often stores the simplified
+// actions.runner.<runner-name>.service form (Bug 19). Cleanup must
+// systemctl stop/disable the real unit, not only the simplified name.
+func ResolveActionsRunnerSystemdUnit(ctx context.Context, executor remote.Executor, target remote.Target, savedServiceName string) string {
+	if executor == nil || strings.TrimSpace(savedServiceName) == "" {
+		return savedServiceName
+	}
+	show, err := executor.Run(ctx, target, remote.Command{
+		ID:      resolveRunnerUnitShow,
+		Script:  "systemctl show " + shellQuote(savedServiceName) + " --property=LoadState --no-pager",
+		Timeout: 15 * time.Second,
+	})
+	if err == nil && show.ExitCode == 0 && !strings.Contains(show.Stdout, "LoadState=not-found") {
+		return savedServiceName
+	}
+	suffix := extractRunnerSuffix(savedServiceName)
+	if suffix == "" {
+		return savedServiceName
+	}
+	list, err := executor.Run(ctx, target, remote.Command{
+		ID:      resolveRunnerUnitList,
+		Script:  "systemctl list-units 'actions.runner.*' --type=service --all --no-pager --plain --no-legend",
+		Timeout: 15 * time.Second,
+	})
+	if err != nil || list.ExitCode != 0 {
+		return savedServiceName
+	}
+	if resolved := matchUnitBySuffix(list.Stdout, suffix); resolved != "" {
+		return resolved
+	}
+	return savedServiceName
 }
 
 // parseSystemdShow parses the `systemctl show --property=…` key=value

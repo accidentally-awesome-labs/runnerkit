@@ -3,6 +3,7 @@ package hetzner
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -46,6 +47,23 @@ func (p *Provider) Destroy(ctx context.Context, ref state.ProviderRef) (provider
 	}
 	ids := mergedProviderIDs(ref)
 	result := provider.DestroyResult{Results: []provider.ArtifactResult{}, Pending: []string{}}
+	if p.Log != nil && p.Log.Enabled(ctx, slog.LevelInfo) {
+		p.Log.InfoContext(ctx, "hetzner.destroy.begin",
+			slog.String("server_id", ids["server"]),
+			slog.String("ssh_key_id", ids["ssh_key"]),
+			slog.String("firewall_id", ids["firewall"]),
+		)
+	}
+	defer func() {
+		if p.Log == nil || !p.Log.Enabled(ctx, slog.LevelInfo) {
+			return
+		}
+		p.Log.InfoContext(ctx, "hetzner.destroy.summary",
+			slog.Bool("partial", result.Partial),
+			slog.Int("pending", len(result.Pending)),
+			slog.Int("results", len(result.Results)),
+		)
+	}()
 	apply := func(artifact string, id string, delete func(context.Context, int) error, pending string) {
 		if strings.TrimSpace(id) == "" {
 			result.Results = append(result.Results, provider.ArtifactResult{Artifact: artifact, Status: "skipped", Message: "not tracked"})
@@ -205,6 +223,19 @@ func (p *Provider) VerifyDestroyed(ctx context.Context, ref state.ProviderRef) (
 	}
 	ids := mergedProviderIDs(ref)
 	verification := provider.VerificationResult{OK: true, BillableResources: []string{}, Missing: []string{}}
+	if p.Log != nil && p.Log.Enabled(ctx, slog.LevelInfo) {
+		p.Log.InfoContext(ctx, "hetzner.verify_destroy.begin", slog.String("server_id", ids["server"]))
+	}
+	defer func() {
+		if p.Log == nil || !p.Log.Enabled(ctx, slog.LevelInfo) {
+			return
+		}
+		p.Log.InfoContext(ctx, "hetzner.verify_destroy.summary",
+			slog.Bool("ok", verification.OK),
+			slog.Int("billable", len(verification.BillableResources)),
+			slog.Int("missing", len(verification.Missing)),
+		)
+	}()
 	check := func(kind string, id string, get func(context.Context, int) (bool, error)) {
 		if strings.TrimSpace(id) == "" {
 			verification.Missing = append(verification.Missing, kind)

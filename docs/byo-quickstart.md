@@ -20,53 +20,33 @@ Do not use this persistent BYO path for public pull requests or untrusted workfl
 
 For full guidance see the [Self-hosted Runner Safety Guide](safety.md).
 
-## Sudo Setup
+## Sudo setup (one-time on the host)
 
-RunnerKit's bootstrap commands run as the SSH user with sudo. RunnerKit supports two paths so the SSH user does NOT need to manually edit `/etc/sudoers.d/`:
+Bootstrap runs over SSH without a TTY, so the SSH user must already have **scoped passwordless sudo** for RunnerKit’s commands. Run the **one-time install on the runner machine** (interactive sudo once), then use `runnerkit register` or `runnerkit up` from your workstation forever after.
 
-### Recommended: `runnerkit byo-prepare` (one-time, persistent)
+1. Print the install command from your workstation:
 
-Run this once per BYO host. RunnerKit prompts locally for the sudo password, installs a SCOPED `/etc/sudoers.d/runnerkit-installer` entry granting NOPASSWD only for the bootstrap commands (`apt-get`/`dnf`/`yum`, `useradd`, `install`, `tar`, `systemctl`, `svc.sh`), validates with `visudo -c` before atomically renaming into place, and verifies passwordless sudo works:
+   ```bash
+   runnerkit init --print-install-command
+   ```
 
-```bash
-runnerkit byo-prepare --host user@host
-```
+2. SSH to the Linux host and paste the `curl … install.sh | sudo bash` line (or download `install.sh` from the matching [GitHub release](https://github.com/accidentally-awesome-labs/runnerkit/releases) and verify checksums per `README.md`).
 
-Optional — **same Linux host** will also run **repository workflows** that invoke `sudo apt-get` / `dnf` / … as the Actions runner user (`runnerkit-runner` by default). GitHub-hosted runners allow that without a password; self-hosted machines usually do not. Install a **second scoped sudoers file** for CI package installs only:
+This installs `/etc/sudoers.d/runnerkit-installer` with NOPASSWD only for the bootstrap command set (`apt-get`/`dnf`/`yum`, `useradd`, `install`, `curl`, `sha256sum`, `chown`, `rm`, `su`, `tar`, `systemctl`, runner `svc.sh`). See [RKD-BOOT-015](troubleshooting/bootstrap.md#rkd-boot-015) if anything blocks.
 
-```bash
-runnerkit byo-prepare --host user@host --grant-ci-sudo
-```
-
-Use `--service-user` if you changed the runner service account from the default. See [RKD-GH-008](troubleshooting/github.md#rkd-gh-008) and [runner platforms](runner-platforms.md).
-
-After `byo-prepare` completes, every subsequent `runnerkit up --host user@host` runs passwordlessly for bootstrap.
-
-To revert:
+To revert on the host:
 
 ```bash
-runnerkit byo-prepare --host user@host --remove
+sudo rm -f /etc/sudoers.d/runnerkit-installer
 ```
-
-### Fallback: interactive password prompt during `runnerkit up`
-
-If you have NOT run `runnerkit byo-prepare`, `runnerkit up` detects the password requirement during preflight and prompts you locally for the sudo password. The password is registered with RunnerKit's redactor immediately so it never leaks into logs, JSON output, or error messages, and is zeroed from process memory after bootstrap returns:
-
-```bash
-runnerkit up --repo owner/name --host user@host
-# RunnerKit: "Sudo password for user@host:" → type password → bootstrap proceeds
-```
-
-`--non-interactive` (or piping stdin) disables this fallback. In that case, `runnerkit up` exits with `RKD-BOOT-015` and remediation pointing at `runnerkit byo-prepare`. See [docs/troubleshooting/bootstrap.md#rkd-boot-015](troubleshooting/bootstrap.md#rkd-boot-015).
 
 ### Decision tree
 
-| Scenario | Recommended path |
+| Scenario | Path |
 | --- | --- |
-| One-time setup; want passwordless from now on | `runnerkit byo-prepare --host user@host` |
-| Don't want host-side state changes; happy to type password | `runnerkit up --host user@host` (prompts) |
-| CI / automation / no TTY | `runnerkit byo-prepare` first, then `runnerkit up --non-interactive` |
-| Already configured `/etc/sudoers.d/` manually with NOPASSWD ALL | `runnerkit up` works without prompt (but prefer scoped `byo-prepare`) |
+| First-time BYO host | `runnerkit init --print-install-command` → run on host → `runnerkit up` or `runnerkit register` |
+| CI / automation / `--json` | Host must already have install applied; otherwise RunnerKit exits with `host_install_required` and a boxed install command |
+| Manual NOPASSWD ALL for the SSH user | Works but prefer scoped install.sh |
 
 ## Run setup
 

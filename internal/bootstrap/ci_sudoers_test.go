@@ -10,7 +10,7 @@ import (
 
 func TestRenderRunnerCISudoersEntry(t *testing.T) {
 	got := RenderRunnerCISudoersEntry("runnerkit-runner")
-	if !strings.Contains(got, RunnerCISudoersFilePath+" (managed by runnerkit byo-prepare --grant-ci-sudo)") {
+	if !strings.Contains(got, RunnerCISudoersFilePath+" (managed by runnerkit install.sh --grant-ci-sudo)") {
 		t.Fatalf("missing managed-by header:\n%s", got)
 	}
 	if !strings.Contains(got, "runnerkit-runner ALL=(root) NOPASSWD:") {

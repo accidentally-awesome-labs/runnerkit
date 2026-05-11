@@ -176,9 +176,9 @@ func TestRenderEphemeralInstallScriptCdsBeforeConfigSh(t *testing.T) {
 // install dir already contains the .runner sentinel (e.g. from a
 // prior failed attempt or a stopped runner) — it emits:
 //
-//   Cannot configure the runner because it is already configured.
-//   To reconfigure the runner, run 'config.cmd remove' or
-//   './config.sh remove' first.
+//	Cannot configure the runner because it is already configured.
+//	To reconfigure the runner, run 'config.cmd remove' or
+//	'./config.sh remove' first.
 //
 // `--replace` removes the GitHub-side runner record (so registration
 // doesn't 409 on duplicate name), but config.sh still aborts on local
@@ -187,7 +187,7 @@ func TestRenderEphemeralInstallScriptCdsBeforeConfigSh(t *testing.T) {
 // `runnerkit up` against a host with a stale runner reliably succeed.
 func TestRenderInstallScriptRemovesStaleRunnerStateBeforeConfig(t *testing.T) {
 	opts := Options{
-		RunnerName:  "runnerkit-x", RepoURL: "https://github.com/owner/repo",
+		RunnerName: "runnerkit-x", RepoURL: "https://github.com/owner/repo",
 		Labels: []string{"x"}, InstallPath: "/opt/actions-runner/runnerkit-x",
 		WorkDir:     "/var/lib/runnerkit/work/runnerkit-x",
 		ServiceUser: "runnerkit-runner", RunnerToken: "tk",
@@ -207,12 +207,12 @@ func TestRenderInstallScriptRemovesStaleRunnerStateBeforeConfig(t *testing.T) {
 
 func TestRenderEphemeralInstallScriptRemovesStaleRunnerStateBeforeConfig(t *testing.T) {
 	opts := Options{
-		RunnerName:  "runnerkit-x-ephemeral", RepoURL: "https://github.com/owner/repo",
+		RunnerName: "runnerkit-x-ephemeral", RepoURL: "https://github.com/owner/repo",
 		Labels: []string{"x"}, InstallPath: "/opt/actions-runner/runnerkit-x-ephemeral",
 		WorkDir:     "/var/lib/runnerkit/work/runnerkit-x-ephemeral",
 		ServiceUser: "runnerkit-runner", RunnerToken: "tk",
-		Mode:        "ephemeral",
-		Package:     RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
+		Mode:    "ephemeral",
+		Package: RunnerPackage{Filename: "r.tgz", URL: "https://x.invalid/r.tgz", SHA256: "abc"},
 	}
 	script := RenderEphemeralInstallScript(opts)
 	want := "sudo rm -f .runner .credentials .credentials_rsaparams"
@@ -368,12 +368,12 @@ func TestRenderEphemeralServiceScriptUsesOneShotUnitWithoutSvcSh(t *testing.T) {
 
 func TestRenderEphemeralFinalizerScriptPreservesLogsAndRemovesCredentials(t *testing.T) {
 	opts := Options{
-		RunnerName:     "runnerkit-owner-repo-ephemeral-abc123",
-		InstallPath:    "/opt/actions-runner/runnerkit-owner-repo-ephemeral-abc123",
-		ServiceUser:    "runnerkit-runner",
-		Mode:           "ephemeral",
-		LogArchivePath: "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-abc123/logs",
-		FinalizerPath:  "/usr/local/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-abc123/finalize.sh",
+		RunnerName:           "runnerkit-owner-repo-ephemeral-abc123",
+		InstallPath:          "/opt/actions-runner/runnerkit-owner-repo-ephemeral-abc123",
+		ServiceUser:          "runnerkit-runner",
+		Mode:                 "ephemeral",
+		LogArchivePath:       "/var/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-abc123/logs",
+		FinalizerPath:        "/usr/local/lib/runnerkit/ephemeral/runnerkit-owner-repo-ephemeral-abc123/finalize.sh",
 		EphemeralServiceName: "runnerkit-ephemeral.runnerkit-owner-repo-ephemeral-abc123.service",
 	}
 	script := RenderEphemeralFinalizerScript(opts)
@@ -445,12 +445,22 @@ func TestRenderRecoveryScriptsUseEnvironmentTokens(t *testing.T) {
 	opts := Options{RunnerName: "runnerkit-owner-repo-local", RepoURL: "https://github.com/owner/repo", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo", "linux", "x64", "persistent"}, InstallPath: "/opt/actions-runner/runnerkit-owner-repo-local", WorkDir: "/var/lib/runnerkit/work/runnerkit-owner-repo-local", ServiceUser: "runnerkit-runner"}
 	remove := RenderRemoveConfigScript(opts.InstallPath, opts.ServiceUser)
 	reconfigure := RenderReconfigureScript(opts)
-	for _, want := range []string{"RUNNERKIT_REMOVAL_TOKEN", "cd /opt/actions-runner/runnerkit-owner-repo-local", "./config.sh remove --token \"$RUNNERKIT_REMOVAL_TOKEN\""} {
+	for _, want := range []string{
+		"RUNNERKIT_REMOVAL_TOKEN",
+		"cd /opt/actions-runner/runnerkit-owner-repo-local",
+		"sudo su -s /bin/bash - runnerkit-runner -c",
+		// Match RenderInstallScript quoting inside `sudo su … -c "…"` (raw fmt string uses \").
+		`./config.sh remove --token \"$RUNNERKIT_REMOVAL_TOKEN\"`,
+	} {
 		if !strings.Contains(remove, want) {
 			t.Fatalf("remove script missing %q:\n%s", want, remove)
 		}
 	}
-	for _, want := range []string{"RUNNERKIT_REGISTRATION_TOKEN", "./config.sh --unattended --url https://github.com/owner/repo --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name runnerkit-owner-repo-local --labels self-hosted,runnerkit,runnerkit-owner-repo,linux,x64,persistent --work /var/lib/runnerkit/work/runnerkit-owner-repo-local --replace"} {
+	for _, want := range []string{
+		"RUNNERKIT_REGISTRATION_TOKEN",
+		"sudo su -s /bin/bash - runnerkit-runner -c",
+		`./config.sh --unattended --url https://github.com/owner/repo --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name runnerkit-owner-repo-local --labels self-hosted,runnerkit,runnerkit-owner-repo,linux,x64,persistent --work /var/lib/runnerkit/work/runnerkit-owner-repo-local --replace`,
+	} {
 		if !strings.Contains(reconfigure, want) {
 			t.Fatalf("reconfigure script missing %q:\n%s", want, reconfigure)
 		}

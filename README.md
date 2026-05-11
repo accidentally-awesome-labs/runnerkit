@@ -126,7 +126,7 @@ runnerkit up --repo owner/name --host user@host
 
 See [docs/byo-quickstart.md](docs/byo-quickstart.md) for prerequisites, safety notes, the workflow label snippet, and troubleshooting. For OS/arch targeting and self-hosted vs hosted differences, see [docs/runner-platforms.md](docs/runner-platforms.md).
 
-First-time BYO setup against a sudo-with-password host? See [Sudo Setup](docs/byo-quickstart.md#sudo-setup) — `runnerkit byo-prepare --host user@host` installs a scoped sudoers entry once, then every `runnerkit up` runs passwordlessly. If repository workflows use `sudo apt-get` on the runner, add `--grant-ci-sudo` on **Linux** so the job user matches hosted-runner ergonomics ([RKD-GH-008](docs/troubleshooting/github.md#rkd-gh-008)).
+First-time BYO setup against a sudo-with-password host? See [Sudo setup](docs/byo-quickstart.md#sudo-setup-one-time-on-the-host): run `runnerkit init --print-install-command` on your workstation, execute the `install.sh` line on the host once, then `runnerkit up` / `runnerkit register` use scoped NOPASSWD sudo over SSH. For workflow `sudo apt-get` as the runner user on **Linux**, re-run install with `RUNNERKIT_GRANT_CI_SUDO=1` ([RKD-GH-008](docs/troubleshooting/github.md#rkd-gh-008)).
 
 ## Recommended cloud runner quickstart
 
@@ -173,6 +173,15 @@ component:
 
 You can override the URL prefix the CLI prints with
 `RUNNERKIT_DOCS_BASE=https://your-docs-host/runnerkit`.
+
+### Structured CLI logs (debugging / telemetry)
+
+Set **`RUNNERKIT_LOG`** to emit JSON **structured logs** (Go `slog`) for every CLI invocation: command line, GitHub REST calls (method, path, status, duration), each remote SSH step (`command_id`, target, exit code, duration), and Hetzner provision/destroy/verify summaries. Values: `off` (default), `info`, `warn`, `error`, or `debug` (includes truncated, redacted remote stdout/stderr previews and source locations). Tokens and secrets are not logged in cleartext; remote I/O at debug is passed through the same redactor used for `--json` output.
+
+Use **`RUNNERKIT_LOG_DEST`** to control sink:
+- unset / `stderr`: write JSON logs to stderr (default)
+- `stdout`: write JSON logs to stdout
+- `file:/absolute/or/relative/path.jsonl` (or plain path): append JSON lines to file (parent dirs auto-created)
 
 ## BYO operations
 

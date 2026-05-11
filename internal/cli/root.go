@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -12,7 +13,9 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider/hetzner"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/rklog"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/nextaction"
 	"github.com/spf13/cobra"
 )
 
@@ -34,9 +37,12 @@ type Dependencies struct {
 	GitHubHTTPClient *http.Client
 	StateBaseDir     string
 	RemoteExecutor   remote.Executor
-	PollInterval     time.Duration
-	PollTimeout      time.Duration
-	Sleep            func(context.Context, time.Duration) error
+	// Logger is optional structured logging (slog). When nil, NewFromEnv
+	// uses RUNNERKIT_LOG against stderr — see package rklog.
+	Logger       *slog.Logger
+	PollInterval time.Duration
+	PollTimeout  time.Duration
+	Sleep        func(context.Context, time.Duration) error
 }
 
 func normalizeDependencies(deps Dependencies) Dependencies {
@@ -52,6 +58,9 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 	if deps.Err == nil {
 		deps.Err = io.Discard
 	}
+	if deps.Logger == nil {
+		deps.Logger = rklog.NewFromEnv(deps.Err)
+	}
 	if deps.Clock == nil {
 		deps.Clock = time.Now
 	}
@@ -62,14 +71,15 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 		deps.CommandRunner = gh.OSCommandRunner{}
 	}
 	if deps.GitHub == nil {
-		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient})
+		deps.GitHub = gh.NewService(gh.ServiceOptions{CommandRunner: deps.CommandRunner, Env: deps.GitHubEnv, BaseURL: deps.GitHubBaseURL, HTTPClient: deps.GitHubHTTPClient, Logger: deps.Logger})
 	}
 	if deps.Providers == nil {
-		deps.Providers = provider.NewRegistry(hetzner.NewProvider(nil))
+		deps.Providers = provider.NewRegistry(hetzner.NewProvider(nil, hetzner.WithLogger(deps.Logger)))
 	}
 	if deps.RemoteExecutor == nil {
 		deps.RemoteExecutor = remote.NewSystemExecutor()
 	}
+	deps.RemoteExecutor = remote.WrapWithLogging(deps.RemoteExecutor, deps.Logger, nil)
 	if deps.PollInterval == 0 {
 		deps.PollInterval = defaultRunnerPollInterval
 	}
@@ -109,11 +119,25 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return NewExitError(ExitInvalidInput, err)
 	})
+	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if deps.Logger != nil && deps.Logger.Enabled(ctx, slog.LevelInfo) {
+			deps.Logger.InfoContext(ctx, "runnerkit.cli.begin",
+				slog.String("command", cmd.CommandPath()),
+				slog.String("version", deps.Version),
+			)
+		}
+	}
 
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "write machine-readable JSON to stdout")
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
 
 	root.AddCommand(newVersionCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newInitCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newRegisterCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newStatusCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newLogsCommand(deps, &jsonOutput, &noColor))
@@ -124,7 +148,6 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newStateCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpgradeCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpgradeRunnerCommand(deps, &jsonOutput, &noColor))
-	root.AddCommand(newByoPrepareCommand(deps, &jsonOutput, &noColor))
 
 	return root
 }
@@ -135,11 +158,12 @@ func newVersionCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobr
 	cmd.RunE = func(_ *cobra.Command, _ []string) error {
 		renderer := newRenderer(deps, *jsonOutput, *noColor)
 		if *jsonOutput {
-			return renderer.JSON(map[string]any{
+			p := nextaction.MergePayload(map[string]any{
 				"ok":      true,
 				"command": "version",
 				"version": deps.Version,
-			})
+			}, "", nil)
+			return renderer.JSON(p)
 		}
 		return renderer.Step(1, 1, "Version", ui.Success("RunnerKit "+deps.Version))
 	}

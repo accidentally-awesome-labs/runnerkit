@@ -24,7 +24,7 @@ import (
 // test that locks in the new path.
 func TestRenderSudoersEntry(t *testing.T) {
 	got := RenderSudoersEntry("alice")
-	if !strings.Contains(got, "# /etc/sudoers.d/runnerkit-installer (managed by runnerkit byo-prepare)") {
+	if !strings.Contains(got, "# /etc/sudoers.d/runnerkit-installer (managed by runnerkit install.sh)") {
 		t.Fatalf("missing managed-by header:\n%s", got)
 	}
 	if !strings.Contains(got, "alice ALL=(root) NOPASSWD:") {

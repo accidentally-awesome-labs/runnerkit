@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -26,6 +27,7 @@ type ClientOptions struct {
 	Token      string
 	HTTPClient *http.Client
 	Redactor   *redact.Redactor
+	Log        *slog.Logger
 }
 
 type Client struct {
@@ -33,6 +35,7 @@ type Client struct {
 	token      string
 	httpClient *http.Client
 	redactor   *redact.Redactor
+	log        *slog.Logger
 }
 
 type APIError struct {
@@ -78,7 +81,7 @@ func NewClient(opts ClientOptions) *Client {
 	if opts.Token != "" {
 		redactor.Register(redact.GitHubToken, opts.Token)
 	}
-	return &Client{baseURL: parsed, token: opts.Token, httpClient: client, redactor: redactor}
+	return &Client{baseURL: parsed, token: opts.Token, httpClient: client, redactor: redactor, log: opts.Log}
 }
 
 func (c *Client) Repository(ctx context.Context, repo Repo) (Repo, error) {
@@ -136,6 +139,7 @@ func (c *Client) createRunnerToken(ctx context.Context, repo Repo, endpoint stri
 }
 
 func (c *Client) do(ctx context.Context, method string, apiPath string, body io.Reader, into any) error {
+	start := time.Now()
 	endpoint := *c.baseURL
 	endpoint.Path = path.Join(c.baseURL.Path, apiPath)
 	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
@@ -151,15 +155,52 @@ func (c *Client) do(ctx context.Context, method string, apiPath string, body io.
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.httpClient.Do(req)
+	status := 0
+	responseLen := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
 	if err != nil {
+		if c.log != nil && c.log.Enabled(ctx, slog.LevelInfo) {
+			c.log.InfoContext(ctx, "github.api",
+				slog.String("method", method),
+				slog.String("path", apiPath),
+				slog.Int("status", status),
+				slog.Duration("duration", time.Since(start)),
+				slog.Bool("ok", false),
+				slog.String("err", err.Error()),
+			)
+		}
 		return err
 	}
 	defer resp.Body.Close()
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		if c.log != nil && c.log.Enabled(ctx, slog.LevelInfo) {
+			c.log.InfoContext(ctx, "github.api",
+				slog.String("method", method),
+				slog.String("path", apiPath),
+				slog.Int("status", status),
+				slog.Duration("duration", time.Since(start)),
+				slog.Bool("ok", false),
+				slog.String("err", err.Error()),
+			)
+		}
 		return err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	responseLen = len(responseBody)
+	ok := resp.StatusCode >= 200 && resp.StatusCode < 300
+	if c.log != nil && c.log.Enabled(ctx, slog.LevelInfo) {
+		c.log.InfoContext(ctx, "github.api",
+			slog.String("method", method),
+			slog.String("path", apiPath),
+			slog.Int("status", resp.StatusCode),
+			slog.Duration("duration", time.Since(start)),
+			slog.Bool("ok", ok),
+			slog.Int("response_bytes", responseLen),
+		)
+	}
+	if !ok {
 		var errorPayload struct {
 			Message string `json:"message"`
 		}

@@ -30,6 +30,8 @@ func downRemote(statusExit int) *testsupport.RemoteExecutor {
 	return &testsupport.RemoteExecutor{ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Results: map[string]remote.Result{
 		ops.CommandStatusSSHReachable: {ExitCode: statusExit},
 		ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
+		"resolve.runner_unit.show":    {Stdout: "LoadState=loaded\n", ExitCode: 0},
+		"down.service.stop":           {ExitCode: 0},
 		"down.runner.remove":          {ExitCode: 0},
 		"down.service.uninstall":      {ExitCode: 0},
 		"down.files.remove":           {ExitCode: 0},
@@ -88,7 +90,7 @@ func TestDownYesCompleteCleanupDeletesStateAndRedactsToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("down --yes returned error: %v\nstderr=%s", err, errOut)
 	}
-	for _, want := range []string{"down.runner.remove", "down.service.uninstall", "down.files.remove"} {
+	for _, want := range []string{"down.service.stop", "down.runner.remove", "down.service.uninstall", "down.files.remove"} {
 		if !commandIDsContain(remoteExec, want) {
 			t.Fatalf("down missing command %q in %#v", want, remoteExec.CommandIDs())
 		}
@@ -111,21 +113,7 @@ func TestDownYesCompleteCleanupDeletesStateAndRedactsToken(t *testing.T) {
 	}
 }
 
-// Bug 21 (Plan 06-10, 2026-05-06): runnerkit down --yes against a BYO
-// host with password-protected sudo currently fails at the
-// `runner_files` cleanup step with `sudo: a terminal is required to
-// read the password`. Down's remote cleanup must thread the sudo
-// password through `printf | sudo -S` the same way Plan 06-09 Bug 10's
-// wrapSudoCommand does for bootstrap. This test:
-//   - probes sudo via the canonical `down.sudo.probe` command,
-//   - the probe reports password-required (exit code 1, stderr
-//     contains "password is required" or "a terminal is required"),
-//   - down prompts via the password prompter (interactive TTY),
-//   - and the resulting service-uninstall + files-remove commands
-//     have their Script prefixed with `printf '%s\n'
-//     "$RUNNERKIT_SUDO_PASSWORD" | sudo -S -v` and Env carries
-//     RUNNERKIT_SUDO_PASSWORD.
-func TestDownThreadsSudoPasswordWhenSudoRequiresPasswordClosesBug21(t *testing.T) {
+func TestDownRequiresHostInstallWhenSudoNeedsPassword(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)
 	github := &testsupport.GitHubService{
@@ -137,43 +125,33 @@ func TestDownThreadsSudoPasswordWhenSudoRequiresPasswordClosesBug21(t *testing.T
 		Results: map[string]remote.Result{
 			ops.CommandStatusSSHReachable: {ExitCode: 0},
 			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n", ExitCode: 0},
+			"resolve.runner_unit.show":    {Stdout: "LoadState=loaded\n", ExitCode: 0},
 			"down.sudo.probe":             {ExitCode: 1, Stderr: "sudo: a password is required\n"},
+			"down.service.stop":           {ExitCode: 0},
 			"down.runner.remove":          {ExitCode: 0},
 			"down.service.uninstall":      {ExitCode: 0},
 			"down.files.remove":           {ExitCode: 0},
 		},
 	}
-	prompts := &passwordRecorder{password: "hunter2"}
-	out, errOut, err := executeDownForTest(t, stateDir, github, exec, prompts, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("down with password-protected sudo returned error: %v\nstderr=%s\nstdout=%s", err, errOut, out)
+	out, errOut, err := executeDownForTest(t, stateDir, github, exec, nil, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err == nil {
+		t.Fatal("expected error when sudo requires password")
 	}
-	for _, want := range []string{"down.sudo.probe", "down.service.uninstall", "down.files.remove"} {
-		if !commandIDsContain(exec, want) {
-			t.Fatalf("down missing command %q in %v", want, exec.CommandIDs())
-		}
+	if ExitCode(err) != ExitInputRequired {
+		t.Fatalf("ExitCode = %v want %v", ExitCode(err), ExitInputRequired)
+	}
+	combined := out + errOut
+	if !strings.Contains(combined, "host_install_required") && !strings.Contains(combined, "one-time host install") {
+		t.Fatalf("expected host install remediation:\n%s", combined)
 	}
 	for _, command := range exec.Commands {
-		if command.ID != "down.service.uninstall" && command.ID != "down.files.remove" {
-			continue
+		if strings.Contains(command.Script, "RUNNERKIT_SUDO_PASSWORD") {
+			t.Fatalf("must not thread sudo password; got %q", command.ID)
 		}
-		if !strings.Contains(command.Script, `printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | sudo -S -v`) {
-			t.Fatalf("command %q must thread sudo password via printf|sudo -S -v; got script:\n%s", command.ID, command.Script)
-		}
-		if command.Env == nil || command.Env["RUNNERKIT_SUDO_PASSWORD"] != "hunter2" {
-			t.Fatalf("command %q Env must carry RUNNERKIT_SUDO_PASSWORD=hunter2; got %#v", command.ID, command.Env)
-		}
-		if !containsString(command.RedactArgs, "hunter2") {
-			t.Fatalf("command %q RedactArgs must contain the sudo password literal; got %#v", command.ID, command.RedactArgs)
-		}
-	}
-	if strings.Contains(out, "hunter2") || strings.Contains(errOut, "hunter2") {
-		t.Fatalf("sudo password leaked in output: stdout=%s stderr=%s", out, errOut)
 	}
 }
 
-// When sudo does NOT require a password (NOPASSWD path / Path C
-// byo-prepare), down must NOT prompt and must NOT wrap the cleanup
+// When sudo does NOT require a password (NOPASSWD path / scoped sudoers),
 // commands — preserving the existing happy path.
 func TestDownDoesNotPromptWhenSudoIsPasswordless(t *testing.T) {
 	stateDir := t.TempDir()
@@ -187,51 +165,23 @@ func TestDownDoesNotPromptWhenSudoIsPasswordless(t *testing.T) {
 		Results: map[string]remote.Result{
 			ops.CommandStatusSSHReachable: {ExitCode: 0},
 			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n", ExitCode: 0},
+			"resolve.runner_unit.show":    {Stdout: "LoadState=loaded\n", ExitCode: 0},
 			"down.sudo.probe":             {ExitCode: 0}, // sudo -n true succeeded
+			"down.service.stop":           {ExitCode: 0},
 			"down.runner.remove":          {ExitCode: 0},
 			"down.service.uninstall":      {ExitCode: 0},
 			"down.files.remove":           {ExitCode: 0},
 		},
 	}
-	prompts := &passwordRecorder{}
-	_, _, err := executeDownForTest(t, stateDir, github, exec, prompts, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	_, _, err := executeDownForTest(t, stateDir, github, exec, nil, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
 	if err != nil {
 		t.Fatalf("down with passwordless sudo returned error: %v", err)
-	}
-	if prompts.calls != 0 {
-		t.Fatalf("must NOT prompt when sudo is passwordless; got prompt calls=%d", prompts.calls)
 	}
 	for _, command := range exec.Commands {
 		if strings.Contains(command.Script, "RUNNERKIT_SUDO_PASSWORD") {
 			t.Fatalf("passwordless path must not wrap commands with sudo password; got command %q script:\n%s", command.ID, command.Script)
 		}
 	}
-}
-
-// passwordRecorder is a minimal Prompter + PasswordPrompter test
-// double for Bug 21 — Confirm/Select aren't exercised by --yes paths,
-// but Password is the load-bearing capability.
-type passwordRecorder struct {
-	password string
-	calls    int
-}
-
-func (p *passwordRecorder) Confirm(context.Context, ui.Prompt) (bool, error) { return false, nil }
-func (p *passwordRecorder) Select(context.Context, ui.Prompt, []ui.Option) (string, error) {
-	return "", nil
-}
-func (p *passwordRecorder) Password(_ context.Context, _ ui.Prompt) (string, error) {
-	p.calls++
-	return p.password, nil
-}
-
-func containsString(values []string, target string) bool {
-	for _, v := range values {
-		if v == target {
-			return true
-		}
-	}
-	return false
 }
 
 // Bug 25 (Plan 06-11, 2026-05-06): the Plan 06-10 Bug 21 fix gated the
@@ -253,9 +203,8 @@ func containsString(values []string, target string) bool {
 // Verifies:
 //   - the `down.sudo.probe` command is recorded even when collectStatus
 //     reports SSH unreachable (sshReachable=false branch),
-//   - the password prompter is invoked once when the probe stderr
-//     reports password-required,
-//   - we do NOT crash or short-circuit before the probe runs.
+//   - the sudo probe runs before failing when remote sudo needs a password,
+//     even when SSH reachability is falsely negative (Bug 25 host-key mismatch).
 func TestDown_SudoProbeRunsEvenWhenSSHReachableFalse(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)
@@ -263,10 +212,6 @@ func TestDown_SudoProbeRunsEvenWhenSSHReachableFalse(t *testing.T) {
 		RemovalToken: gh.RunnerToken{Token: "down-removal-token", ExpiresAt: time.Now().Add(time.Hour)},
 		Runners:      []gh.Runner{testsupport.HealthyRunner()},
 	}
-	// Force collectStatus to report sshReachable=false by returning a
-	// host-key fingerprint that does NOT match the saved fingerprint.
-	// ProbeRemoteStatus then returns SSHFact{Reachable: false,
-	// HostKey: "mismatch", ...} — exactly the live Bug 24 behavior.
 	exec := &testsupport.RemoteExecutor{
 		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:DIFFERENT-from-saved"},
 		Results: map[string]remote.Result{
@@ -278,20 +223,12 @@ func TestDown_SudoProbeRunsEvenWhenSSHReachableFalse(t *testing.T) {
 			"down.files.remove":           {ExitCode: 0},
 		},
 	}
-	prompts := &passwordRecorder{password: "hunter2"}
-	_, _, err := executeDownForTest(t, stateDir, github, exec, prompts, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("down should not error when host-key mismatch falsely reports sshReachable=false; err=%v", err)
+	_, _, err := executeDownForTest(t, stateDir, github, exec, nil, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err == nil || ExitCode(err) != ExitInputRequired {
+		t.Fatalf("expected host_install_required err=%v", err)
 	}
-	// The Bug 25 invariant: probe ran. With sshReachable=false the
-	// downstream cleanup short-circuits via the existing !sshReachable
-	// guard, so we don't assert command threading here — only that the
-	// probe + prompt ran independently of the reachability flag.
 	if !commandIDsContain(exec, "down.sudo.probe") {
 		t.Fatalf("Bug 25: down.sudo.probe must run even when sshReachable=false; observed IDs=%v", exec.CommandIDs())
-	}
-	if prompts.calls != 1 {
-		t.Fatalf("Bug 25: password prompter must run when probe reports password-required, regardless of sshReachable; got calls=%d", prompts.calls)
 	}
 }
 
@@ -430,10 +367,8 @@ func TestDownEphemeralPreservesLogsBeforeRemovingFiles(t *testing.T) {
 //	    errors.New("exit status 1"),
 //	)
 //
-// On the pre-fix code, probe early-returns `(false, nil)` and the
-// password prompt never fires. On the post-fix code, probe inspects
-// `result.ExitCode + result.Stderr` regardless of err, returns
-// `(true, nil)`, and the prompt + sudo-password threading both run.
+// On the pre-fix code, probe early-returns `(false, nil)` and password-required
+// was misclassified. On the post-fix code, probe inspects stderr regardless of err.
 func TestDown_ProbeUsesExitCodeWhenExecutorReturnsExitErrorWrapper(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)
@@ -446,48 +381,23 @@ func TestDown_ProbeUsesExitCodeWhenExecutorReturnsExitErrorWrapper(t *testing.T)
 		Results: map[string]remote.Result{
 			ops.CommandStatusSSHReachable: {ExitCode: 0},
 			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n", ExitCode: 0},
+			"resolve.runner_unit.show":    {Stdout: "LoadState=loaded\n", ExitCode: 0},
 			"down.sudo.probe":             {ExitCode: 1, Stderr: "sudo: a password is required\n"},
+			"down.service.stop":           {ExitCode: 0},
 			"down.runner.remove":          {ExitCode: 0},
 			"down.service.uninstall":      {ExitCode: 0},
 			"down.files.remove":           {ExitCode: 0},
 		},
-		// Bug 28: Errors[id] populated alongside Results to mimic the
-		// real SSH executor's exec.ExitError wrapping. The executor
-		// returns BOTH the result AND a non-nil err for any non-zero
-		// remote rc — see internal/remote/system.go:81-89.
 		Errors: map[string]error{
 			"down.sudo.probe": errors.New("exit status 1"),
 		},
 	}
-	prompts := &passwordRecorder{password: "hunter2"}
-	out, errOut, err := executeDownForTest(t, stateDir, github, exec, prompts, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("down with exit-status-N err wrapper returned error: %v\nstderr=%s\nstdout=%s", err, errOut, out)
+	out, errOut, err := executeDownForTest(t, stateDir, github, exec, nil, true, "down", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err == nil || ExitCode(err) != ExitInputRequired {
+		t.Fatalf("Bug 28: expected host_install_required err=%v out=%s errOut=%s", err, out, errOut)
 	}
-	if prompts.calls != 1 {
-		t.Fatalf("Bug 28: password prompter must fire once when probe returns err=exit-status-N + stderr marker; got calls=%d", prompts.calls)
-	}
-	threadedAny := false
-	for _, command := range exec.Commands {
-		if command.ID != "down.service.uninstall" && command.ID != "down.files.remove" {
-			continue
-		}
-		threadedAny = true
-		if !strings.Contains(command.Script, `printf '%s\n' "$RUNNERKIT_SUDO_PASSWORD" | sudo -S -v`) {
-			t.Fatalf("Bug 28: command %q must thread sudo password via printf|sudo -S -v; got script:\n%s", command.ID, command.Script)
-		}
-		if command.Env == nil || command.Env["RUNNERKIT_SUDO_PASSWORD"] != "hunter2" {
-			t.Fatalf("Bug 28: command %q Env must carry RUNNERKIT_SUDO_PASSWORD=hunter2; got %#v", command.ID, command.Env)
-		}
-		if !containsString(command.RedactArgs, "hunter2") {
-			t.Fatalf("Bug 28: command %q RedactArgs must contain the sudo password literal; got %#v", command.ID, command.RedactArgs)
-		}
-	}
-	if !threadedAny {
-		t.Fatalf("Bug 28: expected at least one of down.service.uninstall / down.files.remove to be threaded; got IDs=%v", exec.CommandIDs())
-	}
-	if strings.Contains(out, "hunter2") || strings.Contains(errOut, "hunter2") {
-		t.Fatalf("Bug 28: sudo password leaked in output: stdout=%s stderr=%s", out, errOut)
+	if !commandIDsContain(exec, "down.sudo.probe") {
+		t.Fatalf("Bug 28: probe must run; IDs=%v", exec.CommandIDs())
 	}
 }
 
