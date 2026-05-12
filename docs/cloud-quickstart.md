@@ -77,9 +77,12 @@ Use read-only operations before manually SSHing into the runner:
 runnerkit status --repo owner/name
 runnerkit logs --repo owner/name --since 30m --lines 200
 runnerkit doctor --repo owner/name
+runnerkit doctor --repo owner/name --deep
 ```
 
 For ephemeral runners, `runnerkit logs` also surfaces the preserved finalizer log archive after the one job runs (or after the TTL safeguard fires).
+
+Preflight and `doctor` surface **RAM/swap** warnings and optional **journal OOM hints** the same way as BYO; see [Host resources and OOM](troubleshooting/host-resources.md) (`docs/troubleshooting/host-resources.md`).
 
 ## Destroy and verify cleanup
 
@@ -101,7 +104,8 @@ Look for a `RKD-<COMPONENT>-NNN` code in the failure output. The accompanying
 in:
 
 - [Provider](troubleshooting/provider.md) — `HCLOUD_TOKEN`, quota, partial destroy, billable lingering
-- [Bootstrap and service](troubleshooting/bootstrap.md) — same as BYO
+- [Bootstrap and service](troubleshooting/bootstrap.md) — same as BYO (includes memory/swap preflight)
+- [Host resources and OOM](troubleshooting/host-resources.md) — sizing and `doctor --deep` journal hints
 - [GitHub runner](troubleshooting/github.md) — registration, online verification
 
 ## Limitations

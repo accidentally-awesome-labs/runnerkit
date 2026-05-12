@@ -38,8 +38,12 @@ type ProbeResult struct {
 	Systemd            bool
 	Commands           map[string]bool
 	DiskAvailableBytes int64
-	TimeSynchronized   bool
-	RunnerConflict     bool
+	// MemAvailableBytes is MemAvailable from /proc/meminfo in bytes, or -1 if unknown.
+	MemAvailableBytes int64
+	// SwapFreeBytes is SwapFree from /proc/meminfo in bytes, or -1 if unknown.
+	SwapFreeBytes    int64
+	TimeSynchronized bool
+	RunnerConflict   bool
 }
 
 type RemoteError struct {

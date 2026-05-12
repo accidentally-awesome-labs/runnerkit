@@ -277,3 +277,7 @@ Historical note: this gap-closure path has been completed. Plan 06-07 reran gree
 _Verified: 2026-05-02; updated 2026-05-05 with Bug 3 finding from Plan 06-07 attempt-1 re-smoke._
 _Verifier: Claude (gsd-verifier)._
 _Source of truth for the gap: 06-GAP-byo-sudo-handling.md (Tasks A-E CLOSED by 06-05+06-06; Task F OPEN, target Plan 06-08)._
+
+## Supplement — v1.0.9 maintainer smoke (2026-05-12)
+
+Maintainer `make smoke-live` on upstream checkout: **BYO** path **152s**, **Hetzner cloud** path **291s**, D-12 destroy-verify **PASS**, **`scripts/smoke/assert-doctor-json-contract.sh`** baseline + **`--deep`** **PASS** on both legs. Phase 7 host-capacity / doctor JSON contract + stable **`host_incident_hints`** / **`next_actions`** arrays in **`doctor --json`** included in tag **v1.0.9**.

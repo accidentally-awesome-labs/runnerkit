@@ -139,6 +139,7 @@ runnerkit up --repo owner/name --cloud hetzner --yes
 runnerkit status --repo owner/name
 runnerkit logs --repo owner/name --since 30m --lines 200
 runnerkit doctor --repo owner/name
+runnerkit doctor --repo owner/name --deep
 runnerkit destroy --repo owner/name --dry-run
 runnerkit destroy --repo owner/name
 runnerkit destroy --repo owner/name --yes
@@ -166,7 +167,8 @@ component:
 
 - [Auth and safety](docs/troubleshooting/auth.md) — `RKD-AUTH-NNN`
 - [SSH](docs/troubleshooting/ssh.md) — `RKD-SSH-NNN`
-- [Bootstrap and service](docs/troubleshooting/bootstrap.md) — `RKD-BOOT-NNN`
+- [Bootstrap and service](docs/troubleshooting/bootstrap.md) — `RKD-BOOT-NNN` (includes RAM/swap preflight **016–017** and journal OOM hints **018**)
+- [Host resources and OOM](docs/troubleshooting/host-resources.md) — sizing, swap, heavy native CI, `doctor --deep` / `--with-log-snippets`
 - [GitHub runner](docs/troubleshooting/github.md) — `RKD-GH-NNN`
 - [Cloud provider](docs/troubleshooting/provider.md) — `RKD-PROV-NNN`
 - [Cleanup, state, CLI input](docs/troubleshooting/cleanup.md) — `RKD-CLEAN-NNN`, `RKD-STATE-NNN`, `RKD-CORE-NNN`
@@ -192,6 +194,8 @@ runnerkit status --repo owner/name
 runnerkit logs --repo owner/name --lines 50
 runnerkit logs --repo owner/name --since 30m --lines 200
 runnerkit doctor --repo owner/name
+runnerkit doctor --repo owner/name --deep
+runnerkit doctor --repo owner/name --deep --with-log-snippets
 runnerkit recover --repo owner/name --dry-run
 runnerkit recover --repo owner/name --restart-service --yes
 runnerkit down --repo owner/name --dry-run

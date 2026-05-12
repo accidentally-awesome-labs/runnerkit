@@ -57,6 +57,9 @@ go run ./cmd/runnerkit status --repo "${REPO}"
 echo "===> [smoke-byo] runnerkit doctor --repo ${REPO}"
 go run ./cmd/runnerkit doctor --repo "${REPO}" || true
 
+echo "===> [smoke-byo] doctor JSON contract (Phase 7: host_incident_hints + --deep)"
+./scripts/smoke/assert-doctor-json-contract.sh "${REPO}"
+
 echo "===> [smoke-byo] runnerkit down --repo ${REPO} --yes"
 go run ./cmd/runnerkit down --repo "${REPO}" --yes
 

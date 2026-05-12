@@ -3,6 +3,8 @@ package preflight
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
@@ -27,14 +29,21 @@ const (
 	// listed in sudoers on the remote host. Severity is failure;
 	// remediation points the maintainer at adding the user to
 	// sudoers or picking a host where they already are.
-	CheckPrivilegeNoSudo = "host.privilege.no_sudo"
-	CheckDisk            = "host.disk"
-	CheckTools           = "host.tools"
-	CheckNetworkGitHub   = "host.network.github"
-	CheckTime            = "host.time"
-	CheckRunnerConflict  = "runner.conflict"
+	CheckPrivilegeNoSudo  = "host.privilege.no_sudo"
+	CheckDisk             = "host.disk"
+	CheckHostMemAvailable = "host.mem_available"
+	CheckHostSwap         = "host.swap"
+	CheckTools            = "host.tools"
+	CheckNetworkGitHub    = "host.network.github"
+	CheckTime             = "host.time"
+	CheckRunnerConflict   = "runner.conflict"
 
 	MinimumDiskBytes int64 = 2147483648
+
+	// defaultMemWarnBytes is the MemAvailable threshold below which preflight
+	// warns (self-hosted CI link peaks). Override with RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES.
+	defaultMemWarnBytes     int64 = 4 * 1024 * 1024 * 1024 // 4 GiB
+	swapWarnIfMemBelowBytes int64 = 8 * 1024 * 1024 * 1024 // 8 GiB
 )
 
 type Severity string
@@ -194,6 +203,34 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 	} else {
 		report.Results = append(report.Results, failure(CheckDisk, fmt.Sprintf("At least 2147483648 bytes are required; observed %d.", probe.DiskAvailableBytes), "Free disk space under /opt and /var/lib before installing the runner."))
 	}
+	memWarn := memWarnThresholdBytes()
+	if probe.MemAvailableBytes < 0 {
+		report.Results = append(report.Results, pass(CheckHostMemAvailable, "MemAvailable not read from host; skipped."))
+		report.Results = append(report.Results, pass(CheckHostSwap, "SwapFree not read from host; skipped."))
+	} else {
+		if probe.MemAvailableBytes < memWarn {
+			report.Results = append(report.Results, warning(CheckHostMemAvailable,
+				fmt.Sprintf("Low available memory: %d bytes (MemAvailable); below recommended %d for heavy native CI.", probe.MemAvailableBytes, memWarn),
+				"Use a larger host, add swap, reduce compiler parallelism (e.g. CARGO_BUILD_JOBS=1), or read docs/troubleshooting/host-resources.md."))
+		} else {
+			report.Results = append(report.Results, pass(CheckHostMemAvailable,
+				fmt.Sprintf("MemAvailable %d bytes is at or above warning threshold (%d).", probe.MemAvailableBytes, memWarn)))
+		}
+		if probe.SwapFreeBytes < 0 {
+			report.Results = append(report.Results, pass(CheckHostSwap, "SwapFree not read; skipped no-swap warning."))
+		} else if probe.SwapFreeBytes == 0 && probe.MemAvailableBytes < swapWarnIfMemBelowBytes {
+			report.Results = append(report.Results, warning(CheckHostSwap,
+				fmt.Sprintf("No swap and MemAvailable is %d bytes (under %d).", probe.MemAvailableBytes, swapWarnIfMemBelowBytes),
+				"Add swap or RAM to reduce OOM risk during peak CI memory use."))
+		} else {
+			if probe.SwapFreeBytes == 0 {
+				report.Results = append(report.Results, pass(CheckHostSwap, "No swap; MemAvailable is at or above 8 GiB."))
+			} else {
+				report.Results = append(report.Results, pass(CheckHostSwap,
+					fmt.Sprintf("SwapFree %d bytes available.", probe.SwapFreeBytes)))
+			}
+		}
+	}
 	missing := missingTools(probe.Commands)
 	if len(missing) == 0 {
 		report.Results = append(report.Results, pass(CheckTools, "Required tools are present."))
@@ -264,6 +301,16 @@ func isRecognizedLinux(id string) bool {
 	default:
 		return false
 	}
+}
+
+func memWarnThresholdBytes() int64 {
+	v := strings.TrimSpace(os.Getenv("RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES"))
+	if v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultMemWarnBytes
 }
 
 func pass(id string, message string) Result {

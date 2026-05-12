@@ -37,10 +37,11 @@ xattr -d com.apple.quarantine /usr/local/bin/runnerkit     # Intel
 | ---------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | [auth.md](auth.md)           | RKD-AUTH-NNN                                | GitHub auth scope, public-repo block, ephemeral BYO acknowledgment, network access to github.com                          |
 | [ssh.md](ssh.md)             | RKD-SSH-NNN                                 | host-key mismatch, host unreachable, key-path-not-found, port unreachable                                                 |
-| [bootstrap.md](bootstrap.md) | RKD-BOOT-NNN                                | systemd service, install/work paths, preflight, runner user/package install, online-verification timeout, runner version stale |
+| [bootstrap.md](bootstrap.md) | RKD-BOOT-NNN                                | systemd service, install/work paths, preflight (disk, **RAM/swap**, tools, time, network), runner user/package install, online-verification timeout, runner version stale, journal OOM hints (018) |
 | [github.md](github.md)       | RKD-GH-NNN                                  | runner offline, duplicate candidates, label drift, registration/deregister/recover failures, self-hosted CI sudo vs hosted |
 | [provider.md](provider.md)   | RKD-PROV-NNN                                | Hetzner token/quota/region, partial destroy, billable lingering                                                           |
 | [cleanup.md](cleanup.md)     | RKD-CLEAN-NNN, RKD-STATE-NNN, RKD-CORE-NNN  | down/destroy partial, ephemeral log preservation, state JSON read, schema-too-new, migration failure, CLI input          |
+| [host-resources.md](host-resources.md) | (narrative; codes RKD-BOOT-016..018 live in [bootstrap.md](bootstrap.md)) | RAM/swap preflight, OOM-heavy CI, journal hints, sizing and parallelism |
 
 > Note on numbering: codes are stable across renames; numbering grows
 > monotonically per component. Some numbers may be reserved (e.g.,

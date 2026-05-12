@@ -17,6 +17,8 @@ const (
 	CommandLogsRunnerDiagTail       = "logs.runner.diag.tail"
 	CommandLogsEphemeralArchiveList = "logs.ephemeral.archive.list"
 	CommandLogsEphemeralArchiveTail = "logs.ephemeral.archive.tail"
+	CommandDoctorJournalRunner      = "doctor.journal.runner"
+	CommandDoctorJournalKernel      = "doctor.journal.kernel"
 )
 
 type LogSection struct {
@@ -124,6 +126,44 @@ func CollectLogs(ctx context.Context, executor remote.Executor, target remote.Ta
 		bundle.Warnings = append(bundle.Warnings, fmt.Sprintf("no logs collected for %s", repoState.Repo.FullName))
 	}
 	return bundle
+}
+
+// CollectBoundedJournalsForHints fetches bounded runner-unit and kernel
+// journal excerpts for doctor OOM / kill heuristics.
+func CollectBoundedJournalsForHints(ctx context.Context, executor remote.Executor, target remote.Target, repoState state.RepositoryState, since string, runnerLines, kernelLines int) (runner, kernel string, warnings []string) {
+	if executor == nil {
+		executor = remote.UnavailableExecutor{}
+	}
+	if strings.TrimSpace(since) == "" {
+		since = "48h"
+	}
+	if runnerLines < 1 {
+		runnerLines = 200
+	}
+	if runnerLines > 500 {
+		runnerLines = 500
+	}
+	if kernelLines < 1 {
+		kernelLines = 80
+	}
+	if kernelLines > 200 {
+		kernelLines = 200
+	}
+	journalScript := "journalctl -u " + shellQuote(repoState.Machine.ServiceName) + " --since " + shellQuote(since) + " -n " + strconv.Itoa(runnerLines) + " --no-pager"
+	journal, err := executor.Run(ctx, target, remote.Command{ID: CommandDoctorJournalRunner, Script: journalScript, Timeout: 15 * time.Second})
+	if err != nil || journal.ExitCode != 0 {
+		warnings = append(warnings, "runner systemd journal unavailable for hints")
+	} else {
+		runner = journal.Stdout
+	}
+	kernelScript := "journalctl -k -n " + strconv.Itoa(kernelLines) + " --no-pager"
+	kernelRes, kerr := executor.Run(ctx, target, remote.Command{ID: CommandDoctorJournalKernel, Script: kernelScript, Timeout: 15 * time.Second})
+	if kerr != nil || kernelRes.ExitCode != 0 {
+		warnings = append(warnings, "kernel journal unavailable for hints (permissions or missing journalctl)")
+	} else {
+		kernel = kernelRes.Stdout
+	}
+	return runner, kernel, warnings
 }
 
 func nonEmptyLines(input string) []string {

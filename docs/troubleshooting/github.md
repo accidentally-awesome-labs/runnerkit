@@ -24,7 +24,9 @@ See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troub
 
 GitHub reports the saved runner's status as `offline`. The host may be
 powered off, the systemd service may be stopped, or network egress to
-GitHub is blocked.
+GitHub is blocked. After a heavy CI job, the runner process may have been
+**OOM-killed** on a small VM; see [Host resources and OOM](host-resources.md)
+and run `runnerkit doctor --repo owner/repo` for journal hints (RKD-BOOT-018).
 
 ### Fix
 

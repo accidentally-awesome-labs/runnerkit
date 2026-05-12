@@ -91,7 +91,13 @@ Before pushing a tag, the maintainer must:
 1. **Run live smokes (D-11):** `make smoke-live` (see Plan 06-04). This
    exercises the BYO permission smoke and the Hetzner end-to-end smoke
    (including the empty-project precheck D-12 gate 1 and the destroy-verify
-   D-12 gate 2). The maintainer captures durations into
+   D-12 gate 2). Both paths run **`scripts/smoke/assert-doctor-json-contract.sh`**
+   after the interactive `runnerkit doctor` step to assert the **`doctor --json`**
+   envelope includes **`host_incident_hints`** and **`next_actions`** as JSON **arrays**
+   (empty `[]` when there is nothing to report — never `null`) and that **`doctor --deep --json`**
+   succeeds (Phase 7 host-capacity / journal heuristics plumbing). Requires **`python3`**.
+   Set **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the `--deep` pass if SSH
+   journal collection is temporarily unavailable. The maintainer captures durations into
    `RELEASE-NOTES-vX.Y.Z.md` and `06-VERIFICATION.md` per D-13.
 2. **Run the 10-minute stopwatch (D-13):** Follow the stopwatch checklist
    added by Plan 06-04 in this same file. Record wall-clock numbers honestly.

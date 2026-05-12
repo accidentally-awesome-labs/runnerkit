@@ -13,6 +13,26 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
+func doctorRemoteFailedServiceWithOOMLogs() *testsupport.RemoteExecutor {
+	plentyMem := int64(16 * 1024 * 1024 * 1024)
+	swap := int64(1024 * 1024 * 1024)
+	return &testsupport.RemoteExecutor{
+		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"},
+		ProbeResult:        remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Kernel: "linux", Arch: "x86_64", OSRelease: map[string]string{"ID": "ubuntu"}, Systemd: true, Commands: map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}, DiskAvailableBytes: 2147483648, MemAvailableBytes: plentyMem, SwapFreeBytes: swap, TimeSynchronized: true},
+		Results: map[string]remote.Result{
+			ops.CommandStatusSSHReachable: {ExitCode: 0},
+			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=failed\nSubState=failed\nUnitFileState=enabled\nExecMainStatus=1\n", ExitCode: 0},
+			"doctor.path.install":         {ExitCode: 0},
+			"doctor.path.work":            {ExitCode: 0},
+			"doctor.preflight":            {ExitCode: 0},
+			"host.network.github.github": {ExitCode: 0},
+			"host.network.github.api":     {ExitCode: 0},
+			ops.CommandDoctorJournalRunner: {Stdout: "May 10 10:00:00 host Runner.Listener[123]: ld terminated with signal 9 [Killed]\n", ExitCode: 0},
+			ops.CommandDoctorJournalKernel: {Stdout: "Out of memory: Killed process 999 (ld)\n", ExitCode: 0},
+		},
+	}
+}
+
 func doctorRemote(active bool) *testsupport.RemoteExecutor {
 	activeState := "active"
 	exit := 0
@@ -20,9 +40,11 @@ func doctorRemote(active bool) *testsupport.RemoteExecutor {
 		activeState = "failed"
 		exit = 1
 	}
+	plentyMem := int64(16 * 1024 * 1024 * 1024)
+	swap := int64(1024 * 1024 * 1024)
 	return &testsupport.RemoteExecutor{
 		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"},
-		ProbeResult:        remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Kernel: "linux", Arch: "x86_64", OSRelease: map[string]string{"ID": "ubuntu"}, Systemd: true, Commands: map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}, DiskAvailableBytes: 2147483648, TimeSynchronized: true},
+		ProbeResult:        remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Kernel: "linux", Arch: "x86_64", OSRelease: map[string]string{"ID": "ubuntu"}, Systemd: true, Commands: map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}, DiskAvailableBytes: 2147483648, MemAvailableBytes: plentyMem, SwapFreeBytes: swap, TimeSynchronized: true},
 		Results: map[string]remote.Result{
 			ops.CommandStatusSSHReachable: {ExitCode: exit},
 			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=" + activeState + "\nSubState=" + activeState + "\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
@@ -31,6 +53,8 @@ func doctorRemote(active bool) *testsupport.RemoteExecutor {
 			"doctor.preflight":            {ExitCode: 0},
 			"host.network.github.github":  {ExitCode: 0},
 			"host.network.github.api":     {ExitCode: 0},
+			ops.CommandDoctorJournalRunner: {Stdout: "", ExitCode: 0},
+			ops.CommandDoctorJournalKernel: {Stdout: "", ExitCode: 0},
 		},
 	}
 }
@@ -72,8 +96,34 @@ func TestDoctorRedactsMachineRefAndJSONIncludesFindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json doctor returned error: %v", err)
 	}
-	if !strings.Contains(out, `"redactions_applied":true`) || !strings.Contains(out, `"findings"`) || !strings.Contains(out, "service_active") {
+	if !strings.Contains(out, `"redactions_applied":true`) || !strings.Contains(out, `"findings"`) || !strings.Contains(out, "service_active") || !strings.Contains(out, `"host_incident_hints"`) {
 		t.Fatalf("json doctor missing contract fields:\n%s", out)
+	}
+	if strings.Contains(out, `"host_incident_hints":null`) || strings.Contains(out, `"next_actions":null`) {
+		t.Fatalf("json doctor must encode slices as arrays, not null:\n%s", out)
+	}
+	if !strings.Contains(out, `"host_incident_hints":[`) {
+		t.Fatalf("json doctor missing host_incident_hints array:\n%s", out)
+	}
+}
+
+func TestDoctorHostIncidentHintsWhenServiceFailed(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := saveHealthyState(t, stateDir)
+	exec := doctorRemoteFailedServiceWithOOMLogs()
+	out, errOut, err := executeStatusForTest(t, stateDir, &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}, exec, "doctor", "--repo", repo.Repo.FullName, "--no-color")
+	if err != nil {
+		t.Fatalf("doctor returned error: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "likely_linker_sigkill") && !strings.Contains(out, "likely_kernel_oom") {
+		t.Fatalf("expected OOM/linker hints in doctor output:\n%s", out)
+	}
+	outJSON, _, err := executeStatusForTest(t, stateDir, &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}, doctorRemoteFailedServiceWithOOMLogs(), "--json", "doctor", "--repo", repo.Repo.FullName, "--no-color")
+	if err != nil {
+		t.Fatalf("json doctor: %v", err)
+	}
+	if !strings.Contains(outJSON, "likely_kernel_oom") || !strings.Contains(outJSON, "host_incident_hints") {
+		t.Fatalf("json doctor missing host incident hints: %s", outJSON)
 	}
 }
 

@@ -43,6 +43,7 @@ func (SystemExecutor) Probe(ctx context.Context, target Target) (ProbeResult, er
 	if disk, err := sshOutput(ctx, target, "df -PB1 /opt /var/lib 2>/dev/null | awk 'NR>1{if(min==0 || $4<min) min=$4} END{print min+0}'"); err == nil {
 		probe.DiskAvailableBytes, _ = strconv.ParseInt(strings.TrimSpace(disk), 10, 64)
 	}
+	probe.MemAvailableBytes, probe.SwapFreeBytes = parseProcMeminfoViaAwk(ctx, target)
 	if _, err := sshOutput(ctx, target, "timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qi true"); err == nil {
 		probe.TimeSynchronized = true
 	}
@@ -170,6 +171,27 @@ func selectHostKeyLine(output string) string {
 		}
 	}
 	return bestLine
+}
+
+// parseProcMeminfoViaAwk reads MemAvailable and SwapFree (kB) from /proc/meminfo
+// and returns bytes. Returns (-1, -1) when values cannot be read.
+func parseProcMeminfoViaAwk(ctx context.Context, target Target) (memBytes, swapBytes int64) {
+	memBytes, swapBytes = -1, -1
+	out, err := sshOutput(ctx, target, `awk '/^MemAvailable:/{m=$2} /^SwapFree:/{s=$2} END{print m+0,s+0}' /proc/meminfo 2>/dev/null || echo -1 -1`)
+	if err != nil {
+		return -1, -1
+	}
+	mkb, skb, ok := ParseMeminfoAwkOutput(out)
+	if !ok {
+		return -1, -1
+	}
+	if mkb >= 0 {
+		memBytes = mkb * 1024
+	}
+	if skb >= 0 {
+		swapBytes = skb * 1024
+	}
+	return memBytes, swapBytes
 }
 
 func sshOutput(ctx context.Context, target Target, script string) (string, error) {

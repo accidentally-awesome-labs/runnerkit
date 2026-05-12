@@ -11,7 +11,7 @@ import (
 func TestBuildDoctorReportFindingsAndRemediations(t *testing.T) {
 	repo := testsupport.PartialCleanupRepositoryState()
 	observed := ObservedRunner{Repo: repo.Repo.FullName, StatePath: "/state.json", StatePresent: true, State: &repo, GitHub: GitHubFact{Found: true, ID: 123, Name: repo.Runner.Name, Status: "offline", Labels: []string{"self-hosted", "runnerkit", "runnerkit-owner-repo"}}, SSH: SSHFact{Reachable: true, HostKey: "matched"}, Service: ServiceFact{Service: repo.Machine.ServiceName, ActiveState: "failed", SubState: "failed"}, Labels: CompareLabels(repo.Runner.Labels, []string{"self-hosted", "runnerkit", "runnerkit-owner-repo"})}
-	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: false, WorkDirOK: false, InstallPathError: "config.sh missing", WorkDirError: "work dir missing", Preflight: preflight.Report{Results: []preflight.Result{{ID: preflight.CheckNetworkGitHub, Severity: preflight.SeverityFailure, Message: "network failed"}}}})
+	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: false, WorkDirOK: false, InstallPathError: "config.sh missing", WorkDirError: "work dir missing", Preflight: preflight.Report{Results: []preflight.Result{{ID: preflight.CheckNetworkGitHub, Severity: preflight.SeverityFailure, Message: "network failed"}}}}, nil)
 	text := ""
 	for _, finding := range report.Findings {
 		text += finding.ID + " " + finding.Remediation + "\n"
@@ -26,10 +26,29 @@ func TestBuildDoctorReportFindingsAndRemediations(t *testing.T) {
 	}
 }
 
+func TestBuildDoctorReportHostIncidentHintsFinding(t *testing.T) {
+	repo := testsupport.HealthyRepositoryState()
+	observed := ObservedRunner{SSH: SSHFact{Reachable: true}, GitHub: GitHubFact{Found: true, Name: "r", ID: 1, Status: "online"}, Service: ServiceFact{ActiveState: "active"}}
+	hints := []HostIncidentHint{{ID: HostHintKernelOOM, Summary: "kernel shows OOM", PatternsMatched: []string{"kernel_oom_or_kill"}}}
+	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true}, hints)
+	found := false
+	for _, f := range report.Findings {
+		if f.ID == "host_incident_hints" {
+			found = true
+			if len(report.HostIncidentHints) != 1 {
+				t.Fatalf("HostIncidentHints = %#v", report.HostIncidentHints)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("missing host_incident_hints finding: %#v", report.Findings)
+	}
+}
+
 func TestBuildDoctorReportSSHUnreachable(t *testing.T) {
 	repo := testsupport.HealthyRepositoryState()
 	observed := ObservedRunner{Repo: repo.Repo.FullName, StatePath: "/state.json", StatePresent: true, State: &repo, GitHub: GitHubFact{Found: true, ID: 123, Name: repo.Runner.Name, Status: "online", Labels: repo.Runner.Labels}, SSH: SSHFact{Reachable: false, HostKey: "not_checked", Error: "SSH unreachable"}, Service: ServiceFact{Service: repo.Machine.ServiceName}, Labels: CompareLabels(repo.Runner.Labels, repo.Runner.Labels)}
-	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true})
+	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true}, nil)
 	found := false
 	for _, finding := range report.Findings {
 		if finding.ID == "ssh_unreachable" && strings.Contains(finding.Remediation, "Verify SSH access to alice@example.com:22") {
@@ -60,7 +79,7 @@ func TestDoctor_LabelDriftIsCaseInsensitiveClosesBug20(t *testing.T) {
 		Service:      ServiceFact{Service: repo.Machine.ServiceName, ActiveState: "active"},
 		Labels:       CompareLabels(repo.Runner.Labels, githubLabels),
 	}
-	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true})
+	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true}, nil)
 	for _, finding := range report.Findings {
 		if finding.ID == "label_drift" {
 			t.Fatalf("doctor must not emit label_drift for case-only differences (Bug 20); finding=%#v", finding)
@@ -77,7 +96,7 @@ func TestDoctor_ByoHostPreparedFinding(t *testing.T) {
 	repo := testsupport.HealthyRepositoryState()
 	observed := ObservedRunner{Repo: repo.Repo.FullName, StatePath: "/state.json", StatePresent: true, State: &repo, GitHub: GitHubFact{Found: true, ID: 123, Name: repo.Runner.Name, Status: "online", Labels: repo.Runner.Labels}, SSH: SSHFact{Reachable: true, HostKey: "matched"}, Service: ServiceFact{Service: repo.Machine.ServiceName, ActiveState: "active"}, Labels: CompareLabels(repo.Runner.Labels, repo.Runner.Labels)}
 
-	preparedReport := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true, BYOHostPrepared: true})
+	preparedReport := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true, BYOHostPrepared: true}, nil)
 	foundPrepared := false
 	for _, finding := range preparedReport.Findings {
 		if finding.ID == "byo_host_prepared" {
@@ -94,7 +113,7 @@ func TestDoctor_ByoHostPreparedFinding(t *testing.T) {
 		t.Fatal("byo_host_prepared finding missing when BYOHostPrepared=true")
 	}
 
-	unpreparedReport := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true, BYOHostPrepared: false})
+	unpreparedReport := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true, BYOHostPrepared: false}, nil)
 	for _, finding := range unpreparedReport.Findings {
 		if finding.ID == "byo_host_prepared" {
 			t.Fatalf("byo_host_prepared finding emitted when BYOHostPrepared=false: %#v", finding)

@@ -1,6 +1,6 @@
 # Troubleshooting: Bootstrap and Service
 
-Stable codes for this component: `RKD-BOOT-002`..`RKD-BOOT-015`.
+Stable codes for this component: `RKD-BOOT-002`..`RKD-BOOT-018`.
 `RKD-BOOT-001` is reserved for future use; numbering is stable across
 renames (D-15).
 
@@ -285,8 +285,8 @@ runnerkit doctor --repo owner/repo
 ```
 
 `doctor` re-runs every preflight probe with stable IDs so the most-specific
-finding (RKD-BOOT-007 / RKD-BOOT-008 / RKD-BOOT-009 / RKD-BOOT-010) tells
-you exactly what to fix.
+finding (RKD-BOOT-007 / RKD-BOOT-008 / RKD-BOOT-009 / RKD-BOOT-010 / RKD-BOOT-016 / RKD-BOOT-017) tells
+you exactly what to fix. When the runner is unhealthy, journal heuristics may add **RKD-BOOT-018** — see [host-resources.md](host-resources.md).
 
 ***
 
@@ -446,3 +446,63 @@ sudo rm -f /etc/sudoers.d/runnerkit-installer
 ```
 
 See [BYO quickstart — Sudo setup](../byo-quickstart.md#sudo-setup-one-time-on-the-host).
+
+***
+
+<a name="rkd-boot-016"></a>
+## RKD-BOOT-016: Low MemAvailable on runner host
+
+**Severity:** warning
+**Component:** bootstrap
+
+### Symptom
+
+`runnerkit up` preflight or `runnerkit doctor` shows `host_mem_low` / RKD-BOOT-016 with a message like “Low available memory … below recommended … for heavy native CI.”
+
+### Diagnosis
+
+`/proc/meminfo` `MemAvailable` is below the default warning threshold (4 GiB, or `RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES`). Heavy CI workloads (for example parallel Rust `cargo test` links) can spike RAM and trigger the OOM killer on small VMs.
+
+### Fix
+
+Use a larger machine, add swap, reduce compiler parallelism (for example `CARGO_BUILD_JOBS=1`), split CI jobs, or follow [Host resources and OOM](host-resources.md).
+
+***
+
+<a name="rkd-boot-017"></a>
+## RKD-BOOT-017: No swap with constrained RAM
+
+**Severity:** warning
+**Component:** bootstrap
+
+### Symptom
+
+Preflight or doctor shows `host_swap_constrained` / RKD-BOOT-017: no swap and `MemAvailable` under 8 GiB.
+
+### Diagnosis
+
+Hosts without swap die abruptly when a single job exceeds RAM; the kernel OOM killer may reap `ld`, `rustc`, or the GitHub runner listener.
+
+### Fix
+
+Add swap or RAM, or reduce peak memory from CI (lighter test profiles, fewer parallel links). See [Host resources and OOM](host-resources.md).
+
+***
+
+<a name="rkd-boot-018"></a>
+## RKD-BOOT-018: Likely OOM or hard kill from journal heuristics
+
+**Severity:** warning
+**Component:** bootstrap
+
+### Symptom
+
+`runnerkit doctor` prints `host_incident_hints` and/or **Host incident hints** with IDs like `likely_kernel_oom` or `likely_linker_sigkill`, often after the runner went offline or `systemd` shows `failed`.
+
+### Diagnosis
+
+RunnerKit scanned bounded `journalctl` output for common patterns (OOM killer lines, `signal 9` / `SIGKILL`, linker `collect2` killed). This is a **heuristic**, not a guaranteed root cause.
+
+### Fix
+
+Collect full context with `runnerkit logs --repo owner/repo --since 48h`. On the host, check `dmesg` / `journalctl -k` if permitted. Resize the VM, tune CI parallelism, and read [Host resources and OOM](host-resources.md).

@@ -68,7 +68,7 @@ RunnerKit prompts for unknown SSH host keys. Verify the `SHA256:` fingerprint be
 - Resolves and checks GitHub repository permissions.
 - Blocks risky public/fork repository defaults unless you explicitly override the safety gate.
 - Verifies the SSH host key and records the accepted fingerprint in local state.
-- Runs SSH preflight checks for Linux, architecture, systemd, sudo, disk, tools, time, network, and runner conflicts.
+- Runs SSH preflight checks for Linux, architecture, systemd, sudo, disk, **MemAvailable / swap** (warnings for low RAM or no-swap small hosts — [RKD-BOOT-016/017](troubleshooting/bootstrap.md#rkd-boot-016)), tools, time, network, and runner conflicts.
 - Creates or reuses the non-root `runnerkit-runner` service user.
 - Downloads the official GitHub Actions runner package, verifies its SHA-256 checksum, and configures it with a short-lived registration token.
 - Installs and starts the runner service through systemd.
@@ -106,9 +106,13 @@ Start with RunnerKit's read-only operations commands before manual SSH troublesh
 runnerkit status --repo owner/name
 runnerkit logs --repo owner/name --since 30m --lines 200
 runnerkit doctor --repo owner/name
+runnerkit doctor --repo owner/name --deep
+runnerkit doctor --repo owner/name --deep --with-log-snippets
 ```
 
 Review logs before sharing; redaction is best-effort for workflow-produced secrets.
+
+- **Runner died after a heavy job (OOM / linker killed):** See [Host resources and OOM](troubleshooting/host-resources.md). Preflight may warn early; `doctor --deep` collects bounded journal hints (**RKD-BOOT-018**). Optional `RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES` raises or lowers the MemAvailable warning threshold (bytes).
 
 - **SSH connection fails**: Confirm `ssh user@host` works from the same machine and that the host/port are correct.
 - **Host key changed**: Stop and verify the machine identity. RunnerKit fails closed when the stored fingerprint differs from the observed fingerprint.
@@ -124,7 +128,8 @@ Look for a `RKD-<COMPONENT>-NNN` code in the failure output. The accompanying
 [docs/troubleshooting/](troubleshooting/README.md). Most BYO failures fall in:
 
 - [SSH](troubleshooting/ssh.md) — connectivity, host-key, key path
-- [Bootstrap and service](troubleshooting/bootstrap.md) — preflight, runner user, systemd
+- [Bootstrap and service](troubleshooting/bootstrap.md) — preflight (disk, memory, swap, tools, …), runner user, systemd
+- [Host resources and OOM](troubleshooting/host-resources.md) — RAM/swap, parallel native CI, journal hints
 - [GitHub runner](troubleshooting/github.md) — registration, online verification
 
 ## Recovery

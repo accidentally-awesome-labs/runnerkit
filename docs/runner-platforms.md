@@ -8,7 +8,7 @@ This page maps **where RunnerKit runs today** versus common **platform combinati
 
 | Host OS (SSH target for `runnerkit up`) | Architectures | Notes |
 | --- | --- | --- |
-| **Linux** (systemd) | **x86_64**, **arm64** | Primary BYO + [Hetzner](troubleshooting/provider.md) cloud path. Bootstrap uses bash over SSH. |
+| **Linux** (systemd) | **x86_64**, **arm64** | Primary BYO + [Hetzner](troubleshooting/provider.md) cloud path. Bootstrap uses bash over SSH. Preflight warns when **MemAvailable** is low or swap is absent on small hosts — see [Host resources](troubleshooting/host-resources.md). |
 | **macOS** | **Apple Silicon (arm64)**, **Intel (amd64)** | Supported where SSH + tools align with preflight; treat as advanced BYO. |
 
 RunnerKit’s remote bootstrap assumes a **Unix** shell environment over SSH.

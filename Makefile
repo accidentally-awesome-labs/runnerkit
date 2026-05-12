@@ -36,6 +36,7 @@ smoke-live-byo: ## Phase 1 outstanding: live GitHub permission smoke. Requires R
 	@test -n "$$RUNNERKIT_SMOKE_REPO"     || { echo "RUNNERKIT_SMOKE_REPO=owner/name required (must be a maintainer-controlled trusted repo)"; exit 2; }
 	@command -v gh >/dev/null || { echo "gh CLI not installed; install from https://cli.github.com/"; exit 2; }
 	@gh auth status >/dev/null 2>&1 || { echo "gh auth not present; run 'gh auth login' first"; exit 2; }
+	@command -v python3 >/dev/null || { echo "python3 required for scripts/smoke/assert-doctor-json-contract.sh"; exit 2; }
 	./scripts/smoke/byo-permission.sh "$$RUNNERKIT_SMOKE_REPO" "$$RUNNERKIT_SMOKE_BYO_HOST"
 
 smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES BILLABLE RESOURCES. Requires HCLOUD_TOKEN and RUNNERKIT_SMOKE_REPO.
@@ -43,6 +44,7 @@ smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES
 	@test -n "$$RUNNERKIT_SMOKE_REPO" || { echo "RUNNERKIT_SMOKE_REPO=owner/name required (maintainer-controlled trusted repo, NOT public)"; exit 2; }
 	@command -v gh >/dev/null || { echo "gh CLI not installed"; exit 2; }
 	@gh auth status >/dev/null 2>&1 || { echo "gh auth not present"; exit 2; }
+	@command -v python3 >/dev/null || { echo "python3 required for scripts/smoke/assert-doctor-json-contract.sh"; exit 2; }
 	@RUNNERKIT_SMOKE_STATE_DIR="$$(mktemp -d -t runnerkit-smoke-cloud-XXXXXXXX)" && \
 		export RUNNERKIT_SMOKE_STATE_DIR && \
 		echo "[smoke-cloud] state dir: $$RUNNERKIT_SMOKE_STATE_DIR" && \

@@ -47,6 +47,9 @@ go run ./cmd/runnerkit status --repo "${REPO}"
 echo "===> [smoke-cloud] runnerkit doctor --repo ${REPO}"
 go run ./cmd/runnerkit doctor --repo "${REPO}" || true
 
+echo "===> [smoke-cloud] doctor JSON contract (Phase 7: host_incident_hints + --deep)"
+./scripts/smoke/assert-doctor-json-contract.sh "${REPO}"
+
 # Snapshot the state file before destroy mutates/removes it. The
 # destroy-verify wrapper reads state-after-destroy.json to recover the
 # saved cloud IDs in case `runnerkit destroy --yes` removed the repo

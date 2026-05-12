@@ -23,3 +23,15 @@
 **Fork caveat:** Tag pushes from forks do not run upstream releases and may break OIDC signing — always release from the upstream repository.
 
 Full prerequisites (Homebrew PAT, optional Apple notarization), failure modes, and verification commands: **`docs/release-process.md`**.
+
+**Live smoke (`make smoke-live`, D-11):** After interactive `runnerkit doctor`, BYO and cloud scripts run **`scripts/smoke/assert-doctor-json-contract.sh`** to assert **`doctor --json`** includes **`host_incident_hints`** and **`next_actions`** as JSON arrays (never `null`) and **`doctor --deep --json`** exits 0. Requires **`python3`**. Override **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the deep pass.
+
+## Host capacity, OOM, and `runnerkit doctor` (Phase 7)
+
+When users hit **runner offline**, **systemd failed**, or **CI OOM / `ld` signal 9** on small self-hosted VMs:
+
+- **Preflight** reads `MemAvailable` / `SwapFree` from `/proc/meminfo` over SSH. Below **4 GiB** MemAvailable → warning `host.mem_available` (**RKD-BOOT-016**). No swap and MemAvailable **&lt; 8 GiB** → **RKD-BOOT-017**. Warnings do **not** fail `preflight.Passed()`. Override threshold with **`RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES`** (positive integer, bytes).
+- **`runnerkit doctor`**: same preflight findings via `host_mem_low` / `host_swap_constrained`. When SSH works and the runner looks **sick** (service failed, GitHub offline/missing runner), or when the user passes **`--deep`**, RunnerKit pulls **bounded** `journalctl` excerpts and runs **heuristic** OOM/SIGKILL detection → finding **`host_incident_hints`** (**RKD-BOOT-018**), JSON field **`host_incident_hints`**. **`--with-log-snippets`** adds short **redacted** matching lines.
+- **Narrative doc:** [`docs/troubleshooting/host-resources.md`](docs/troubleshooting/host-resources.md) (index: [`docs/troubleshooting/README.md`](docs/troubleshooting/README.md)).
+
+Implementation touchpoints: `internal/preflight/checks.go`, `internal/remote/system.go` + `meminfo.go`, `internal/ops/hostkillhint.go`, `internal/ops/logs.go` (`CollectBoundedJournalsForHints`), `internal/cli/doctor.go`, `internal/ops/doctor.go`, `internal/errcodes/codes.go`.

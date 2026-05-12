@@ -69,7 +69,7 @@ func TestRunEmitsAllStableCheckIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	for _, id := range []string{CheckSSHConnectivity, CheckSSHHostKey, CheckOSRelease, CheckArch, CheckSystemd, CheckPrivilege, CheckDisk, CheckTools, CheckNetworkGitHub, CheckTime, CheckRunnerConflict} {
+	for _, id := range []string{CheckSSHConnectivity, CheckSSHHostKey, CheckOSRelease, CheckArch, CheckSystemd, CheckPrivilege, CheckDisk, CheckHostMemAvailable, CheckHostSwap, CheckTools, CheckNetworkGitHub, CheckTime, CheckRunnerConflict} {
 		if _, ok := report.Result(id); !ok {
 			t.Fatalf("report missing %s: %#v", id, report.Results)
 		}
@@ -81,7 +81,9 @@ func TestRunEmitsAllStableCheckIDs(t *testing.T) {
 
 func passingProbe(osID, arch string) remote.ProbeResult {
 	commands := map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}
-	return remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fake"}, OSRelease: map[string]string{"ID": osID}, Kernel: "linux", Arch: arch, Systemd: true, Commands: commands, DiskAvailableBytes: MinimumDiskBytes, TimeSynchronized: true}
+	plentyMem := int64(16 * 1024 * 1024 * 1024)
+	swap := int64(1024 * 1024 * 1024)
+	return remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fake"}, OSRelease: map[string]string{"ID": osID}, Kernel: "linux", Arch: arch, Systemd: true, Commands: commands, DiskAvailableBytes: MinimumDiskBytes, MemAvailableBytes: plentyMem, SwapFreeBytes: swap, TimeSynchronized: true}
 }
 
 // TestCheckPrivilege_Passwordless asserts that when `sudo -n true` exits 0
@@ -258,5 +260,41 @@ func TestCheckPrivilege_AllowsScopedSudoers(t *testing.T) {
 	}
 	if strings.Contains(src, `Script: "sudo -n true"`) {
 		t.Fatalf("checks.go still uses old probe literal `Script: \"sudo -n true\"` — Bug 31 (Plan 06-13) replaced this with `sudo -n install --version >/dev/null` because `true` is NOT in byo-prepare's scoped sudoers allowlist (see internal/bootstrap/sudoers.go::RenderSudoersEntry).")
+	}
+}
+
+func TestPreflightWarnsLowMem(t *testing.T) {
+	t.Setenv("RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES", "")
+	probe := passingProbe("ubuntu", "x86_64")
+	probe.MemAvailableBytes = 512 * 1024 * 1024
+	probe.SwapFreeBytes = 1024 * 1024 * 1024
+	exec := fakePreflightExecutor{probe: probe, runResults: map[string]remote.Result{"probe_sudo_n": {ExitCode: 0}}}
+	report, err := Run(context.Background(), exec, remote.Target{User: "alice", Host: "example.com", Port: 22}, Options{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	r, ok := report.Result(CheckHostMemAvailable)
+	if !ok || r.Severity != SeverityWarning {
+		t.Fatalf("expected mem warning, got ok=%v %#v", ok, r)
+	}
+	if !report.Passed() {
+		t.Fatalf("mem warning must not fail preflight.Passed(): %#v", report.Results)
+	}
+}
+
+func TestPreflightMemWarnRespectsEnvBytes(t *testing.T) {
+	t.Setenv("RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES", "268435456") // 256 MiB — 512 MiB observed should pass
+	probe := passingProbe("ubuntu", "x86_64")
+	probe.MemAvailableBytes = 512 * 1024 * 1024
+	exec := fakePreflightExecutor{probe: probe, runResults: map[string]remote.Result{
+		"probe_sudo_n": {ExitCode: 0},
+	}}
+	report, err := Run(context.Background(), exec, remote.Target{User: "alice", Host: "example.com", Port: 22}, Options{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	r, ok := report.Result(CheckHostMemAvailable)
+	if !ok || r.Severity != SeverityPass {
+		t.Fatalf("expected mem pass with high env threshold, got ok=%v %#v", ok, r)
 	}
 }

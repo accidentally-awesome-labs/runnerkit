@@ -99,9 +99,12 @@ Useful read-only operations commands:
 runnerkit status --repo owner/name
 runnerkit logs --repo owner/name --since 30m --lines 200
 runnerkit doctor --repo owner/name
+runnerkit doctor --repo owner/name --deep
 ```
 
 For ephemeral runners, RunnerKit also surfaces a preserved log archive path under `/var/lib/runnerkit/ephemeral/<runner>/logs` containing `Runner_*.log`, `Worker_*.log`, and a bounded `systemd-journal.log` excerpt.
+
+Heavy workflows can **OOM** small VMs; preflight warns on low **MemAvailable** / missing swap, and `runnerkit doctor --deep` can flag likely kernel or linker kills from bounded journals (**RKD-BOOT-016..018**). See [Host resources and OOM](troubleshooting/host-resources.md).
 
 ## Cleanup commands
 

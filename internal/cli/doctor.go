@@ -17,8 +17,10 @@ import (
 )
 
 type doctorOptions struct {
-	repo    string
-	verbose bool
+	repo            string
+	verbose         bool
+	deep            bool
+	withLogSnippets bool
 }
 
 func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
@@ -30,6 +32,8 @@ func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 	}
 	cmd.Flags().StringVar(&opts.repo, "repo", "", "target GitHub repository as owner/name")
 	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "show pass findings")
+	cmd.Flags().BoolVar(&opts.deep, "deep", false, "collect extra host evidence (e.g. journal OOM hints) even when the runner looks healthy")
+	cmd.Flags().BoolVar(&opts.withLogSnippets, "with-log-snippets", false, "with heuristics, include short matching log lines (use when sharing diagnostics)")
 	return cmd
 }
 
@@ -55,11 +59,42 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	renderer.Redactor().Register(redact.MachineRef, repoState.Machine.HostRef)
 	status := collectStatus(ctx, deps, store.Path(), repoState, true)
 	checks := collectDoctorChecks(ctx, deps, repoState)
-	report := ops.BuildDoctorReport(repoState, status.Observed, checks)
+	hints := collectDoctorHostHints(ctx, deps, repoState, status.Observed, "48h", opts.deep, opts.withLogSnippets)
+	for i := range hints {
+		for j := range hints[i].Snippets {
+			hints[i].Snippets[j] = renderer.Redactor().String(hints[i].Snippets[j])
+		}
+	}
+	report := ops.BuildDoctorReport(repoState, status.Observed, checks, hints)
 	if jsonOutput {
-		return renderer.JSON(map[string]any{"ok": true, "command": "doctor", "repo": repo.FullName, "state_path": store.Path(), "health": report.Health, "findings": report.Findings, "next_actions": report.NextActions})
+		// Nil slices in map[string]any marshal as JSON null; tooling expects arrays.
+		hostHints := report.HostIncidentHints
+		if hostHints == nil {
+			hostHints = []ops.HostIncidentHint{}
+		}
+		next := report.NextActions
+		if next == nil {
+			next = []ops.NextAction{}
+		}
+		return renderer.JSON(map[string]any{"ok": true, "command": "doctor", "repo": repo.FullName, "state_path": store.Path(), "health": report.Health, "findings": report.Findings, "next_actions": next, "host_incident_hints": hostHints})
 	}
 	return renderDoctorHuman(renderer, report, opts.verbose)
+}
+
+func collectDoctorHostHints(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState, observed ops.ObservedRunner, since string, deep, withSnippets bool) []ops.HostIncidentHint {
+	if !ops.ShouldCollectHostIncidentJournals(observed, deep) {
+		return nil
+	}
+	target, err := targetFromState(repoState)
+	if err != nil {
+		return nil
+	}
+	runnerTxt, kernelTxt, _ := ops.CollectBoundedJournalsForHints(ctx, deps.RemoteExecutor, target, repoState, since, 400, 120)
+	maxSnip := 0
+	if withSnippets {
+		maxSnip = 5
+	}
+	return ops.AnalyzeJournalForOOMHints(runnerTxt, kernelTxt, maxSnip)
 }
 
 func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState) ops.DeepChecks {
@@ -105,6 +140,15 @@ func renderDoctorHuman(renderer *ui.Renderer, report ops.DoctorReport, verbose b
 			line = ui.Success(finding.ID + " (" + finding.Severity + ")")
 		}
 		lines = append(lines, line, ui.Bullet("    Evidence: "+finding.Evidence), ui.Bullet("    Remediation: "+finding.Remediation))
+	}
+	if len(report.HostIncidentHints) > 0 {
+		lines = append(lines, ui.WarningLine("Host incident hints (heuristic; not a definitive diagnosis)"))
+		for _, h := range report.HostIncidentHints {
+			lines = append(lines, ui.Bullet(h.ID+": "+h.Summary))
+			for _, s := range h.Snippets {
+				lines = append(lines, ui.Bullet("    "+s))
+			}
+		}
 	}
 	if len(report.NextActions) > 0 {
 		lines = append(lines, ui.Next("Next: "+report.NextActions[0].Command))

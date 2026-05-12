@@ -27,7 +27,7 @@ func TestDoctor_StaleRunnerVersion(t *testing.T) {
 		Service:      ServiceFact{Service: repo.Machine.ServiceName, ActiveState: "active"},
 		Labels:       CompareLabels(repo.Runner.Labels, repo.Runner.Labels),
 	}
-	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true})
+	report := BuildDoctorReport(repo, observed, DeepChecks{InstallPathOK: true, WorkDirOK: true}, nil)
 
 	count := 0
 	var got Finding
@@ -55,7 +55,7 @@ func TestDoctor_StaleRunnerVersion(t *testing.T) {
 	matched.RunnerTemplateVersion = bootstrap.RunnerVersion
 	matchedObs := observed
 	matchedObs.State = &matched
-	matchedReport := BuildDoctorReport(matched, matchedObs, DeepChecks{InstallPathOK: true, WorkDirOK: true})
+	matchedReport := BuildDoctorReport(matched, matchedObs, DeepChecks{InstallPathOK: true, WorkDirOK: true}, nil)
 	for _, f := range matchedReport.Findings {
 		if f.ID == "runner_version_stale" {
 			t.Fatalf("expected no runner_version_stale when template matches pin; got %+v", f)
@@ -67,7 +67,7 @@ func TestDoctor_StaleRunnerVersion(t *testing.T) {
 	legacy.RunnerTemplateVersion = ""
 	legacyObs := observed
 	legacyObs.State = &legacy
-	legacyReport := BuildDoctorReport(legacy, legacyObs, DeepChecks{InstallPathOK: true, WorkDirOK: true})
+	legacyReport := BuildDoctorReport(legacy, legacyObs, DeepChecks{InstallPathOK: true, WorkDirOK: true}, nil)
 	for _, f := range legacyReport.Findings {
 		if f.ID == "runner_version_stale" {
 			t.Fatalf("expected no runner_version_stale for empty template version; got %+v", f)

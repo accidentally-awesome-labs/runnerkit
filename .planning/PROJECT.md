@@ -19,8 +19,11 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 - Phase 3 complete (2026-04-29): RunnerKit has BYO operations hardening: read-only `status`, bounded redacted `logs`, read-only `doctor` findings, guided `recover`, safe `down` cleanup, stale GitHub deregistration, partial cleanup checkpoints, and updated troubleshooting/cleanup docs.
 - Phase 4 complete (2026-05-01): RunnerKit has one recommended Hetzner cloud path with plan-before-mutation provisioning, env-only provider credentials, cloud inventory in state, shared BYO bootstrap/registration lifecycle, provider-aware status/logs/doctor, billable `destroy` cleanup, provider verification before state removal, and cloud quickstart docs.
 - Phase 5 complete (2026-05-02): RunnerKit has explicit `--mode persistent|ephemeral` selection with `--ephemeral-ttl 24h` default, mode/profile tradeoff rendering before mutation, mode-aware safety policy that blocks public/fork persistent runs and steers untrusted workloads to ephemeral, scoped one-job ephemeral lifecycle with cleanup finalizers and TTL safeguards, `_diag` log preservation across `down`/`destroy`, ephemeral-aware `status`/`logs`/`doctor`, `docs/safety.md` self-hosted guidance with quickstart updates, and E2E coverage for trusted+untrusted persistent/ephemeral.
+- Phase 7 complete (2026-05-12, **v1.0.9**): Host RAM/swap warnings in preflight and `doctor` (RKD-BOOT-016/017), bounded journal heuristics for likely OOM / linker SIGKILL when the runner is unhealthy or with `doctor --deep`, JSON field **`host_incident_hints`**, troubleshooting in **`docs/troubleshooting/host-resources.md`**, live-smoke **`assert-doctor-json-contract.sh`**, and stable JSON arrays for **`host_incident_hints`** / **`next_actions`** in **`doctor --json`**. See [.planning/phases/07-host-capacity-and-oom-diagnostics/07-01-PLAN.md](phases/07-host-capacity-and-oom-diagnostics/07-01-PLAN.md).
 
 ### Active
+
+_(none — next milestone TBD.)_
 
 ### Out of Scope
 
@@ -32,7 +35,7 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 
 ## Current State
 
-Phase 5 is complete and verified. RunnerKit now offers explicit mode/profile selection: `runnerkit up --mode persistent|ephemeral` (default ephemeral TTL 24h) with a tradeoff prompt and renderer that show cost, isolation, cleanup, and operational differences before any setup-path mutation. Mode-aware safety policy blocks persistent runs on public/fork repos, recommends ephemeral cloud as the safer untrusted-workload path, and gates ephemeral BYO on public/fork behind a typed acknowledgement. Ephemeral runs use one-job registration with a 24h TTL safeguard, cleanup finalizers that preserve `_diag` archives across `down` and `destroy`, and ephemeral-aware status/logs/doctor that honor remote sentinel finalizers. `docs/safety.md` plus updated README/BYO/cloud quickstarts document when persistent self-hosted is unsafe and when ephemeral mode is recommended. Next work is Phase 6: release, upgrade, docs, and v1 validation.
+Phases 5–6 are complete for the v1 line; **Phase 7** (host memory/swap signals, `doctor` OOM/journal hints, RKD-BOOT-016–018, **`docs/troubleshooting/host-resources.md`**, and live-smoke doctor JSON contract checks) shipped in **v1.0.9**. RunnerKit still centers explicit **`--mode persistent|ephemeral`** selection, mode-aware safety, Hetzner as the default cloud path, and CLI-only operations. Maintainer releases follow **`docs/release-process.md`** (including **`make smoke-live`** before tags).
 
 ## Context
 
@@ -97,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-_Last updated: 2026-05-02 after Phase 5 completion_
+_Last updated: 2026-05-12 — Phase 7 validated; v1.0.9 tagged after green `make smoke-live` + doctor JSON contract._

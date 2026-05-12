@@ -19,11 +19,12 @@ type Finding struct {
 }
 
 type DoctorReport struct {
-	Repo        string       `json:"repo"`
-	StatePath   string       `json:"state_path"`
-	Health      Health       `json:"health"`
-	Findings    []Finding    `json:"findings"`
-	NextActions []NextAction `json:"next_actions"`
+	Repo               string             `json:"repo"`
+	StatePath          string             `json:"state_path"`
+	Health             Health             `json:"health"`
+	Findings           []Finding          `json:"findings"`
+	NextActions        []NextAction       `json:"next_actions"`
+	HostIncidentHints  []HostIncidentHint `json:"host_incident_hints,omitempty"`
 }
 
 type DeepChecks struct {
@@ -38,10 +39,10 @@ type DeepChecks struct {
 	BYOHostPrepared bool
 }
 
-func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner, checks DeepChecks) DoctorReport {
+func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner, checks DeepChecks, hostHints []HostIncidentHint) DoctorReport {
 	health := Classify(observed)
 	repo := repoState.Repo.FullName
-	report := DoctorReport{Repo: repo, StatePath: observed.StatePath, Health: health, Findings: []Finding{}, NextActions: health.NextActions}
+	report := DoctorReport{Repo: repo, StatePath: observed.StatePath, Health: health, Findings: []Finding{}, NextActions: health.NextActions, HostIncidentHints: append([]HostIncidentHint(nil), hostHints...)}
 	add := func(id string, severity Severity, source string, evidence string, remediation string) {
 		report.Findings = append(report.Findings, Finding{ID: id, Severity: string(severity), Source: source, Evidence: evidence, Remediation: remediation})
 	}
@@ -127,6 +128,14 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 			if result.Severity != preflight.SeverityPass {
 				addWithCode("time_unsynchronized", errcodes.BootTimeUnsynchronized, SeverityWarning, "preflight", result.Message, "Enable NTP/time sync if TLS or token expiry errors occur.")
 			}
+		case preflight.CheckHostMemAvailable:
+			if result.Severity == preflight.SeverityWarning {
+				addWithCode("host_mem_low", errcodes.BootHostMemLow, SeverityWarning, "preflight", result.Message, result.Remediation)
+			}
+		case preflight.CheckHostSwap:
+			if result.Severity == preflight.SeverityWarning {
+				addWithCode("host_swap_constrained", errcodes.BootHostSwapConstrained, SeverityWarning, "preflight", result.Message, result.Remediation)
+			}
 		}
 	}
 	if len(repoState.Cleanup.Notes) > 0 || len(repoState.Operations) > 0 {
@@ -170,6 +179,15 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	// valid alternative.
 	if checks.BYOHostPrepared {
 		add("byo_host_prepared", SeverityPass, "remote", bootstrap.SudoersFilePath+" exists on remote host (runnerkit host install applied)", "sudo rm -f "+bootstrap.SudoersFilePath+" # on host to revert")
+	}
+	if len(hostHints) > 0 {
+		var parts []string
+		for _, h := range hostHints {
+			parts = append(parts, h.ID+": "+h.Summary)
+		}
+		addWithCode("host_incident_hints", errcodes.BootHostIncidentLikely, SeverityWarning, "host",
+			strings.Join(parts, "; "),
+			"runnerkit logs --repo "+repo+" --since 48h")
 	}
 	return report
 }
