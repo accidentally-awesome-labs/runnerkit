@@ -398,6 +398,8 @@ export RUNNERKIT_CLOUD_INIT_TIMEOUT=15m
 runnerkit up --repo owner/repo --cloud hetzner
 ```
 
+If cloud-init finishes with **errors** (for example `runcmd` failed while installing `/etc/sudoers.d/runnerkit-installer`), RunnerKit treats readiness as failed and surfaces `cloud_readiness_failed` with `cloud-init status --long` on stderr — fix cloud-init on the instance or choose the default **ubuntu-24.04** image before retrying.
+
 ***
 
 <a name="rkd-boot-015"></a>
@@ -425,7 +427,7 @@ RunnerKit's bootstrap commands run over a non-interactive SSH channel
 and cannot answer a sudo prompt, so the very first sudo-prefixed
 command fails.
 
-**Hetzner note:** `runnerkit up --repo … --cloud hetzner` provisions VMs whose **cloud-init** installs the scoped `/etc/sudoers.d/runnerkit-installer` automatically (user-data version **`runnerkit-cloud-init-v2`**). If you still see this warning on cloud, cloud-init did not finish successfully — check **`/var/lib/runnerkit/cloud-init.json`**, **`cloud-init status`**, and increase **`RUNNERKIT_CLOUD_INIT_TIMEOUT`** if convergence is slow. Password-sudo on **`--host`** targets is expected until you run the host install below.
+**Hetzner note:** `runnerkit up --repo … --cloud hetzner` provisions VMs whose **cloud-init** installs the scoped `/etc/sudoers.d/runnerkit-installer` automatically (user-data version **`runnerkit-cloud-init-v2`**). Readiness requires **`cloud-init status` `done`** (not **`error`**); if cloud-init’s **`runcmd`** fails (for example **`visudo`**), you should see **`cloud_readiness_failed`** with logs instead of a late **`sudo: a password is required`** at the apt step. Preflight on cloud uses **`host.privilege.cloud_bootstrap`** when passwordless sudo is still missing. Check **`cloud-init status --long`**, **`/var/lib/runnerkit/cloud-init.json`**, and increase **`RUNNERKIT_CLOUD_INIT_TIMEOUT`** if convergence is slow. Password-sudo on **`--host`** targets is expected until you run the host install below.
 
 ### Fix
 

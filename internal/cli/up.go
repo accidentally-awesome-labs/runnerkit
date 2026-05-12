@@ -947,7 +947,7 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 	if result.ExitCode != 0 {
 		return preflight.Report{}, hostKey, machine, remote.RemoteError{CommandID: "cloud.cloudinit.wait", ExitCode: result.ExitCode, Message: "cloud-init readiness failed"}
 	}
-	report, err := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{AllowUnknownLinux: false})
+	report, err := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{AllowUnknownLinux: false, RequirePasswordlessSudo: true})
 	if err != nil {
 		return report, hostKey, machine, err
 	}
@@ -961,11 +961,45 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 // cloud-init is still converging. In live Hetzner smoke runs the host can pass
 // provider readiness yet still return intermittent ssh exit-status-255 failures
 // for the first few attempts.
+//
+// cloudInitWaitScript must not use `cloud-init status --wait || test -f
+// /var/lib/cloud/instance/boot-finished`: when runcmd fails (e.g. visudo on
+// the RunnerKit sudoers drop-in), cloud-init can still leave boot-finished
+// present while status is `error`, and the `||` branch would exit 0 — SSH
+// bootstrap then hits `sudo: a password is required` within seconds.
+func cloudInitWaitScript() string {
+	return `set -euo pipefail
+if command -v cloud-init >/dev/null 2>&1; then
+  cloud-init status --wait || {
+    echo "runnerkit: cloud-init status --wait failed" >&2
+    cloud-init status --long 2>&1 || true
+    exit 1
+  }
+  if cloud-init status 2>/dev/null | tr -d '\r' | grep -q '^status: error'; then
+    echo "runnerkit: cloud-init finished with status=error (check runcmd / visudo for /etc/sudoers.d/runnerkit-installer)" >&2
+    cloud-init status --long 2>&1 || true
+    exit 1
+  fi
+  if ! cloud-init status 2>/dev/null | tr -d '\r' | head -n 1 | grep -qE '^status: (done|disabled)'; then
+    echo "runnerkit: cloud-init did not reach done/disabled after --wait" >&2
+    cloud-init status --long 2>&1 || true
+    exit 1
+  fi
+  exit 0
+fi
+if test -f /var/lib/cloud/instance/boot-finished; then
+  exit 0
+fi
+echo "runnerkit: cloud-init missing and boot-finished not present" >&2
+exit 1
+`
+}
+
 func runCloudInitWaitWithRetry(ctx context.Context, deps Dependencies, target remote.Target) (remote.Result, error) {
 	timeout := cloudInitTimeoutFromEnv()
 	command := remote.Command{
 		ID:      "cloud.cloudinit.wait",
-		Script:  "cloud-init status --wait || test -f /var/lib/cloud/instance/boot-finished",
+		Script:  cloudInitWaitScript(),
 		Timeout: timeout,
 	}
 	deadline := time.Now().Add(timeout)

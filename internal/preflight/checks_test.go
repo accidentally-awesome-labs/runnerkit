@@ -143,6 +143,31 @@ func TestCheckPrivilege_PasswordRequired(t *testing.T) {
 	}
 }
 
+func TestCheckPrivilege_RequirePasswordlessSudo_FailsPassed(t *testing.T) {
+	probe := passingProbe("ubuntu", "x86_64")
+	exec := fakePreflightExecutor{probe: probe, runResults: map[string]remote.Result{
+		"probe_sudo_n": {ExitCode: 1, Stderr: "sudo: a password is required"},
+	}}
+	target := remote.Target{User: "runnerkit-admin", Host: "203.0.113.10", Port: 22}
+	report, err := Run(context.Background(), exec, target, Options{RequirePasswordlessSudo: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	result, ok := report.Result(CheckPrivilegeCloudBootstrap)
+	if !ok {
+		t.Fatalf("report missing %q: %#v", CheckPrivilegeCloudBootstrap, report.Results)
+	}
+	if result.Severity != SeverityFailure {
+		t.Fatalf("severity = %q, want failure", result.Severity)
+	}
+	if report.Passed() {
+		t.Fatalf("report.Passed() must be false when RequirePasswordlessSudo and password sudo: %#v", report.Results)
+	}
+	if _, hasWarn := report.Result(CheckPrivilegePasswordReq); hasWarn {
+		t.Fatalf("did not expect password_required warning when RequirePasswordlessSudo: %#v", report.Results)
+	}
+}
+
 // TestCheckPrivilege_NotInSudoers asserts that when `sudo -n true`
 // stderr indicates the user is not in sudoers the report contains a
 // SeverityFailure result with stable ID host.privilege.no_sudo and a

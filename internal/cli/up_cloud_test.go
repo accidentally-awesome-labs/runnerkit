@@ -756,3 +756,13 @@ func TestWaitCloudTargetReady_UsesRootForCloudInitWait(t *testing.T) {
 		t.Fatalf("expected cloud.cloudinit.wait command in runs: %#v", base.runs)
 	}
 }
+
+func TestCloudInitWaitScript_NoBootFinishedOrMaskOnCloudInit(t *testing.T) {
+	s := cloudInitWaitScript()
+	if strings.Contains(s, "|| test -f /var/lib/cloud/instance/boot-finished") {
+		t.Fatalf("must not OR boot-finished after cloud-init --wait: cloud-init status=error can still leave boot-finished, falsely succeeding readiness")
+	}
+	if !strings.Contains(s, "status: error") {
+		t.Fatalf("expected explicit status=error rejection in script")
+	}
+}

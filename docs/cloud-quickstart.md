@@ -19,7 +19,7 @@ export HCLOUD_TOKEN=...
 
 RunnerKit injects **cloud-init user-data** when the Hetzner server is created. During first boot (before you rely on SSH for install), cloud-init stages the same **scoped** sudoers drop-in as the BYO one-liner (`/etc/sudoers.d/runnerkit-installer` — see [`install.sh`](../install.sh) and `internal/bootstrap/sudoers.go`), validates it with **`visudo`**, then installs it. The SSH user (`runnerkit-admin` by default) also keeps a quoted cloud-init **`NOPASSWD:ALL`** line for edge cases; the scoped file is what makes **`sudo apt-get`** and the rest of bootstrap reliable over a non-PTY channel.
 
-The VM records **`runnerkit-cloud-init-v2`** in **`/var/lib/runnerkit/cloud-init.json`** and in RunnerKit state for support/debug correlation. This path applies only to **RunnerKit-provisioned** Hetzner VMs. If you instead use **`--host user@…`** against a generic cloud image you created yourself, treat it like BYO: run **`runnerkit init --print-install-command`** on the host when sudo requires a password.
+The VM records **`runnerkit-cloud-init-v2`** in **`/var/lib/runnerkit/cloud-init.json`** and in RunnerKit state for support/debug correlation. Readiness waits for **`cloud-init status` `done`** (not `error`); a failed `runcmd` (for example **`visudo`** rejecting staged sudoers) no longer masks as success. This path applies only to **RunnerKit-provisioned** Hetzner VMs. If you instead use **`--host user@…`** against a generic cloud image you created yourself, treat it like BYO: run **`runnerkit init --print-install-command`** on the host when sudo requires a password.
 
 ## Cost and billing caveat
 

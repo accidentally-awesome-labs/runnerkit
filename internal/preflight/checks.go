@@ -22,9 +22,16 @@ const (
 	// commands run over a non-interactive SSH channel and cannot
 	// answer a sudo prompt, so this case must be surfaced separately
 	// from the bare "sudo missing" failure. Severity is warning so
-	// report.Passed() stays true and the bootstrap path remains
-	// reachable for Path B fallback (Plan 06-06).
+	// report.Passed() stays true and the BYO path can emit host_install_required
+	// before bootstrap (Plan 06-06). Hetzner cloud uses Options.RequirePasswordlessSudo
+	// to turn this into a failure instead (CheckPrivilegeCloudBootstrap).
 	CheckPrivilegePasswordReq = "host.privilege.password_required"
+	// CheckPrivilegeCloudBootstrap is emitted when passwordless sudo is
+	// required (RunnerKit-provisioned Hetzner) but the SSH user still hits
+	// a sudo password prompt after cloud-init — typically cloud-init ended
+	// in error (e.g. runcmd visudo) while readiness was incorrectly treated
+	// as success. Severity is always failure; see Options.RequirePasswordlessSudo.
+	CheckPrivilegeCloudBootstrap = "host.privilege.cloud_bootstrap"
 	// CheckPrivilegeNoSudo is emitted when the SSH user is not
 	// listed in sudoers on the remote host. Severity is failure;
 	// remediation points the maintainer at adding the user to
@@ -71,6 +78,10 @@ type Result struct {
 type Options struct {
 	AllowUnknownLinux bool
 	RunnerName        string
+	// RequirePasswordlessSudo, when true, turns the password-required sudo
+	// probe outcome into a failure (not a warning). Used for Hetzner cloud
+	// so we never start bootstrap while cloud-init may have failed silently.
+	RequirePasswordlessSudo bool
 }
 
 type Report struct {
@@ -184,7 +195,14 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 		case probeErr == nil && probeResult.ExitCode == 0:
 			report.Results = append(report.Results, pass(CheckPrivilege, "Passwordless sudo available for setup commands."))
 		case strings.Contains(probeResult.Stderr, "password is required") || strings.Contains(probeResult.Stderr, "a terminal is required"):
-			report.Results = append(report.Results, warning(CheckPrivilegePasswordReq, "sudo requires a password — run the one-time host install.", "SSH to the host and run `runnerkit init --print-install-command`, or open install.sh from GitHub releases, then retry runnerkit up/register."))
+			if options.RequirePasswordlessSudo {
+				report.Results = append(report.Results, failure(CheckPrivilegeCloudBootstrap,
+					"Passwordless sudo is still missing after cloud-init — bootstrap cannot run non-interactively.",
+					"RunnerKit user-data should install /etc/sudoers.d/runnerkit-installer during first boot. SSH to the instance as the configured user, run `cloud-init status --long` and inspect runcmd/visudo errors, verify `sudo test -f /etc/sudoers.d/runnerkit-installer`, upgrade RunnerKit to the latest release, then `runnerkit destroy --repo <repo>` and retry. If you use a custom Hetzner image, use ubuntu-24.04 or ensure cloud-init runs user-data.",
+				))
+			} else {
+				report.Results = append(report.Results, warning(CheckPrivilegePasswordReq, "sudo requires a password — run the one-time host install.", "SSH to the host and run `runnerkit init --print-install-command`, or open install.sh from GitHub releases, then retry runnerkit up/register."))
+			}
 		case strings.Contains(probeResult.Stderr, "may not run sudo"):
 			report.Results = append(report.Results, failure(CheckPrivilegeNoSudo, "User is not in sudoers on the remote host.", "Add the SSH user to sudoers or pick a host where they are."))
 		default:
