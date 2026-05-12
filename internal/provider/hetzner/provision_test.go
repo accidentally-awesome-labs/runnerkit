@@ -154,6 +154,19 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 	if !strings.Contains(client.serverOpts.UserData, "runnerkit-admin") || !strings.Contains(client.serverOpts.UserData, input.PublicKey) {
 		t.Fatalf("cloud-init user-data missing runnerkit-admin or public key:\n%s", client.serverOpts.UserData)
 	}
+	ud := client.serverOpts.UserData
+	for _, frag := range []string{
+		"write_files:",
+		"/var/lib/runnerkit/installer.sudoers.staged",
+		"visudo -cf /var/lib/runnerkit/installer.sudoers.staged",
+		"/etc/sudoers.d/runnerkit-installer",
+		"ALL=(root) NOPASSWD:",
+		"runnerkit-cloud-init-v2",
+	} {
+		if !strings.Contains(ud, frag) {
+			t.Fatalf("cloud-init user-data missing %q:\n%s", frag, ud)
+		}
+	}
 	if client.serverOpts.ServerType.Name != "cpx22" || client.serverOpts.Image.Name != "ubuntu-24.04" || client.serverOpts.Location.Name != "fsn1" {
 		t.Fatalf("unexpected server profile: %#v", client.serverOpts)
 	}

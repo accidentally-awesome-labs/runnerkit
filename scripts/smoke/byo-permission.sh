@@ -60,7 +60,32 @@ go run ./cmd/runnerkit doctor --repo "${REPO}" || true
 echo "===> [smoke-byo] doctor JSON contract (Phase 7: host_incident_hints + --deep)"
 ./scripts/smoke/assert-doctor-json-contract.sh "${REPO}"
 
-echo "===> [smoke-byo] runnerkit down --repo ${REPO} --yes"
+echo "===> [smoke-byo] list JSON contract (SEED-002)"
+./scripts/smoke/assert-list-json-contract.sh
+
+# Optional second repo on the same BYO host (SEED-002). Gated so default
+# smoke stays single-repo / single-registration cost.
+if [[ "${RUNNERKIT_SMOKE_MULTI_REPO:-}" == "1" ]]; then
+	: "${RUNNERKIT_SMOKE_REPO2:?RUNNERKIT_SMOKE_MULTI_REPO=1 requires RUNNERKIT_SMOKE_REPO2=owner/other (trusted private repo, different from primary)}"
+	if [[ "${RUNNERKIT_SMOKE_REPO2}" == "${REPO}" ]]; then
+		echo "FAIL: RUNNERKIT_SMOKE_REPO2 must differ from primary RUNNERKIT_SMOKE_REPO / script arg repo" >&2
+		exit 2
+	fi
+	echo "===> [smoke-byo] multi-repo: runnerkit register second repo ${RUNNERKIT_SMOKE_REPO2} on ${HOST}"
+	go run ./cmd/runnerkit register --repo "${RUNNERKIT_SMOKE_REPO2}" --host "${HOST}" --mode persistent --yes
+	echo "===> [smoke-byo] multi-repo: assert list shows two repos on this host"
+	./scripts/smoke/assert-list-host-repo-count.sh 2 "${HOST}"
+	echo "===> [smoke-byo] multi-repo: doctor JSON contract for second repo"
+	./scripts/smoke/assert-doctor-json-contract.sh "${RUNNERKIT_SMOKE_REPO2}"
+	echo "===> [smoke-byo] multi-repo: list JSON contract after second registration"
+	./scripts/smoke/assert-list-json-contract.sh
+fi
+
+if [[ "${RUNNERKIT_SMOKE_MULTI_REPO:-}" == "1" ]]; then
+	echo "===> [smoke-byo] runnerkit down second repo ${RUNNERKIT_SMOKE_REPO2} --yes"
+	go run ./cmd/runnerkit down --repo "${RUNNERKIT_SMOKE_REPO2}" --yes
+fi
+echo "===> [smoke-byo] runnerkit down primary repo ${REPO} --yes"
 go run ./cmd/runnerkit down --repo "${REPO}" --yes
 
 END_EPOCH=$(date +%s)

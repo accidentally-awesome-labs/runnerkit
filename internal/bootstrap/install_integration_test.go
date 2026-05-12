@@ -80,14 +80,15 @@ func TestApply_DownloadRunner_RealShell(t *testing.T) {
 		currentUser = "runnerkit-runner"
 	}
 	opts := Options{
-		RunnerName:  "runnerkit-it-test",
-		RepoURL:     "https://github.com/owner/repo",
-		Labels:      []string{"self-hosted"},
-		InstallPath: installPath,
-		WorkDir:     filepath.Join(tmp, "work"),
-		ServiceUser: currentUser,
-		RunnerToken: "registration-token-itest",
-		Package:     RunnerPackage{Filename: "fake-runner.tgz", URL: server.URL + "/fake-runner.tgz", SHA256: sha},
+		RunnerName:      "runnerkit-it-test",
+		RepoURL:         "https://github.com/owner/repo",
+		Labels:          []string{"self-hosted"},
+		InstallPath:     installPath,
+		WorkDir:         filepath.Join(tmp, "work"),
+		ServiceUser:     currentUser,
+		RunnerToken:     "registration-token-itest",
+		Package:         RunnerPackage{Filename: "fake-runner.tgz", URL: server.URL + "/fake-runner.tgz", SHA256: sha},
+		RunnerCacheRoot: filepath.Join(tmp, "runnerkit-cache"),
 	}
 
 	// Drive the same Command literal Apply emits so the integration
@@ -103,8 +104,9 @@ func TestApply_DownloadRunner_RealShell(t *testing.T) {
 		t.Fatalf("download_runner shell exec exit=%d, stderr:\n%s", result.ExitCode, result.Stderr)
 	}
 
-	if _, err := os.Stat(filepath.Join(installPath, "fake-runner.tgz")); err != nil {
-		t.Fatalf("tarball not found at %s: %v", installPath, err)
+	cacheTar := filepath.Join(tmp, "runnerkit-cache", RunnerVersion, "fake-runner.tgz")
+	if _, err := os.Stat(cacheTar); err != nil {
+		t.Fatalf("cached tarball not found at %s: %v", cacheTar, err)
 	}
 	if _, err := os.Stat(filepath.Join(installPath, "config.sh")); err != nil {
 		t.Fatalf("extracted config.sh not found at %s: %v", installPath, err)
@@ -218,5 +220,64 @@ func TestApply_RegisterRunner_RootOnlyNopasswd(t *testing.T) {
 	// POSITIVE: Task F fix present.
 	if !strings.Contains(registerLine, "sudo su -s /bin/bash") {
 		t.Fatalf("register_runner line missing sudo su -s /bin/bash form (Task F): %q\nfull script:\n%s", registerLine, script)
+	}
+}
+
+// TestApply_DownloadRunner_SecondInstallDirUsesSharedCache proves a second
+// per-repo install directory on the same machine reuses the tarball cache
+// (SEED-002 Phase A/C).
+func TestApply_DownloadRunner_SecondInstallDirUsesSharedCache(t *testing.T) {
+	if os.Getenv("RUNNERKIT_INTEGRATION") == "" {
+		t.Skip("set RUNNERKIT_INTEGRATION=1 to run; requires NOPASSWD sudo on the test machine")
+	}
+	tmp := t.TempDir()
+	tarballPath := filepath.Join(tmp, "fake-runner.tgz")
+	sha := buildFakeRunnerTarball(t, tarballPath)
+	server := httptest.NewServer(http.FileServer(http.Dir(tmp)))
+	defer server.Close()
+
+	cacheRoot := filepath.Join(tmp, "shared-cache")
+	currentUser := os.Getenv("USER")
+	if currentUser == "" {
+		currentUser = "runnerkit-runner"
+	}
+	pkg := RunnerPackage{Filename: "fake-runner.tgz", URL: server.URL + "/fake-runner.tgz", SHA256: sha}
+	base := Options{
+		RepoURL:         "https://github.com/owner/repo",
+		Labels:          []string{"self-hosted"},
+		WorkDir:         filepath.Join(tmp, "work-common"),
+		ServiceUser:     currentUser,
+		RunnerToken:     "registration-token-itest",
+		Package:         pkg,
+		RunnerCacheRoot: cacheRoot,
+	}
+
+	installA := filepath.Join(tmp, "install-a")
+	optsA := base
+	optsA.RunnerName = "runnerkit-it-a"
+	optsA.InstallPath = installA
+	dlA := downloadRunnerCommand(optsA)
+	executor := &shellExecutor{workingDir: tmp}
+	if res, err := executor.Run(context.Background(), remote.Target{}, dlA); err != nil || res.ExitCode != 0 {
+		t.Fatalf("first download_runner failed: err=%v exit=%d out=%s errOut=%s", err, res.ExitCode, res.Stdout, res.Stderr)
+	}
+
+	installB := filepath.Join(tmp, "install-b")
+	optsB := base
+	optsB.RunnerName = "runnerkit-it-b"
+	optsB.InstallPath = installB
+	dlB := downloadRunnerCommand(optsB)
+	if res, err := executor.Run(context.Background(), remote.Target{}, dlB); err != nil || res.ExitCode != 0 {
+		t.Fatalf("second download_runner failed: err=%v exit=%d out=%s errOut=%s", err, res.ExitCode, res.Stdout, res.Stderr)
+	}
+
+	cacheTar := filepath.Join(cacheRoot, RunnerVersion, "fake-runner.tgz")
+	if _, err := os.Stat(cacheTar); err != nil {
+		t.Fatalf("shared cache tarball: %v", err)
+	}
+	for _, dir := range []string{installA, installB} {
+		if _, err := os.Stat(filepath.Join(dir, "config.sh")); err != nil {
+			t.Fatalf("config.sh missing under %s: %v", dir, err)
+		}
 	}
 }

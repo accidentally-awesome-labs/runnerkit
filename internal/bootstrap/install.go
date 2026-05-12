@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
@@ -20,6 +21,11 @@ type Options struct {
 	RunnerToken  string
 	Package      RunnerPackage
 	MissingTools []string
+
+	// RunnerCacheRoot, when set, overrides SharedRunnerCacheRoot for the
+	// download_runner step (tests and non-default layouts). Production
+	// leaves this empty so tarballs cache under /opt/actions-runner/runnerkit-shared-bin.
+	RunnerCacheRoot string
 
 	// Ephemeral mode controls whether RenderEphemeral* and ApplyEphemeral
 	// emit a one-shot scoped runner unit instead of the persistent
@@ -73,6 +79,12 @@ func (e ServiceNotActiveError) Error() string {
 
 func Plan(opts Options) workflow.Plan { return workflow.BootstrapPlan() }
 
+// Apply runs the persistent BYO bootstrap sequence. SEED-002 / multi-repo:
+// each call uses an independent InstallPath/RunnerName/WorkDir; steps are
+// safe to repeat on a host that already has another runnerkit-* install —
+// create_runner_user is idempotent, download_runner uses a versioned shared
+// tarball cache (see downloadRunnerCommand), configure/install_service are
+// scoped to opts.InstallPath and the per-repo systemd unit.
 func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts Options) (Result, error) {
 	if exec == nil {
 		exec = remote.UnavailableExecutor{}
@@ -109,6 +121,8 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 // timer, and verifies the service started — without running the
 // persistent svc.sh install/start loop. The registration token flows
 // through the configure step env and is registered for redaction.
+// SEED-002: safe alongside other runnerkit-* installs on the same host
+// when each Options uses distinct paths and unit names.
 //
 // Failures of install_ephemeral_service, install_ephemeral_ttl_timer,
 // or verify_ephemeral_service surface as ServiceNotActiveError so the
@@ -147,6 +161,10 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 	return out, nil
 }
 
+// SharedRunnerCacheRoot is the host directory holding one copy of the
+// actions-runner tarball per RunnerPackage.Version (SEED-002 Phase C).
+const SharedRunnerCacheRoot = "/opt/actions-runner/runnerkit-shared-bin"
+
 // downloadRunnerCommand returns the bootstrap "download_runner"
 // remote.Command shared by Apply and ApplyEphemeral. The install
 // directory is created with `sudo install -d -o serviceUser` so it
@@ -156,17 +174,48 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 // against this dir hits `Permission denied` on any host where the
 // SSH user is not the service user — see gap doc
 // 06-GAP-byo-sudo-handling.md Bug 2.
+//
+// Tarballs are downloaded once per version under SharedRunnerCacheRoot;
+// each repo install dir only runs tar extract from that cache (saves
+// bandwidth and disk for multi-repo hosts).
 func downloadRunnerCommand(opts Options) remote.Command {
+	normalizeOptions(&opts)
+	ver := opts.Package.Version
+	if strings.TrimSpace(ver) == "" {
+		ver = RunnerVersion
+	}
+	cacheRoot := SharedRunnerCacheRoot
+	if strings.TrimSpace(opts.RunnerCacheRoot) != "" {
+		cacheRoot = strings.TrimSpace(opts.RunnerCacheRoot)
+	}
+	cacheDir := filepath.Join(cacheRoot, ver)
+	cacheTar := filepath.Join(cacheDir, opts.Package.Filename)
+	installPath := defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName))
 	return remote.Command{
 		ID: "download_runner",
-		Script: fmt.Sprintf("set -euo pipefail\nsudo install -d -o %s -g %s %s\ncd %s\nsudo curl -fL --retry 3 --connect-timeout 10 -o %s %s\nprintf '%%s  %%s\n' '%s' '%s' | sudo sha256sum -c -\nsudo tar xzf %s --skip-old-files\n",
-			opts.ServiceUser, opts.ServiceUser, opts.InstallPath,
-			opts.InstallPath,
-			opts.Package.Filename, opts.Package.URL,
+		Script: fmt.Sprintf("set -euo pipefail\n"+
+			"CACHE_DIR=%s\n"+
+			"CACHE_TAR=%s\n"+
+			"sudo install -d -o root -g root \"$CACHE_DIR\"\n"+
+			"if [ ! -f \"$CACHE_TAR\" ]; then\n"+
+			"  sudo curl -fL --retry 3 --connect-timeout 10 -o \"$CACHE_TAR\" %s\n"+
+			"  ( cd \"$CACHE_DIR\" && printf '%%s  %%s\\n' '%s' '%s' | sudo sha256sum -c - )\n"+
+			"fi\n"+
+			"sudo install -d -o %s -g %s %s\n"+
+			"sudo tar xzf \"$CACHE_TAR\" -C %s --skip-old-files\n",
+			shellSingleQuoted(cacheDir),
+			shellSingleQuoted(cacheTar),
+			opts.Package.URL,
 			opts.Package.SHA256, opts.Package.Filename,
-			opts.Package.Filename),
+			opts.ServiceUser, opts.ServiceUser, installPath,
+			installPath),
 		Sudo: true,
 	}
+}
+
+// shellSingleQuoted returns s wrapped in single quotes for sh -c safe embedding.
+func shellSingleQuoted(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 func normalizeOptions(opts *Options) {

@@ -93,10 +93,36 @@ func TestApplyDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testing.T) {
 	if dl.ID == "" {
 		t.Fatalf("download_runner command not found in recorded commands")
 	}
-	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf"} {
+	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf", "runnerkit-shared-bin"} {
 		if !strings.Contains(dl.Script, want) {
 			t.Fatalf("download_runner script missing %q:\n%s", want, dl.Script)
 		}
+	}
+}
+
+func TestDownloadRunnerUsesRunnerCacheRootWhenSet(t *testing.T) {
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName:      "runnerkit-owner-repo",
+		RepoURL:         "https://github.com/owner/repo",
+		Labels:          []string{"x"},
+		ServiceUser:     "runnerkit-runner",
+		RunnerToken:     "registration-token-x",
+		Package:         RunnerPackage{Filename: "runner.tgz", URL: "https://example.invalid/runner.tgz", SHA256: "abc"},
+		RunnerCacheRoot: "/var/tmp/runnerkit-cache-override-test",
+	}
+	if _, err := Apply(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, opts); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	var dl string
+	for _, c := range exec.commands {
+		if c.ID == "download_runner" {
+			dl = c.Script
+			break
+		}
+	}
+	if !strings.Contains(dl, "/var/tmp/runnerkit-cache-override-test") {
+		t.Fatalf("download_runner script missing RunnerCacheRoot override:\n%s", dl)
 	}
 }
 
@@ -118,7 +144,7 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 	if dl.ID == "" {
 		t.Fatalf("download_runner command not found in recorded ephemeral commands")
 	}
-	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf"} {
+	for _, want := range []string{"sudo curl", "sudo sha256sum -c -", "sudo tar xzf", "runnerkit-shared-bin"} {
 		if !strings.Contains(dl.Script, want) {
 			t.Fatalf("ephemeral download_runner script missing %q:\n%s", want, dl.Script)
 		}

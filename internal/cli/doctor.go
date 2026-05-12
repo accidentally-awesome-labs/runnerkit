@@ -74,6 +74,7 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 		}
 	}
 	report := ops.BuildDoctorReport(repoState, status.Observed, checks, hints)
+	appendSharedHostDoctorFinding(&report, store, repoState)
 	st := stage.InferFromDoctor(status.Observed, report.Health, checks)
 
 	if opts.fix && jsonOutput {

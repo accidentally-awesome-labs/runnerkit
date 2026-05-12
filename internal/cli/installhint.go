@@ -53,3 +53,32 @@ func RenderHostInstallRequired(renderer *ui.Renderer, jsonOutput bool, cliVersio
 	_ = renderer.Error("host_install_required", "Remote sudo requires a password. Run the one-time host install, then retry.", remediation)
 	return NewExitError(ExitInputRequired, fmt.Errorf("host_install_required"))
 }
+
+// RenderLifecycleFoundationMissing is returned when `runnerkit register`
+// runs against a host that has not completed the one-time install (the
+// runnerkit-runner user is missing). Remediation matches host install.
+func RenderLifecycleFoundationMissing(renderer *ui.Renderer, jsonOutput bool, cliVersion string) error {
+	line := HostInstallOneLiner(cliVersion)
+	remediation := []string{
+		"SSH to the runner host and run the one-liner below once so the shared runner user exists, then retry `runnerkit register`.",
+		line,
+		"From this machine you can also run `runnerkit init` for copy-paste instructions.",
+	}
+	if jsonOutput {
+		payload := map[string]any{
+			"ok": false,
+			"error": map[string]any{
+				"code":        "lifecycle_foundation_missing",
+				"message":     "RunnerKit register requires the one-time host install before adding repo runners.",
+				"remediation": remediation,
+			},
+		}
+		nextaction.MergePayload(payload, "bootstrap_blocked", nextaction.InstallHostActions(line))
+		if err := renderer.JSON(payload); err != nil {
+			return err
+		}
+		return NewExitError(ExitInputRequired, fmt.Errorf("lifecycle_foundation_missing"))
+	}
+	_ = renderer.Error("lifecycle_foundation_missing", "The shared runner user is missing on this host. Complete the one-time host install, then retry register.", remediation)
+	return NewExitError(ExitInputRequired, fmt.Errorf("lifecycle_foundation_missing"))
+}

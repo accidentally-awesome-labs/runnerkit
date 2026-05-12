@@ -164,6 +164,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newInitCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newRegisterCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newListCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newStatusCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newLogsCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newDoctorCommand(deps, &jsonOutput, &noColor))

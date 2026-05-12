@@ -97,7 +97,13 @@ Before pushing a tag, the maintainer must:
    (empty `[]` when there is nothing to report — never `null`) and that **`doctor --deep --json`**
    succeeds (Phase 7 host-capacity / journal heuristics plumbing). Requires **`python3`**.
    Set **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the `--deep` pass if SSH
-   journal collection is temporarily unavailable. The maintainer captures durations into
+   journal collection is temporarily unavailable. After that, both scripts run
+   **`scripts/smoke/assert-list-json-contract.sh`** on **`list --json`** (SEED-002).
+   Optional BYO-only coverage: set **`RUNNERKIT_SMOKE_MULTI_REPO=1`** and a second
+   **`RUNNERKIT_SMOKE_REPO2`** (different private repo) so **`byo-permission.sh`**
+   registers a second repo on the same host, asserts the host bucket repo count,
+   runs the doctor JSON contract for repo2, then tears down repo2 before the primary.
+   The maintainer captures durations into
    `RELEASE-NOTES-vX.Y.Z.md` and `06-VERIFICATION.md` per D-13.
 2. **Run the 10-minute stopwatch (D-13):** Follow the stopwatch checklist
    added by Plan 06-04 in this same file. Record wall-clock numbers honestly.

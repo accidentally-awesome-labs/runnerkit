@@ -34,6 +34,10 @@ smoke-live: smoke-live-byo smoke-live-cloud smoke-stopwatch ## Run all live smok
 smoke-live-byo: ## Phase 1 outstanding: live GitHub permission smoke. Requires RUNNERKIT_SMOKE_BYO_HOST and RUNNERKIT_SMOKE_REPO.
 	@test -n "$$RUNNERKIT_SMOKE_BYO_HOST" || { echo "RUNNERKIT_SMOKE_BYO_HOST=user@host required"; exit 2; }
 	@test -n "$$RUNNERKIT_SMOKE_REPO"     || { echo "RUNNERKIT_SMOKE_REPO=owner/name required (must be a maintainer-controlled trusted repo)"; exit 2; }
+	@if [ "$${RUNNERKIT_SMOKE_MULTI_REPO:-0}" = "1" ]; then \
+		test -n "$$RUNNERKIT_SMOKE_REPO2" || { echo "RUNNERKIT_SMOKE_MULTI_REPO=1 requires RUNNERKIT_SMOKE_REPO2=owner/other (different private repo)"; exit 2; }; \
+		test "$$RUNNERKIT_SMOKE_REPO2" != "$$RUNNERKIT_SMOKE_REPO" || { echo "RUNNERKIT_SMOKE_REPO2 must differ from RUNNERKIT_SMOKE_REPO"; exit 2; }; \
+	fi
 	@command -v gh >/dev/null || { echo "gh CLI not installed; install from https://cli.github.com/"; exit 2; }
 	@gh auth status >/dev/null 2>&1 || { echo "gh auth not present; run 'gh auth login' first"; exit 2; }
 	@command -v python3 >/dev/null || { echo "python3 required for scripts/smoke/assert-doctor-json-contract.sh"; exit 2; }

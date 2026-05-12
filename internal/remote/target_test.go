@@ -48,3 +48,17 @@ func itoa(value int) string {
 	}
 	return ""
 }
+
+func TestCanonicalHostKeyNormalizesPort22(t *testing.T) {
+	a, err := CanonicalHostKey("alice@example.com", 22)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := CanonicalHostKey("alice@example.com:22", 22)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b || a != "alice@example.com:22" {
+		t.Fatalf("CanonicalHostKey mismatch: a=%q b=%q", a, b)
+	}
+}

@@ -108,3 +108,14 @@ func (t Target) Address() string {
 func (t Target) Display() string {
 	return fmt.Sprintf("%s@%s:%d", t.User, t.Host, t.Port)
 }
+
+// CanonicalHostKey parses raw (user@host or user@host:port) with fallbackPort
+// when the port is omitted, then returns the normalized Display() form for
+// comparisons (SEED-002 list --host filtering).
+func CanonicalHostKey(raw string, fallbackPort int) (string, error) {
+	t, err := ParseTarget(strings.TrimSpace(raw), fallbackPort)
+	if err != nil {
+		return "", err
+	}
+	return t.Display(), nil
+}

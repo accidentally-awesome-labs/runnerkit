@@ -51,6 +51,7 @@ type upOptions struct {
 	sshAllowedCIDR        string
 	mode                  string
 	ephemeralTTL          time.Duration
+	registerLifecycleOnly bool // true for `runnerkit register` (SEED-002 foundation gate)
 }
 
 type GitHubService interface {
@@ -190,6 +191,12 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 
 	if r, ok := report.Result(preflight.CheckPrivilegePasswordReq); ok && r.Severity == preflight.SeverityWarning {
 		return RenderHostInstallRequired(renderer, jsonOutput, deps.Version)
+	}
+
+	if opts.registerLifecycleOnly {
+		if err := verifyBYOFoundationForRegister(ctx, deps, renderer, jsonOutput, target); err != nil {
+			return err
+		}
 	}
 
 	if opts.dryRun {
@@ -1324,7 +1331,7 @@ func mergeCloudInventory(existing rkstate.CloudInventory, result provider.Provis
 	if cloud.CostProfile.Provider == "" {
 		cloud.CostProfile = rkstate.CostProfileRef{Provider: plan.Provider, Region: plan.Region, ServerType: plan.ServerType, Image: plan.Image, EstimatedHourlyCost: plan.EstimatedHourlyCost, EstimatedMonthlyCost: plan.EstimatedMonthlyCost, Caveat: plan.CostEstimateCaveat}
 	}
-	cloud.CloudInitVersion = defaultString(cloud.CloudInitVersion, "runnerkit-cloud-init-v1")
+	cloud.CloudInitVersion = defaultString(cloud.CloudInitVersion, hetzner.CloudInitUserDataVersion)
 	return cloud
 }
 
@@ -1509,6 +1516,19 @@ func renderPreflightHuman(renderer *ui.Renderer, report preflight.Report) error 
 		lines = append(lines, line)
 	}
 	return renderer.Step(1, 2, "ssh-preflight", lines...)
+}
+
+func verifyBYOFoundationForRegister(ctx context.Context, deps Dependencies, renderer *ui.Renderer, jsonOutput bool, target remote.Target) error {
+	cmd := remote.Command{
+		ID:     "verify_runnerkit_foundation",
+		Script: bootstrap.FoundationUserProbeScript(),
+		Sudo:   false,
+	}
+	res, err := deps.RemoteExecutor.Run(ctx, target, cmd)
+	if err != nil || res.ExitCode != 0 {
+		return RenderLifecycleFoundationMissing(renderer, jsonOutput, deps.Version)
+	}
+	return nil
 }
 
 func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap.RunnerPackage, report preflight.Report) bootstrap.Options {

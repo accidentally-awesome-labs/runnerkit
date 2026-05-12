@@ -24,7 +24,13 @@
 
 Full prerequisites (Homebrew PAT, optional Apple notarization), failure modes, and verification commands: **`docs/release-process.md`**.
 
-**Live smoke (`make smoke-live`, D-11):** After interactive `runnerkit doctor`, BYO and cloud scripts run **`scripts/smoke/assert-doctor-json-contract.sh`** to assert **`doctor --json`** includes **`schema_version`**, **`stage`**, **`host_incident_hints`** and **`next_actions`** as JSON arrays (never `null`) and **`doctor --deep --json`** exits 0. Requires **`python3`**. Override **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the deep pass.
+**Live smoke (`make smoke-live`, D-11):** After interactive `runnerkit doctor`, BYO and cloud scripts run **`scripts/smoke/assert-doctor-json-contract.sh`** to assert **`doctor --json`** includes **`schema_version`**, **`stage`**, **`host_incident_hints`** and **`next_actions`** as JSON arrays (never `null`) and **`doctor --deep --json`** exits 0. They also run **`scripts/smoke/assert-list-json-contract.sh`** on **`list --json`** (SEED-002). Requires **`python3`**. Override **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the deep pass.
+
+**BYO multi-repo smoke (optional):** Set **`RUNNERKIT_SMOKE_MULTI_REPO=1`** and **`RUNNERKIT_SMOKE_REPO2=owner/other`** (second trusted private repo, different from **`RUNNERKIT_SMOKE_REPO`**) before **`make smoke-live-byo`** / **`make smoke-live`**. The BYO script then **`register`**s the second repo on the same host, asserts two repos via **`scripts/smoke/assert-list-host-repo-count.sh`**, runs the doctor JSON contract for repo2, then **`down`** repo2 then the primary.
+
+## Multi-repo BYO (SEED-002, v1.2+)
+
+**v1.2 scope:** multi-repo on a **single BYO SSH host** (same `user@host` for each `runnerkit up` / `register`). **Cloud** remains one provisioned server per `runnerkit up --cloud` unless you manually point a second repo at an existing machine’s SSH address. Tarballs cache under **`/opt/actions-runner/runnerkit-shared-bin/<runner-version>/`**. Narrative: [`docs/troubleshooting/multi-repo.md`](docs/troubleshooting/multi-repo.md).
 
 ## UX polish layer (SEED-004, v1.1+)
 

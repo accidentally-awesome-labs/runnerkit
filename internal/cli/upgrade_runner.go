@@ -97,6 +97,9 @@ func runUpgradeRunner(deps Dependencies, jsonOutput bool, noColor bool, opts *up
 	// generated for this saved state. The bundled pin flows through
 	// PackageFor so the download_runner step references the new runner
 	// tarball.
+	// SEED-002: download_runner uses a shared versioned tarball cache on the host;
+	// upgrade-runner re-applies Apply and benefits from that cache when the
+	// pinned version's archive is already present.
 	arch := defaultString(repoState.Runner.Arch, labels.DefaultArch)
 	pkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {

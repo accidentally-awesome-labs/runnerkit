@@ -328,7 +328,7 @@ func TestCloudInventorySerializesProviderIdentityAndNoSecrets(t *testing.T) {
 			EstimatedMonthlyCost: "approx €4.90/month",
 			Caveat:               "Estimated cost is approximate.",
 		},
-		CloudInitVersion: "runnerkit-cloud-init-v1",
+		CloudInitVersion: "runnerkit-cloud-init-v2",
 	}
 	state := State{Repositories: []RepositoryState{{
 		Repo:       gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},

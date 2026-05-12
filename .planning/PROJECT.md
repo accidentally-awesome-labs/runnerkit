@@ -21,6 +21,7 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 - Phase 5 complete (2026-05-02): RunnerKit has explicit `--mode persistent|ephemeral` selection with `--ephemeral-ttl 24h` default, mode/profile tradeoff rendering before mutation, mode-aware safety policy that blocks public/fork persistent runs and steers untrusted workloads to ephemeral, scoped one-job ephemeral lifecycle with cleanup finalizers and TTL safeguards, `_diag` log preservation across `down`/`destroy`, ephemeral-aware `status`/`logs`/`doctor`, `docs/safety.md` self-hosted guidance with quickstart updates, and E2E coverage for trusted+untrusted persistent/ephemeral.
 - Phase 7 complete (2026-05-12, **v1.0.9**): Host RAM/swap warnings in preflight and `doctor` (RKD-BOOT-016/017), bounded journal heuristics for likely OOM / linker SIGKILL when the runner is unhealthy or with `doctor --deep`, JSON field **`host_incident_hints`**, troubleshooting in **`docs/troubleshooting/host-resources.md`**, live-smoke **`assert-doctor-json-contract.sh`**, and stable JSON arrays for **`host_incident_hints`** / **`next_actions`** in **`doctor --json`**. See [.planning/phases/07-host-capacity-and-oom-diagnostics/07-01-PLAN.md](phases/07-host-capacity-and-oom-diagnostics/07-01-PLAN.md).
 - Phase 08 complete (2026-05-12, **v1.1.0**): SEED-004 tier 1 UX polish — first-run wizard (no subcommand), **`--explain`** / **`--unicode`**, **`stage`** + **`schema_version`** on **`status --json`** and **`doctor --json`**, boxed commands, BYO **`up`/`register`** checklist + **`sessions/`** persistence, **`doctor --fix`** / **`--ignore`** + **`config.json`**, troubleshooting [**`docs/troubleshooting/doctor-ux.md`**](docs/troubleshooting/doctor-ux.md). Tier 2: [.planning/phases/08-ux-polish-seed-004/08-02-TIER2-PLAN.md](phases/08-ux-polish-seed-004/08-02-TIER2-PLAN.md).
+- **SEED-002 multi-repo (2026-05-12, v1.2.0):** Several private repos on one BYO host — shared **`runnerkit-runner`** + versioned tarball cache under **`/opt/actions-runner/runnerkit-shared-bin/<version>/`**, **`register`** lifecycle path with **`lifecycle_foundation_missing`** when foundation is absent, **`list`** / **`list --json`** with host grouping, **`unregister`** alias of **`down`**, **`doctor`** shared-host hint, live-smoke **`assert-list-json-contract.sh`** and env-gated second-repo BYO path (**`RUNNERKIT_SMOKE_MULTI_REPO`**, **`RUNNERKIT_SMOKE_REPO2`**). See [**`docs/troubleshooting/multi-repo.md`**](docs/troubleshooting/multi-repo.md).
 
 ### Active
 
@@ -36,7 +37,7 @@ _(none — next milestone TBD.)_
 
 ## Current State
 
-Phases 5–6 are complete for the v1 line; **Phase 7** shipped in **v1.0.9** (host RAM/swap, journal hints, **`host_incident_hints`**). **Phase 08 / SEED-004 tier 1** shipped in **v1.1.0** (wizard, stage JSON, explain, doctor fix, BYO checklists). RunnerKit still centers **`--mode persistent|ephemeral`**, mode-aware safety, Hetzner as the default cloud path, and CLI-only operations. Maintainer releases follow **`docs/release-process.md`** (including **`make smoke-live`** before tags).
+Phases 5–6 are complete for the v1 line; **Phase 7** shipped in **v1.0.9** (host RAM/swap, journal hints, **`host_incident_hints`**). **Phase 08 / SEED-004 tier 1** shipped in **v1.1.0** (wizard, stage JSON, explain, doctor fix, BYO checklists). **SEED-002** (multi-repo per BYO host, shared runner cache, **`list`**) shipped in **v1.2.0**. RunnerKit still centers **`--mode persistent|ephemeral`**, mode-aware safety, Hetzner as the default cloud path, and CLI-only operations. Maintainer releases follow **`docs/release-process.md`** (including **`make smoke-live`** before tags).
 
 ## Context
 
@@ -101,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-_Last updated: 2026-05-12 — Phase 7 validated; v1.0.9 tagged after green `make smoke-live` + doctor JSON contract._
+_Last updated: 2026-05-12 — SEED-002 multi-repo + env-gated BYO second-repo smoke; v1.2.0._

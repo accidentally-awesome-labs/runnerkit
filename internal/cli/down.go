@@ -39,8 +39,8 @@ var (
 
 func newDownCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
 	opts := &downOptions{}
-	cmd := &cobra.Command{Use: "down"}
-	cmd.Short = "Clean up a RunnerKit-managed BYO runner"
+	cmd := &cobra.Command{Use: "down", Aliases: []string{"unregister"}}
+	cmd.Short = "Clean up a RunnerKit-managed BYO runner (unregister is an alias)"
 	cmd.RunE = func(_ *cobra.Command, _ []string) error { return runDown(deps, *jsonOutput, *noColor, opts) }
 	cmd.Flags().StringVar(&opts.repo, "repo", "", "target GitHub repository as owner/name")
 	cmd.Flags().BoolVar(&opts.yes, "yes", false, "apply the safe default cleanup plan")

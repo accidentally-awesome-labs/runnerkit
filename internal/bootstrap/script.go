@@ -287,6 +287,13 @@ sudo su -s /bin/bash - %[2]s -c "cd %[1]s && RUNNERKIT_REGISTRATION_TOKEN=\"$RUN
 `, installPath, serviceUser, opts.RepoURL, opts.RunnerName, labels, workDir)
 }
 
+// FoundationUserProbeScript returns a shell snippet that exits 0 when the
+// shared runner service user exists (one-time host install completed).
+// Used by `runnerkit register` before applying per-repo lifecycle (SEED-002).
+func FoundationUserProbeScript() string {
+	return fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1\n", DefaultServiceUser)
+}
+
 func defaultString(value string, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback

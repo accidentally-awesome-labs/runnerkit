@@ -41,5 +41,6 @@ func runRegister(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptio
 		_ = renderer.Error("invalid_register_cloud", "runnerkit register is BYO-only; omit --cloud or use runnerkit up for cloud provisioning.", []string{"Run `runnerkit up --repo ... --cloud hetzner` to provision Hetzner."})
 		return NewExitError(ExitInvalidInput, errors.New("register does not support --cloud"))
 	}
+	opts.registerLifecycleOnly = true
 	return runUp(deps, jsonOutput, noColor, opts)
 }

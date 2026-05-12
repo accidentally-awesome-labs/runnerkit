@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
@@ -17,11 +18,13 @@ import (
 )
 
 const (
-	cloudInitVersion  = "runnerkit-cloud-init-v1"
-	defaultSSHUser    = "runnerkit-admin"
-	tagRunnerKitTrue  = "runnerkit=true"
-	tagManagedTrue    = "managed=true"
-	tagModePersistent = "mode=persistent"
+	// CloudInitUserDataVersion is written into /var/lib/runnerkit/cloud-init.json
+	// on provisioned VMs and used as a state default when the inventory omits it.
+	CloudInitUserDataVersion = "runnerkit-cloud-init-v2"
+	defaultSSHUser           = "runnerkit-admin"
+	tagRunnerKitTrue         = "runnerkit=true"
+	tagManagedTrue           = "managed=true"
+	tagModePersistent        = "mode=persistent"
 )
 
 type Provider struct {
@@ -351,22 +354,38 @@ func cloudInitUserData(user string, publicKey string) string {
 		user = defaultSSHUser
 	}
 	publicKey = strings.TrimSpace(publicKey)
+	// Scoped sudoers (same rules as install.sh / byo-prepare) are applied as
+	// root during cloud-init so bootstrap works even when the cloud-init
+	// `users[].sudo` NOPASSWD stanza is ignored or mis-applied on some images.
+	sudoers := strings.TrimSuffix(bootstrap.RenderSudoersEntry(user), "\n")
+	var sudoersBlock strings.Builder
+	for _, line := range strings.Split(sudoers, "\n") {
+		sudoersBlock.WriteString("      ")
+		sudoersBlock.WriteString(line)
+		sudoersBlock.WriteByte('\n')
+	}
 	return fmt.Sprintf(`#cloud-config
 users:
   - default
   - name: %s
     groups: sudo
     shell: /bin/bash
-    sudo: ALL=(ALL) NOPASSWD:ALL
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
     ssh_authorized_keys:
       - %s
-package_update: true
+write_files:
+  - path: /var/lib/runnerkit/installer.sudoers.staged
+    owner: root:root
+    permissions: '0440'
+    content: |
+%spackage_update: true
 packages:
   - sudo
 runcmd:
   - mkdir -p /var/lib/runnerkit
+  - sh -c 'visudo -cf /var/lib/runnerkit/installer.sudoers.staged && install -m 0440 -o root -g root /var/lib/runnerkit/installer.sudoers.staged /etc/sudoers.d/runnerkit-installer'
   - printf '{"cloud_init_version":"%s"}\n' > /var/lib/runnerkit/cloud-init.json
-`, user, publicKey, cloudInitVersion)
+`, user, publicKey, sudoersBlock.String(), CloudInitUserDataVersion)
 }
 
 func hcloudLabels(tags map[string]string) map[string]string {
@@ -461,7 +480,7 @@ func machineFromServer(input provider.ProvisionInput, plan provider.ProvisionPla
 			EstimatedMonthlyCost: plan.EstimatedMonthlyCost,
 			Caveat:               plan.CostEstimateCaveat,
 		},
-		CloudInitVersion: cloudInitVersion,
+		CloudInitVersion: CloudInitUserDataVersion,
 	}
 	providerRef := state.ProviderRef{Kind: provider.HetznerProvider, Name: provider.HetznerProvider, IDs: resourceIDs, Region: plan.Region, Profile: plan.ServerType, ResourceIDs: cloneIDs(resourceIDs), Tags: cloneTags(plan.Tags), Cloud: cloud}
 	return provider.Machine{
