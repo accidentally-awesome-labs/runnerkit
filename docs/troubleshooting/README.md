@@ -42,6 +42,7 @@ xattr -d com.apple.quarantine /usr/local/bin/runnerkit     # Intel
 | [provider.md](provider.md)   | RKD-PROV-NNN                                | Hetzner token/quota/region, partial destroy, billable lingering                                                           |
 | [cleanup.md](cleanup.md)     | RKD-CLEAN-NNN, RKD-STATE-NNN, RKD-CORE-NNN  | down/destroy partial, ephemeral log preservation, state JSON read, schema-too-new, migration failure, CLI input          |
 | [host-resources.md](host-resources.md) | (narrative; codes RKD-BOOT-016..018 live in [bootstrap.md](bootstrap.md)) | RAM/swap preflight, OOM-heavy CI, journal hints, sizing and parallelism |
+| [doctor-ux.md](doctor-ux.md) | (CLI UX) | First-run wizard, `--explain`, BYO progress checklists, doctor ignore config and fix mode |
 
 > Note on numbering: codes are stable across renames; numbering grows
 > monotonically per component. Some numbers may be reserved (e.g.,

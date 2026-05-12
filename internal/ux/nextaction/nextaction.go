@@ -22,6 +22,18 @@ type Action struct {
 	Kind     string   `json:"kind,omitempty"` // run_on_host: copy-paste on runner host; run_local: maintainer machine
 }
 
+// ApplySchemaAndStage sets schema_version and optional stage without changing other keys.
+func ApplySchemaAndStage(base map[string]any, stage string) map[string]any {
+	if base == nil {
+		base = map[string]any{}
+	}
+	base["schema_version"] = SchemaVersion
+	if stage != "" {
+		base["stage"] = stage
+	}
+	return base
+}
+
 // MergePayload adds schema_version, optional stage, and next_actions to a command JSON map.
 func MergePayload(base map[string]any, stage string, actions []Action) map[string]any {
 	if base == nil {

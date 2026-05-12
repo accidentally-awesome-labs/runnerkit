@@ -52,12 +52,12 @@ func TestUpgradeRunner_Persistent_ReAppliesWithNewPin(t *testing.T) {
 
 	// Apply was called: at least the persistent bootstrap commands flowed.
 	wanted := map[string]bool{
-		"fix_dependencies":  false,
+		"fix_dependencies":   false,
 		"create_runner_user": false,
-		"download_runner":   false,
-		"configure_runner":  false,
-		"install_service":   false,
-		"verify_service":    false,
+		"download_runner":    false,
+		"configure_runner":   false,
+		"install_service":    false,
+		"verify_service":     false,
 	}
 	for _, c := range remoteExec.runs {
 		if _, ok := wanted[c.ID]; ok {

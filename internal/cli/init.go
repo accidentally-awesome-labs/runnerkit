@@ -35,6 +35,10 @@ func runInit(deps Dependencies, jsonOutput bool, noColor bool, opts *initOptions
 	if out == nil {
 		out = io.Discard
 	}
+	if deps.Explain() && !jsonOutput {
+		why, runs, takes := explainInitDefault()
+		printExplainBlock(deps.Err, "runnerkit init", why, runs, takes)
+	}
 	v := deps.Version
 	line := HostInstallOneLiner(v)
 	url := InstallScriptReleaseURL(v)

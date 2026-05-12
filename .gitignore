@@ -23,3 +23,7 @@ cmd/_smokebin/destroy_verify/destroy_verify
 .pi-lens/
 .cache/
 bin/
+
+# Stray checklist/session JSON at repo root (sessions belong under state dir).
+/sessions/
+internal/cli/sessions/

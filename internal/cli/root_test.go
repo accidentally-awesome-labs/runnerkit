@@ -11,18 +11,24 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/github"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/labels"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 func executeForTest(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var out, err bytes.Buffer
+	in := strings.NewReader("")
 	cmd := NewRootCommand(Dependencies{
 		Version:        "test-version",
+		In:             in,
 		Out:            &out,
 		Err:            &err,
+		StateBaseDir:   t.TempDir(),
 		GitHub:         newFakePermittedGitHubService(),
 		RemoteExecutor: newFakeRemoteExecutor(),
 		Sleep:          noSleep,
+		Prompts:        ui.NewCLIPrompter(in, &out),
+		TTY:            ui.TerminalCapabilities{StdinTTY: false, StdoutTTY: false, Width: 80},
 	})
 	cmd.SetArgs(args)
 	runErr := cmd.Execute()

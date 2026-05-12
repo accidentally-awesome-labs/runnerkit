@@ -13,6 +13,8 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/nextaction"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/stage"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,9 @@ type doctorOptions struct {
 	verbose         bool
 	deep            bool
 	withLogSnippets bool
+	fix             bool
+	fixYes          bool
+	ignore          []string
 }
 
 func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
@@ -34,6 +39,9 @@ func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "show pass findings")
 	cmd.Flags().BoolVar(&opts.deep, "deep", false, "collect extra host evidence (e.g. journal OOM hints) even when the runner looks healthy")
 	cmd.Flags().BoolVar(&opts.withLogSnippets, "with-log-snippets", false, "with heuristics, include short matching log lines (use when sharing diagnostics)")
+	cmd.Flags().BoolVar(&opts.fix, "fix", false, "attempt safe auto-remediation for supported findings")
+	cmd.Flags().BoolVar(&opts.fixYes, "yes", false, "with --fix, skip confirmation prompts (use only in trusted automation)")
+	cmd.Flags().StringSliceVar(&opts.ignore, "ignore", nil, "persistently ignore a doctor finding id (repeatable flag)")
 	return cmd
 }
 
@@ -66,19 +74,54 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 		}
 	}
 	report := ops.BuildDoctorReport(repoState, status.Observed, checks, hints)
+	st := stage.InferFromDoctor(status.Observed, report.Health, checks)
+
+	if opts.fix && jsonOutput {
+		_ = renderer.Error("doctor_fix_json", "doctor --fix cannot be combined with --json (re-run without --json to apply fixes).", nil)
+		return NewExitError(ExitInvalidInput, errors.New("doctor fix with json"))
+	}
+
+	cfg, err := LoadUserConfig(deps.StateBaseDir)
+	if err != nil {
+		_ = renderer.Error("user_config_io", "RunnerKit can't read config.json.", []string{err.Error()})
+		return NewExitError(ExitStateIO, err)
+	}
+	if len(opts.ignore) > 0 {
+		cfg.DoctorIgnoreFindingIDs = mergeUniqueStrings(cfg.DoctorIgnoreFindingIDs, opts.ignore)
+		if err := SaveUserConfig(deps.StateBaseDir, cfg); err != nil {
+			_ = renderer.Error("user_config_io", "RunnerKit can't write config.json.", []string{err.Error()})
+			return NewExitError(ExitStateIO, err)
+		}
+	}
+	ignoreMap := doctorIgnoreSet(cfg.DoctorIgnoreFindingIDs)
+	display := report
+	display.Findings = filterDoctorFindings(report.Findings, ignoreMap)
+
+	if opts.fix {
+		if !opts.fixYes && deps.Prompts == nil {
+			_ = renderer.Error("doctor_fix_requires_prompts", "doctor --fix needs an interactive terminal or pass --yes.", nil)
+			return NewExitError(ExitInputRequired, errors.New("doctor fix prompts"))
+		}
+		if err := applyDoctorFixes(ctx, deps, renderer, repo, report, ignoreMap, opts.fixYes, noColor); err != nil {
+			return NewExitError(ExitSafetyGate, err)
+		}
+	}
+
 	if jsonOutput {
 		// Nil slices in map[string]any marshal as JSON null; tooling expects arrays.
-		hostHints := report.HostIncidentHints
+		hostHints := display.HostIncidentHints
 		if hostHints == nil {
 			hostHints = []ops.HostIncidentHint{}
 		}
-		next := report.NextActions
+		next := display.NextActions
 		if next == nil {
 			next = []ops.NextAction{}
 		}
-		return renderer.JSON(map[string]any{"ok": true, "command": "doctor", "repo": repo.FullName, "state_path": store.Path(), "health": report.Health, "findings": report.Findings, "next_actions": next, "host_incident_hints": hostHints})
+		base := map[string]any{"ok": true, "command": "doctor", "repo": repo.FullName, "state_path": store.Path(), "health": display.Health, "findings": display.Findings, "next_actions": next, "host_incident_hints": hostHints}
+		nextaction.ApplySchemaAndStage(base, string(st))
+		return renderer.JSON(base)
 	}
-	return renderDoctorHuman(renderer, report, opts.verbose)
+	return renderDoctorHuman(renderer, display, opts.verbose, st)
 }
 
 func collectDoctorHostHints(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState, observed ops.ObservedRunner, since string, deep, withSnippets bool) []ops.HostIncidentHint {
@@ -127,8 +170,8 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 	return checks
 }
 
-func renderDoctorHuman(renderer *ui.Renderer, report ops.DoctorReport, verbose bool) error {
-	lines := []ui.Line{ui.Bullet("Health: " + string(report.Health.State) + " — " + report.Health.Summary)}
+func renderDoctorHuman(renderer *ui.Renderer, report ops.DoctorReport, verbose bool, st stage.Stage) error {
+	lines := []ui.Line{ui.Bullet("STAGE: " + string(st)), ui.Bullet("Health: " + string(report.Health.State) + " — " + report.Health.Summary)}
 	for _, finding := range report.Findings {
 		if finding.Severity == string(ops.SeverityPass) && !verbose {
 			continue

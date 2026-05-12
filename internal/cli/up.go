@@ -126,6 +126,11 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		return runCloudUp(ctx, deps, renderer, repo, decision, modeDecision, opts, jsonOutput)
 	}
 
+	if deps.Explain() && !jsonOutput {
+		why, runs, takes := explainBYOSetup()
+		printExplainBlock(deps.Err, "BYO runner setup (runnerkit up / register)", why, runs, takes)
+	}
+
 	status, err := deps.GitHub.VerifyAuth(ctx, repo)
 	if err != nil || !status.OK {
 		message := fmt.Sprintf("RunnerKit can't create a repository runner registration token for %s.", repo.FullName)
@@ -165,6 +170,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 	if !report.Passed() {
 		return renderPreflightFailure(renderer, jsonOutput, report)
+	}
+	if !jsonOutput && !opts.dryRun {
+		writeBYOChecklistHuman(deps.Out, deps.TTY, deps.StateBaseDir, repo.FullName, target, 1)
 	}
 
 	arch := defaultString(report.Arch, labels.DefaultArch)
@@ -210,6 +218,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target); err != nil {
 		return err
 	}
+	if !jsonOutput && !opts.dryRun {
+		writeBYOChecklistHuman(deps.Out, deps.TTY, deps.StateBaseDir, repo.FullName, target, 2)
+	}
 	token, err := deps.GitHub.CreateRegistrationToken(ctx, repo)
 	if err != nil {
 		_ = renderer.Error("github_permission_denied", "RunnerKit can't create a fresh runner registration token.", []string{gh.FineGrainedTokenRemediation(repo)})
@@ -217,6 +228,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 	renderer.Redactor().Register(redact.RunnerRegistrationToken, token.Token)
 	bootstrapOpts.RunnerToken = token.Token
+	if !jsonOutput && !opts.dryRun {
+		writeBYOChecklistHuman(deps.Out, deps.TTY, deps.StateBaseDir, repo.FullName, target, 3)
+	}
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		if result, err := bootstrap.ApplyEphemeral(ctx, deps.RemoteExecutor, target, bootstrapOpts); err != nil {
 			var serviceErr bootstrap.ServiceNotActiveError
@@ -255,6 +269,10 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		}
 	}
 
+	if !jsonOutput && !opts.dryRun {
+		writeBYOChecklistHuman(deps.Out, deps.TTY, deps.StateBaseDir, repo.FullName, target, 4)
+	}
+
 	onlineRunner, ok, err := waitForRunnerOnline(ctx, deps, repo, labelSet.RunnerName, labelSet.Labels)
 	if err != nil {
 		return err
@@ -262,6 +280,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if !ok {
 		_ = renderer.Error("runner_online_timeout", "RunnerKit could not verify the GitHub runner came online with the expected labels.", []string{"Check the remote service status and GitHub repository Actions runner settings, then re-run runnerkit up."})
 		return NewExitError(ExitSafetyGate, errors.New("runner_online_timeout"))
+	}
+	if !jsonOutput && !opts.dryRun {
+		writeBYOChecklistHuman(deps.Out, deps.TTY, deps.StateBaseDir, repo.FullName, target, 5)
 	}
 
 	if modeDecision.Mode == runmode.ModeEphemeral {

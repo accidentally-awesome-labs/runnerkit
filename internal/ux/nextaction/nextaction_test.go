@@ -2,6 +2,13 @@ package nextaction
 
 import "testing"
 
+func TestApplySchemaAndStage(t *testing.T) {
+	p := ApplySchemaAndStage(map[string]any{"ok": true, "command": "doctor"}, "running")
+	if p["schema_version"] != 1 || p["stage"] != "running" {
+		t.Fatalf("%#v", p)
+	}
+}
+
 func TestMergePayload_SetsSchemaVersion(t *testing.T) {
 	p := MergePayload(map[string]any{"ok": true, "command": "x"}, "s", nil)
 	if p["schema_version"] != 1 {

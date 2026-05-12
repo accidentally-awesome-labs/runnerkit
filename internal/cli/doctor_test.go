@@ -20,13 +20,13 @@ func doctorRemoteFailedServiceWithOOMLogs() *testsupport.RemoteExecutor {
 		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"},
 		ProbeResult:        remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Kernel: "linux", Arch: "x86_64", OSRelease: map[string]string{"ID": "ubuntu"}, Systemd: true, Commands: map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}, DiskAvailableBytes: 2147483648, MemAvailableBytes: plentyMem, SwapFreeBytes: swap, TimeSynchronized: true},
 		Results: map[string]remote.Result{
-			ops.CommandStatusSSHReachable: {ExitCode: 0},
-			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=failed\nSubState=failed\nUnitFileState=enabled\nExecMainStatus=1\n", ExitCode: 0},
-			"doctor.path.install":         {ExitCode: 0},
-			"doctor.path.work":            {ExitCode: 0},
-			"doctor.preflight":            {ExitCode: 0},
-			"host.network.github.github": {ExitCode: 0},
-			"host.network.github.api":     {ExitCode: 0},
+			ops.CommandStatusSSHReachable:  {ExitCode: 0},
+			ops.CommandStatusSystemdShow:   {Stdout: "LoadState=loaded\nActiveState=failed\nSubState=failed\nUnitFileState=enabled\nExecMainStatus=1\n", ExitCode: 0},
+			"doctor.path.install":          {ExitCode: 0},
+			"doctor.path.work":             {ExitCode: 0},
+			"doctor.preflight":             {ExitCode: 0},
+			"host.network.github.github":   {ExitCode: 0},
+			"host.network.github.api":      {ExitCode: 0},
 			ops.CommandDoctorJournalRunner: {Stdout: "May 10 10:00:00 host Runner.Listener[123]: ld terminated with signal 9 [Killed]\n", ExitCode: 0},
 			ops.CommandDoctorJournalKernel: {Stdout: "Out of memory: Killed process 999 (ld)\n", ExitCode: 0},
 		},
@@ -46,13 +46,13 @@ func doctorRemote(active bool) *testsupport.RemoteExecutor {
 		ProbeHostKeyResult: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"},
 		ProbeResult:        remote.ProbeResult{HostKey: remote.HostKey{Fingerprint: "SHA256:fakehostfingerprint"}, Kernel: "linux", Arch: "x86_64", OSRelease: map[string]string{"ID": "ubuntu"}, Systemd: true, Commands: map[string]bool{"sudo": true, "curl": true, "tar": true, "gzip": true, "sha256sum": true, "id": true, "useradd": true, "install": true, "timedatectl": true}, DiskAvailableBytes: 2147483648, MemAvailableBytes: plentyMem, SwapFreeBytes: swap, TimeSynchronized: true},
 		Results: map[string]remote.Result{
-			ops.CommandStatusSSHReachable: {ExitCode: exit},
-			ops.CommandStatusSystemdShow:  {Stdout: "LoadState=loaded\nActiveState=" + activeState + "\nSubState=" + activeState + "\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
-			"doctor.path.install":         {ExitCode: 0},
-			"doctor.path.work":            {ExitCode: 0},
-			"doctor.preflight":            {ExitCode: 0},
-			"host.network.github.github":  {ExitCode: 0},
-			"host.network.github.api":     {ExitCode: 0},
+			ops.CommandStatusSSHReachable:  {ExitCode: exit},
+			ops.CommandStatusSystemdShow:   {Stdout: "LoadState=loaded\nActiveState=" + activeState + "\nSubState=" + activeState + "\nUnitFileState=enabled\nExecMainStatus=0\n", ExitCode: 0},
+			"doctor.path.install":          {ExitCode: 0},
+			"doctor.path.work":             {ExitCode: 0},
+			"doctor.preflight":             {ExitCode: 0},
+			"host.network.github.github":   {ExitCode: 0},
+			"host.network.github.api":      {ExitCode: 0},
 			ops.CommandDoctorJournalRunner: {Stdout: "", ExitCode: 0},
 			ops.CommandDoctorJournalKernel: {Stdout: "", ExitCode: 0},
 		},
@@ -104,6 +104,9 @@ func TestDoctorRedactsMachineRefAndJSONIncludesFindings(t *testing.T) {
 	}
 	if !strings.Contains(out, `"host_incident_hints":[`) {
 		t.Fatalf("json doctor missing host_incident_hints array:\n%s", out)
+	}
+	if !strings.Contains(out, `"schema_version"`) || !strings.Contains(out, `"stage"`) {
+		t.Fatalf("json doctor missing schema_version or stage:\n%s", out)
 	}
 }
 

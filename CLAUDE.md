@@ -24,7 +24,13 @@
 
 Full prerequisites (Homebrew PAT, optional Apple notarization), failure modes, and verification commands: **`docs/release-process.md`**.
 
-**Live smoke (`make smoke-live`, D-11):** After interactive `runnerkit doctor`, BYO and cloud scripts run **`scripts/smoke/assert-doctor-json-contract.sh`** to assert **`doctor --json`** includes **`host_incident_hints`** and **`next_actions`** as JSON arrays (never `null`) and **`doctor --deep --json`** exits 0. Requires **`python3`**. Override **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the deep pass.
+**Live smoke (`make smoke-live`, D-11):** After interactive `runnerkit doctor`, BYO and cloud scripts run **`scripts/smoke/assert-doctor-json-contract.sh`** to assert **`doctor --json`** includes **`schema_version`**, **`stage`**, **`host_incident_hints`** and **`next_actions`** as JSON arrays (never `null`) and **`doctor --deep --json`** exits 0. Requires **`python3`**. Override **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the deep pass.
+
+## UX polish layer (SEED-004, v1.1+)
+
+Line-oriented CLI only (no full-screen TUI). **`runnerkit`** with no subcommand runs a **first-run wizard** when there are no saved repos; **`--explain`** / **`--unicode`** are root persistent flags; **`doctor --fix`** / **`--ignore`** persist in **`config.json`**. BYO **`up`**/**`register`** prints **checklists** and saves progress under **`sessions/`** inside the state directory.
+
+Implementation touchpoints: `internal/ui/box.go`, `internal/ui/checklist.go`, `internal/ux/stage/`, `internal/ux/checkliststore/`, `internal/cli/wizard.go`, `internal/cli/byo_checklist.go`, `internal/cli/explain.go`, `internal/cli/doctor_fix.go`, `internal/cli/userconfig.go`; JSON helpers in `internal/ux/nextaction/nextaction.go`.
 
 ## Host capacity, OOM, and `runnerkit doctor` (Phase 7)
 

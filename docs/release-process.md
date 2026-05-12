@@ -91,9 +91,9 @@ Before pushing a tag, the maintainer must:
 1. **Run live smokes (D-11):** `make smoke-live` (see Plan 06-04). This
    exercises the BYO permission smoke and the Hetzner end-to-end smoke
    (including the empty-project precheck D-12 gate 1 and the destroy-verify
-   D-12 gate 2). Both paths run **`scripts/smoke/assert-doctor-json-contract.sh`**
+   D-12 gate 2).    Both paths run **`scripts/smoke/assert-doctor-json-contract.sh`**
    after the interactive `runnerkit doctor` step to assert the **`doctor --json`**
-   envelope includes **`host_incident_hints`** and **`next_actions`** as JSON **arrays**
+   envelope includes **`schema_version`**, **`stage`**, **`host_incident_hints`** and **`next_actions`** as JSON **arrays**
    (empty `[]` when there is nothing to report — never `null`) and that **`doctor --deep --json`**
    succeeds (Phase 7 host-capacity / journal heuristics plumbing). Requires **`python3`**.
    Set **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the `--deep` pass if SSH

@@ -14,6 +14,8 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/nextaction"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/stage"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +62,8 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 		if jsonOutput {
 			items := make([]any, 0, len(results))
 			for _, result := range results {
-				items = append(items, statusJSONPayload("all", store.Path(), result.Observed, result.Health))
+				p := statusJSONPayload("all", store.Path(), result.Observed, result.Health)
+				items = append(items, statusJSONWithStage(p, result.Observed, result.Health))
 			}
 			return renderer.JSON(map[string]any{"ok": true, "command": "status", "scope": "all", "runners": items})
 		}
@@ -87,7 +90,8 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 		observed := ops.ObservedRunner{Repo: repo.FullName, StatePath: store.Path(), StatePresent: false}
 		health := ops.Classify(observed)
 		if jsonOutput {
-			return renderer.JSON(statusJSONPayload("repo", store.Path(), observed, health))
+			p := statusJSONPayload("repo", store.Path(), observed, health)
+			return renderer.JSON(statusJSONWithStage(p, observed, health))
 		}
 		return renderer.Step(1, 1, "runner status",
 			ui.WarningLine("No RunnerKit-managed runner found"),
@@ -100,7 +104,8 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 	}
 	result := collectStatus(ctx, deps, store.Path(), repoState, true)
 	if jsonOutput {
-		return renderer.JSON(statusJSONPayload("repo", store.Path(), result.Observed, result.Health))
+		p := statusJSONPayload("repo", store.Path(), result.Observed, result.Health)
+		return renderer.JSON(statusJSONWithStage(p, result.Observed, result.Health))
 	}
 	return renderStatusHuman(renderer, store.Path(), result)
 }
@@ -466,6 +471,12 @@ func providerJSONSource(fact ops.ProviderFact) map[string]any {
 		"drift":              fact.Drift,
 		"error":              fact.Error,
 	}
+}
+
+func statusJSONWithStage(payload map[string]any, observed ops.ObservedRunner, health ops.Health) map[string]any {
+	st := stage.InferFromObserved(observed, health)
+	na := stage.ActionsFromOpsNext(health.NextActions)
+	return nextaction.MergePayload(payload, string(st), na)
 }
 
 func statusJSONPayload(scope string, statePath string, observed ops.ObservedRunner, health ops.Health) map[string]any {

@@ -43,6 +43,10 @@ type Dependencies struct {
 	PollInterval time.Duration
 	PollTimeout  time.Duration
 	Sleep        func(context.Context, time.Duration) error
+	// Explain, when non-nil and returns true, prints WHY/RUNS/TAKES blocks for supported commands.
+	Explain func() bool
+	// UnicodeBox, when non-nil and returns true, uses UTF-8 borders in boxed command output.
+	UnicodeBox func() bool
 }
 
 func normalizeDependencies(deps Dependencies) Dependencies {
@@ -98,6 +102,12 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 			}
 		}
 	}
+	if deps.Explain == nil {
+		deps.Explain = func() bool { return false }
+	}
+	if deps.UnicodeBox == nil {
+		deps.UnicodeBox = func() bool { return false }
+	}
 	return deps
 }
 
@@ -107,6 +117,8 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 
 	var jsonOutput bool
 	var noColor bool
+	var explain bool
+	var unicodeBox bool
 
 	root := &cobra.Command{Use: "runnerkit"}
 	root.Short = "Prepare and manage GitHub Actions self-hosted runners"
@@ -134,6 +146,19 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "write machine-readable JSON to stdout")
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
+	root.PersistentFlags().BoolVar(&explain, "explain", false, "print WHY/RUNS/TAKES context before major steps (supported commands)")
+	root.PersistentFlags().BoolVar(&unicodeBox, "unicode", false, "use UTF-8 box-drawing characters for command panels")
+
+	deps.Explain = func() bool { return explain }
+	deps.UnicodeBox = func() bool { return unicodeBox }
+
+	root.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		return runFirstRunWizard(ctx, cmd, deps, jsonOutput, noColor)
+	}
 
 	root.AddCommand(newVersionCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newInitCommand(deps, &jsonOutput, &noColor))

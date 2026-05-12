@@ -51,6 +51,8 @@ required = (
 	"next_actions",
 	"host_incident_hints",
 	"redactions_applied",
+	"schema_version",
+	"stage",
 )
 for k in required:
 	assert k in d, "missing key %r (mode=%s); keys=%r" % (k, mode, list(d.keys()))

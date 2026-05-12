@@ -50,6 +50,15 @@ Measured by the maintainer on a clean machine before tagging.
 | BYO persistent           | `126 s`    | Runner ID: `35`                |
 | Hetzner cloud persistent | `167 s`    | Hetzner cost: `0.00 EUR` (est. from plan rate; replace with dashboard exact value if needed) |
 
+### Maintainer smoke re-run (2026-05-12)
+
+Pre-tag verification with `make smoke-live` (BYO + Hetzner + destroy-verify; isolated `RUNNERKIT_STATE_DIR`, `.env` + `gh` auth). Supersedes wall-clock for release-process stopwatch bookkeeping only; v1.0.0 tag-era figures remain in the table above.
+
+| Path                     | Wall-clock | Notes |
+| ------------------------ | ---------- | ----- |
+| BYO persistent           | `149 s`    | GitHub runner ID: `51` |
+| Hetzner cloud persistent | `287 s`    | GitHub runner ID: `52`; D-12 destroy-verify **PASS** |
+
 ## Outstanding Live Smokes Closed
 
 - **Phase 1: live GitHub permission smoke** — closed by `make smoke-live-byo`.

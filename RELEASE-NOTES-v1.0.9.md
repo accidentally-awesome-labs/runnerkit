@@ -12,9 +12,10 @@ Date: 2026-05-12
 
 ## Stopwatch / Live Smoke
 
-- `make smoke-live` (maintainer run, 2026-05-12): BYO + cloud + destroy-verify completed cleanly; doctor JSON assert baseline + deep on both legs.
-- BYO duration: **152s**
-- Cloud duration: **291s**
+- `make smoke-live` (maintainer run, 2026-05-12): BYO + cloud + destroy-verify completed cleanly; doctor JSON assert baseline + deep on both legs; `doctor --json` includes **`schema_version`** and **`stage`** (smoke script asserts required keys).
+- BYO duration: **149s** (GitHub runner ID **51**)
+- Cloud duration: **287s** (GitHub runner ID **52**)
+- Hetzner billable resource IDs (server / ssh-key / firewall / primary-ipv4 / primary-ipv6): `130526567` / `112169044` / `10961840` / `130383705` / `130383706`
 
 ## Notes
 

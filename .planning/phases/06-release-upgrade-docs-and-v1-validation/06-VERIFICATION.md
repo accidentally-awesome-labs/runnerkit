@@ -5,7 +5,7 @@ status: baseline_ready
 verified: 2026-05-02T00:00:00Z
 score: 7/7 plans verified (06-07 smoke-green attempt-21)
 created: 2026-05-04
-updated: 2026-05-08
+updated: 2026-05-12
 re_verification: true
 gaps:
   - truth: "Plan 06-07 attempt-20 smoke can run non-interactively after Plan 06-13 without TTY-dependent sudo failure."
@@ -88,25 +88,26 @@ gap_source: 06-GAP-byo-sudo-handling.md
 - [x] `make smoke-live-byo` succeeds end-to-end
 - BYO host: `salar@mckee-small-desktop`
 - Repo (maintainer-controlled, trusted): `accidentally-awesome-labs/dat0`
-- Wall-clock duration: `126 seconds`
-- Runner ID assigned by GitHub: `35`
+- Wall-clock duration: `149 seconds` (maintainer re-run 2026-05-12)
+- Runner ID assigned by GitHub: `51`
 
 ### Hetzner smoke (closes Phase 4 outstanding)
 
 - [x] `make smoke-live-cloud` succeeds end-to-end
 - Repo (maintainer-controlled, trusted, NOT public): `accidentally-awesome-labs/dat0`
 - Hetzner project: `HCLOUD token-scoped project (dashboard project name not exposed by API)`
-- Wall-clock duration (up → workflow → destroy): `167 seconds`
-- Hetzner cost (from project dashboard, EUR): `0.00` (estimated from plan rate `€0.0081/hour` × `167s`; replace with dashboard exact value if needed)
-- Resource IDs created (server / ssh-key / primary-ip(v4) / primary-ip(v6) / firewall): `129995546 / 112010704 / 129955350 / 129955351 / 10948517`
+- Wall-clock duration (up → status/doctor → destroy): `287 seconds` (maintainer re-run 2026-05-12)
+- Hetzner cost (from project dashboard, EUR): `0.00` (estimated from plan rate `€0.0081/hour` × wall-clock; replace with dashboard exact value if needed)
+- Resource IDs created (server / ssh-key / firewall / primary-ipv4 / primary-ipv6): `130526567 / 112169044 / 10961840 / 130383705 / 130383706`
+- GitHub runner ID (cloud leg): `52`
 - D-12 gate 1 (empty-project precheck) status: `PASS` (PASS / FAIL)
 - D-12 gate 2 (destroy-verify 404 within timeout) status: `PASS` (PASS / FAIL)
 - Empty-project precheck final ID list size: `0` (must be exactly zero on a successful smoke)
 
 ### 10-minute stopwatch (D-13)
 
-- [x] BYO total: `2 minutes 6 seconds` (target ≤ 10 minutes)
-- [x] Hetzner total: `2 minutes 47 seconds` (target ≤ 10 minutes)
+- [x] BYO total: `2 minutes 29 seconds` (149s; target ≤ 10 minutes)
+- [x] Hetzner total: `4 minutes 47 seconds` (287s; target ≤ 10 minutes)
 
 ## Bundled Versions
 
@@ -117,8 +118,8 @@ gap_source: 06-GAP-byo-sudo-handling.md
 
 ## Sign-Off
 
-- [x] Maintainer signature: `salar (2026-05-08)`
-- [x] All gates green; ready to push `git tag -a v1.0.0`
+- [x] Maintainer signature: `salar (2026-05-12)` — live smoke re-run recorded in this file + `RELEASE-NOTES-v1.0.0.md` / `RELEASE-NOTES-v1.0.9.md`
+- [x] All gates green; release hygiene per `docs/release-process.md` Stopwatch Checklist (D-13)
 
 ---
 
@@ -280,4 +281,4 @@ _Source of truth for the gap: 06-GAP-byo-sudo-handling.md (Tasks A-E CLOSED by 0
 
 ## Supplement — v1.0.9 maintainer smoke (2026-05-12)
 
-Maintainer `make smoke-live` on upstream checkout: **BYO** path **152s**, **Hetzner cloud** path **291s**, D-12 destroy-verify **PASS**, **`scripts/smoke/assert-doctor-json-contract.sh`** baseline + **`--deep`** **PASS** on both legs. Phase 7 host-capacity / doctor JSON contract + stable **`host_incident_hints`** / **`next_actions`** arrays in **`doctor --json`** included in tag **v1.0.9**.
+Maintainer `make smoke-live` (`.env` for `HCLOUD_TOKEN` / `RUNNERKIT_SMOKE_*`, existing `gh` auth): **BYO** **149s** (GitHub runner **51**), **Hetzner cloud** **287s** (GitHub runner **52**), D-12 destroy-verify **PASS**, **`scripts/smoke/assert-doctor-json-contract.sh`** baseline + **`--deep`** **PASS** on both legs (asserts **`schema_version`**, **`stage`**, non-null **`next_actions`** / **`host_incident_hints`**). Cloud billable IDs: server **130526567**, ssh-key **112169044**, firewall **10961840**, primary-ipv4 **130383705**, primary-ipv6 **130383706**. Phase 7 host-capacity warnings expected on small cloud shape (RKD-BOOT-016/017); **`STAGE: running`** on interactive doctor.
