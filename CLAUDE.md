@@ -28,6 +28,10 @@ Full prerequisites (Homebrew PAT, optional Apple notarization), failure modes, a
 
 **BYO multi-repo smoke (optional):** Set **`RUNNERKIT_SMOKE_MULTI_REPO=1`** and **`RUNNERKIT_SMOKE_REPO2=owner/other`** (second trusted private repo, different from **`RUNNERKIT_SMOKE_REPO`**) before **`make smoke-live-byo`** / **`make smoke-live`**. The BYO script then **`register`**s the second repo on the same host, asserts two repos via **`scripts/smoke/assert-list-host-repo-count.sh`**, runs the doctor JSON contract for repo2, then **`down`** repo2 then the primary.
 
+## Hetzner cloud provisioning (cloud-init v2)
+
+When RunnerKit creates the VM (`runnerkit up --repo … --cloud hetzner`), **user-data** applies the same **scoped** `/etc/sudoers.d/runnerkit-installer` rules as `install.sh` / `byo-prepare` (`internal/bootstrap/sudoers.go`), validated with **`visudo`** before SSH bootstrap runs — so non-interactive `sudo apt-get` / install steps do not depend on a fragile `users[].sudo` stanza alone. Inventory records **`runnerkit-cloud-init-v2`** (constant **`hetzner.CloudInitUserDataVersion`**); the host also writes **`/var/lib/runnerkit/cloud-init.json`**. Generic **`--host`** machines are unchanged: they still need the one-time host install when sudo is password-protected.
+
 ## Multi-repo BYO (SEED-002, v1.2+)
 
 **v1.2 scope:** multi-repo on a **single BYO SSH host** (same `user@host` for each `runnerkit up` / `register`). **Cloud** remains one provisioned server per `runnerkit up --cloud` unless you manually point a second repo at an existing machine’s SSH address. Tarballs cache under **`/opt/actions-runner/runnerkit-shared-bin/<runner-version>/`**. Narrative: [`docs/troubleshooting/multi-repo.md`](docs/troubleshooting/multi-repo.md).

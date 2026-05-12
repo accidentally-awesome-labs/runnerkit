@@ -425,6 +425,8 @@ RunnerKit's bootstrap commands run over a non-interactive SSH channel
 and cannot answer a sudo prompt, so the very first sudo-prefixed
 command fails.
 
+**Hetzner note:** `runnerkit up --repo … --cloud hetzner` provisions VMs whose **cloud-init** installs the scoped `/etc/sudoers.d/runnerkit-installer` automatically (user-data version **`runnerkit-cloud-init-v2`**). If you still see this warning on cloud, cloud-init did not finish successfully — check **`/var/lib/runnerkit/cloud-init.json`**, **`cloud-init status`**, and increase **`RUNNERKIT_CLOUD_INIT_TIMEOUT`** if convergence is slow. Password-sudo on **`--host`** targets is expected until you run the host install below.
+
 ### Fix
 
 **Recommended — one-time `install.sh` on the runner host**
