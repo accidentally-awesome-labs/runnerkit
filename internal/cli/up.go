@@ -51,6 +51,7 @@ type upOptions struct {
 	sshAllowedCIDR        string
 	mode                  string
 	ephemeralTTL          time.Duration
+	extraPackages         string
 	registerLifecycleOnly bool // true for `runnerkit register` (SEED-002 foundation gate)
 }
 
@@ -89,6 +90,7 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().StringVar(&opts.sshAllowedCIDR, "ssh-allowed-cidr", provider.HetznerDefaultSSHAllowedCIDR, "SSH ingress CIDR for cloud runner")
 	cmd.Flags().StringVar(&opts.mode, "mode", "", "runner mode: persistent or ephemeral")
 	cmd.Flags().DurationVar(&opts.ephemeralTTL, "ephemeral-ttl", runmode.DefaultEphemeralTTL, "TTL safeguard for ephemeral runners")
+	cmd.Flags().StringVar(&opts.extraPackages, "extra-packages", "", "comma-separated OS packages to pre-install on the runner host (e.g. libsecret-1-dev,dbus-x11)")
 	cmd.Flags().BoolVar(&opts.allowEphemeralBYORisk, "allow-ephemeral-byo-risk", false, "acknowledge that BYO ephemeral mode is not a clean VM for risky repositories")
 
 	return cmd
@@ -183,7 +185,8 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the Phase 2 BYO persistent runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report)
+	extraPkgs := resolveExtraPackages(opts.extraPackages, nil)
+	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
 	}
@@ -674,7 +677,8 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		}
 		return NewExitError(ExitGitHubAuth, err)
 	}
-	input := buildCloudProvisionInput(deps, repo, opts)
+	extraPkgs := resolveExtraPackages(opts.extraPackages, nil)
+	input := buildCloudProvisionInput(deps, repo, opts, extraPkgs)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		input.Mode = runmode.ModeEphemeral
 		runnerName := labels.EphemeralRunnerName(repo, shortEphemeralID())
@@ -762,7 +766,7 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the recommended cloud runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report)
+	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
 	}
@@ -849,7 +853,7 @@ func registerKnownCloudProviderSecrets(renderer *ui.Renderer) {
 	}
 }
 
-func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions) provider.ProvisionInput {
+func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions, extraPackages []string) provider.ProvisionInput {
 	profile := provider.DefaultHetznerProfile()
 	profile.Region = defaultString(opts.cloudRegion, provider.HetznerDefaultRegion)
 	profile.ServerType = defaultString(opts.cloudProfile, provider.HetznerDefaultServerType)
@@ -868,6 +872,7 @@ func buildCloudProvisionInput(deps Dependencies, repo gh.Repo, opts *upOptions) 
 		PublicKey:       resolveCloudPublicKey(opts),
 		StateID:         labelSet.RunnerName,
 		CreatedAt:       createdAt,
+		ExtraPackages:   extraPackages,
 	}
 }
 
@@ -1335,6 +1340,7 @@ func buildCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSo
 			ProviderResourceIDs: cloudProviderResourceIDList(resourceIDs),
 		},
 		Safety:           cloudSafetyMetadata(decision, now),
+		ExtraPackages:    input.ExtraPackages,
 		Operations:       []rkstate.OperationCheckpoint{},
 		RunnerKitVersion: deps.Version,
 		CreatedAt:        now,
@@ -1577,18 +1583,19 @@ func verifyBYOFoundationForRegister(ctx context.Context, deps Dependencies, rend
 	return nil
 }
 
-func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap.RunnerPackage, report preflight.Report) bootstrap.Options {
+func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap.RunnerPackage, report preflight.Report, extraPackages []string) bootstrap.Options {
 	installPath := filepath.Join("/opt/actions-runner", labelSet.RunnerName)
 	workDir := filepath.Join("/var/lib/runnerkit/work", labelSet.RunnerName)
 	return bootstrap.Options{
-		RunnerName:   labelSet.RunnerName,
-		RepoURL:      "https://github.com/" + repo.FullName,
-		Labels:       labelSet.Labels,
-		InstallPath:  installPath,
-		WorkDir:      workDir,
-		ServiceUser:  bootstrap.DefaultServiceUser,
-		Package:      pkg,
-		MissingTools: report.FixableTools,
+		RunnerName:    labelSet.RunnerName,
+		RepoURL:       "https://github.com/" + repo.FullName,
+		Labels:        labelSet.Labels,
+		InstallPath:   installPath,
+		WorkDir:       workDir,
+		ServiceUser:   bootstrap.DefaultServiceUser,
+		Package:       pkg,
+		MissingTools:  report.FixableTools,
+		ExtraPackages: extraPackages,
 	}
 }
 
@@ -1744,6 +1751,7 @@ func buildBYORepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSour
 		Provider:         rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
 		Cleanup:          rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
 		Safety:           safety,
+		ExtraPackages:    opts.ExtraPackages,
 		RunnerKitVersion: deps.Version,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -2201,6 +2209,66 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// parseExtraPackages splits a comma-separated string into individual
+// package names, trims whitespace, and rejects names containing shell
+// metacharacters (only alphanumerics, hyphens, dots, colons, and
+// underscores are allowed).
+func parseExtraPackages(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if isValidPackageName(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func isValidPackageName(name string) bool {
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '.', r == '_', r == ':', r == '+':
+		default:
+			return false
+		}
+	}
+	return len(name) > 0
+}
+
+// resolveExtraPackages merges CLI --extra-packages with project config
+// defaults, deduplicating while preserving order.
+func resolveExtraPackages(cliRaw string, projectDefaults []string) []string {
+	cliPkgs := parseExtraPackages(cliRaw)
+	if len(cliPkgs) == 0 && len(projectDefaults) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(cliPkgs)+len(projectDefaults))
+	var merged []string
+	for _, pkg := range cliPkgs {
+		if !seen[pkg] {
+			seen[pkg] = true
+			merged = append(merged, pkg)
+		}
+	}
+	for _, pkg := range projectDefaults {
+		pkg = strings.TrimSpace(pkg)
+		if pkg != "" && isValidPackageName(pkg) && !seen[pkg] {
+			seen[pkg] = true
+			merged = append(merged, pkg)
+		}
+	}
+	return merged
 }
 
 func runnerServiceName(runnerName string) string {

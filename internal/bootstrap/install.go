@@ -22,6 +22,12 @@ type Options struct {
 	Package      RunnerPackage
 	MissingTools []string
 
+	// ExtraPackages are additional OS packages (e.g. libsecret-1-dev,
+	// dbus-x11) to install alongside MissingTools during the
+	// fix_dependencies step. Specified via --extra-packages or
+	// .runnerkit/config.yaml extra_packages.
+	ExtraPackages []string
+
 	// RunnerCacheRoot, when set, overrides SharedRunnerCacheRoot for the
 	// download_runner step (tests and non-default layouts). Production
 	// leaves this empty so tarballs cache under /opt/actions-runner/runnerkit-shared-bin.
@@ -90,8 +96,9 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 		exec = remote.UnavailableExecutor{}
 	}
 	normalizeOptions(&opts)
+	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages)
 	commands := []remote.Command{
-		{ID: "fix_dependencies", Script: RenderDependencyFixScript(opts.MissingTools), Sudo: true},
+		{ID: "fix_dependencies", Script: RenderDependencyFixScript(allPackages), Sudo: true},
 		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
 		downloadRunnerCommand(opts),
 		{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
@@ -133,8 +140,9 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		exec = remote.UnavailableExecutor{}
 	}
 	normalizeOptions(&opts)
+	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages)
 	commands := []remote.Command{
-		{ID: "fix_dependencies", Script: RenderDependencyFixScript(opts.MissingTools), Sudo: true},
+		{ID: "fix_dependencies", Script: RenderDependencyFixScript(allPackages), Sudo: true},
 		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
 		downloadRunnerCommand(opts),
 		{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
@@ -248,4 +256,27 @@ func normalizeOptions(opts *Options) {
 			opts.EphemeralTTL = 24 * time.Hour
 		}
 	}
+}
+
+// mergePackages deduplicates missingTools and extraPackages into a
+// single slice suitable for RenderDependencyFixScript.
+func mergePackages(missingTools, extraPackages []string) []string {
+	if len(extraPackages) == 0 {
+		return missingTools
+	}
+	seen := make(map[string]bool, len(missingTools)+len(extraPackages))
+	var merged []string
+	for _, pkg := range missingTools {
+		if !seen[pkg] {
+			seen[pkg] = true
+			merged = append(merged, pkg)
+		}
+	}
+	for _, pkg := range extraPackages {
+		if !seen[pkg] {
+			seen[pkg] = true
+			merged = append(merged, pkg)
+		}
+	}
+	return merged
 }

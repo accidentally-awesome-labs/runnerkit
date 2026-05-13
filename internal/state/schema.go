@@ -27,6 +27,7 @@ type RepositoryState struct {
 	Safety                 SafetyMetadata        `json:"safety"`
 	Ephemeral              EphemeralMetadata     `json:"ephemeral,omitempty"`
 	Operations             []OperationCheckpoint `json:"operations,omitempty"`
+	ExtraPackages          []string              `json:"extra_packages,omitempty"`
 	RunnerKitVersion       string                `json:"runnerkit_version"`
 	RunnerTemplateVersion  string                `json:"runner_template_version,omitempty"`
 	ServiceTemplateVersion string                `json:"service_template_version,omitempty"`

@@ -423,3 +423,41 @@ func createCalls(calls []string) []string {
 	}
 	return out
 }
+
+func TestCloudInitUserDataIncludesExtraPackages(t *testing.T) {
+	ud := cloudInitUserData("runnerkit-admin", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest", []string{"libsecret-1-dev", "dbus-x11", "gnome-keyring"})
+	for _, pkg := range []string{"libsecret-1-dev", "dbus-x11", "gnome-keyring"} {
+		if !strings.Contains(ud, "  - "+pkg) {
+			t.Fatalf("cloud-init user-data missing extra package %q:\n%s", pkg, ud)
+		}
+	}
+	if !strings.Contains(ud, "  - sudo") {
+		t.Fatalf("cloud-init user-data missing base package sudo:\n%s", ud)
+	}
+}
+
+func TestCloudInitUserDataNoExtraPackages(t *testing.T) {
+	ud := cloudInitUserData("runnerkit-admin", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest", nil)
+	if !strings.Contains(ud, "  - sudo") {
+		t.Fatalf("cloud-init user-data missing sudo:\n%s", ud)
+	}
+	if strings.Contains(ud, "libsecret") {
+		t.Fatalf("unexpected extra package in user-data:\n%s", ud)
+	}
+}
+
+func TestProvisionPassesExtraPackagesToCloudInit(t *testing.T) {
+	client := newFakeClient()
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
+	input := provisionInput()
+	input.ExtraPackages = []string{"libsecret-1-dev", "dbus-x11"}
+	_, err := p.Provision(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Provision returned error: %v", err)
+	}
+	for _, pkg := range []string{"libsecret-1-dev", "dbus-x11"} {
+		if !strings.Contains(client.serverOpts.UserData, "  - "+pkg) {
+			t.Fatalf("user-data missing extra package %q:\n%s", pkg, client.serverOpts.UserData)
+		}
+	}
+}

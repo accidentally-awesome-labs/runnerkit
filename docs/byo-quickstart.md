@@ -61,6 +61,15 @@ runnerkit up --repo owner/name --host user@host --yes
 runnerkit up --repo owner/name --host user@host:2222 --ssh-key ~/.ssh/id_ed25519 --yes
 ```
 
+If your CI workflows need additional OS packages (native libraries, GUI test dependencies, etc.), add them with `--extra-packages`:
+
+```bash
+runnerkit up --repo owner/name --host user@host \
+  --extra-packages "libsecret-1-dev,dbus-x11,gnome-keyring"
+```
+
+These are installed alongside RunnerKit's required tools during the `fix_dependencies` bootstrap step and saved in state so `runnerkit upgrade-runner` re-installs them.
+
 RunnerKit prompts for unknown SSH host keys. Verify the `SHA256:` fingerprint before accepting it.
 
 ## What RunnerKit does

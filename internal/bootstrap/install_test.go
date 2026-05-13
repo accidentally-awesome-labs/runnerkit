@@ -421,3 +421,45 @@ func TestApplyRunsBootstrapCommandsInOrderAndRedactsToken(t *testing.T) {
 		t.Fatalf("configure script leaked token:\n%s", configure.Script)
 	}
 }
+
+func TestMergePackagesDeduplicates(t *testing.T) {
+	merged := mergePackages([]string{"curl", "tar"}, []string{"tar", "libsecret-1-dev"})
+	want := []string{"curl", "tar", "libsecret-1-dev"}
+	if strings.Join(merged, ",") != strings.Join(want, ",") {
+		t.Fatalf("mergePackages = %v, want %v", merged, want)
+	}
+}
+
+func TestMergePackagesEmptyExtra(t *testing.T) {
+	original := []string{"curl", "tar"}
+	merged := mergePackages(original, nil)
+	if len(merged) != 2 || merged[0] != "curl" || merged[1] != "tar" {
+		t.Fatalf("mergePackages with nil extras = %v, want %v", merged, original)
+	}
+}
+
+func TestApplyIncludesExtraPackagesInFixDependencies(t *testing.T) {
+	exec := &recordingExecutor{}
+	opts := Options{
+		RunnerName:    "runnerkit-test",
+		RepoURL:       "https://github.com/owner/repo",
+		Labels:        []string{"self-hosted"},
+		Package:       RunnerPackage{Filename: "runner.tar.gz", URL: "https://example.com/runner.tar.gz", SHA256: "abc123", Version: RunnerVersion, Arch: "x64"},
+		RunnerToken:   "fake-token",
+		MissingTools:  []string{"curl"},
+		ExtraPackages: []string{"libsecret-1-dev", "dbus-x11"},
+	}
+	_, _ = Apply(context.Background(), exec, remote.Target{Host: "example.com", User: "alice", Port: 22}, opts)
+	if len(exec.commands) == 0 {
+		t.Fatal("no commands executed")
+	}
+	fixDeps := exec.commands[0]
+	if fixDeps.ID != "fix_dependencies" {
+		t.Fatalf("first command = %q, want fix_dependencies", fixDeps.ID)
+	}
+	for _, pkg := range []string{"curl", "libsecret-1-dev", "dbus-x11"} {
+		if !strings.Contains(fixDeps.Script, pkg) {
+			t.Fatalf("fix_dependencies script missing %q:\n%s", pkg, fixDeps.Script)
+		}
+	}
+}

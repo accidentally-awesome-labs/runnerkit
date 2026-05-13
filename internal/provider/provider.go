@@ -81,6 +81,11 @@ type ProvisionInput struct {
 	// cloud setup leaves it empty so HetznerOwnershipTags falls back to
 	// the existing "persistent" default.
 	Mode string `json:"mode,omitempty"`
+
+	// ExtraPackages are additional OS packages to install via cloud-init
+	// (cloud path) or apt-get/dnf during bootstrap (BYO path). Specified
+	// via --extra-packages flag or .runnerkit/config.yaml extra_packages.
+	ExtraPackages []string `json:"extra_packages,omitempty"`
 }
 
 type ValidationResult struct {

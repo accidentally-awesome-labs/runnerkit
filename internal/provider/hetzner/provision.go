@@ -157,7 +157,7 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 		Image:            image,
 		SSHKeys:          []*hcloud.SSHKey{sshKey},
 		Location:         location,
-		UserData:         cloudInitUserData(profile.SSHUser, input.PublicKey),
+		UserData:         cloudInitUserData(profile.SSHUser, input.PublicKey, input.ExtraPackages),
 		StartAfterCreate: &start,
 		Labels:           labels,
 		Automount:        &automount,
@@ -348,7 +348,7 @@ func defaultCIDR(cidr string) string {
 	return strings.TrimSpace(cidr)
 }
 
-func cloudInitUserData(user string, publicKey string) string {
+func cloudInitUserData(user string, publicKey string, extraPackages []string) string {
 	user = strings.TrimSpace(user)
 	if user == "" {
 		user = defaultSSHUser
@@ -363,6 +363,13 @@ func cloudInitUserData(user string, publicKey string) string {
 		sudoersBlock.WriteString("      ")
 		sudoersBlock.WriteString(line)
 		sudoersBlock.WriteByte('\n')
+	}
+	var packagesBlock strings.Builder
+	packagesBlock.WriteString("  - sudo\n")
+	for _, pkg := range extraPackages {
+		packagesBlock.WriteString("  - ")
+		packagesBlock.WriteString(pkg)
+		packagesBlock.WriteByte('\n')
 	}
 	return fmt.Sprintf(`#cloud-config
 users:
@@ -380,12 +387,11 @@ write_files:
     content: |
 %spackage_update: true
 packages:
-  - sudo
-runcmd:
+%sruncmd:
   - mkdir -p /var/lib/runnerkit
   - sh -c 'visudo -cf /var/lib/runnerkit/installer.sudoers.staged && install -m 0440 -o root -g root /var/lib/runnerkit/installer.sudoers.staged /etc/sudoers.d/runnerkit-installer'
   - printf '{"cloud_init_version":"%s"}\n' > /var/lib/runnerkit/cloud-init.json
-`, user, publicKey, sudoersBlock.String(), CloudInitUserDataVersion)
+`, user, publicKey, sudoersBlock.String(), packagesBlock.String(), CloudInitUserDataVersion)
 }
 
 func hcloudLabels(tags map[string]string) map[string]string {

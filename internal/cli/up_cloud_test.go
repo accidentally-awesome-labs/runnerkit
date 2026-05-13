@@ -642,7 +642,7 @@ func TestBuildCloudProvisionInputReadsPublicKeyFromSSHKeyFlag(t *testing.T) {
 	if err := os.WriteFile(keyPath+".pub", []byte(publicKey+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	input := buildCloudProvisionInput(Dependencies{Clock: func() time.Time { return time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC) }}, github.Repo{Owner: "owner", Name: "name", FullName: "owner/name"}, &upOptions{sshKey: keyPath})
+	input := buildCloudProvisionInput(Dependencies{Clock: func() time.Time { return time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC) }}, github.Repo{Owner: "owner", Name: "name", FullName: "owner/name"}, &upOptions{sshKey: keyPath}, nil)
 	if input.PublicKey != publicKey {
 		t.Fatalf("PublicKey = %q, want %q", input.PublicKey, publicKey)
 	}
@@ -799,5 +799,72 @@ func TestCloudInitWaitScript_NoBootFinishedOrMaskOnCloudInit(t *testing.T) {
 	}
 	if !strings.Contains(s, "status: error") {
 		t.Fatalf("expected explicit status=error rejection in script")
+	}
+}
+
+func TestParseExtraPackages(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"", nil},
+		{"  ", nil},
+		{"libsecret-1-dev,dbus-x11,gnome-keyring", []string{"libsecret-1-dev", "dbus-x11", "gnome-keyring"}},
+		{"  libsecret-1-dev , dbus-x11 ", []string{"libsecret-1-dev", "dbus-x11"}},
+		{"curl,,tar", []string{"curl", "tar"}},
+		{"bad;pkg,good-pkg", []string{"good-pkg"}},
+		{"ok_pkg:amd64", []string{"ok_pkg:amd64"}},
+	}
+	for _, tt := range tests {
+		got := parseExtraPackages(tt.input)
+		if len(got) != len(tt.want) {
+			t.Fatalf("parseExtraPackages(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Fatalf("parseExtraPackages(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestIsValidPackageName(t *testing.T) {
+	valid := []string{"curl", "libsecret-1-dev", "pkg:amd64", "gcc-12", "libc++abi-dev", "a.b_c"}
+	for _, name := range valid {
+		if !isValidPackageName(name) {
+			t.Fatalf("isValidPackageName(%q) = false, want true", name)
+		}
+	}
+	invalid := []string{"", "bad;name", "pkg name", "$(cmd)", "pkg&&echo", "a/b"}
+	for _, name := range invalid {
+		if isValidPackageName(name) {
+			t.Fatalf("isValidPackageName(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestResolveExtraPackagesDeduplicates(t *testing.T) {
+	got := resolveExtraPackages("curl,libsecret-1-dev", []string{"libsecret-1-dev", "dbus-x11"})
+	want := []string{"curl", "libsecret-1-dev", "dbus-x11"}
+	if len(got) != len(want) {
+		t.Fatalf("resolveExtraPackages = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("resolveExtraPackages[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBuildCloudProvisionInputIncludesExtraPackages(t *testing.T) {
+	pkgs := []string{"libsecret-1-dev", "dbus-x11"}
+	input := buildCloudProvisionInput(
+		Dependencies{Clock: func() time.Time { return time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC) }},
+		github.Repo{Owner: "owner", Name: "name", FullName: "owner/name"},
+		&upOptions{},
+		pkgs,
+	)
+	if len(input.ExtraPackages) != 2 || input.ExtraPackages[0] != "libsecret-1-dev" {
+		t.Fatalf("ExtraPackages = %v, want %v", input.ExtraPackages, pkgs)
 	}
 }

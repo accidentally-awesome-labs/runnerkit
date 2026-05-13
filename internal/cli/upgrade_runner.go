@@ -107,14 +107,15 @@ func runUpgradeRunner(deps Dependencies, jsonOutput bool, noColor bool, opts *up
 		return NewExitError(ExitSafetyGate, err)
 	}
 	bopts := bootstrap.Options{
-		RunnerName:   repoState.Runner.Name,
-		RepoURL:      "https://github.com/" + repoState.Repo.FullName,
-		Labels:       repoState.Runner.Labels,
-		InstallPath:  repoState.Machine.InstallPath,
-		WorkDir:      repoState.Machine.WorkDir,
-		ServiceUser:  bootstrap.DefaultServiceUser,
-		Package:      pkg,
-		MissingTools: nil,
+		RunnerName:    repoState.Runner.Name,
+		RepoURL:       "https://github.com/" + repoState.Repo.FullName,
+		Labels:        repoState.Runner.Labels,
+		InstallPath:   repoState.Machine.InstallPath,
+		WorkDir:       repoState.Machine.WorkDir,
+		ServiceUser:   bootstrap.DefaultServiceUser,
+		Package:       pkg,
+		MissingTools:  nil,
+		ExtraPackages: repoState.ExtraPackages,
 	}
 	if repoState.Ephemeral.Enabled {
 		bopts.Mode = "ephemeral"

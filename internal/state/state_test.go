@@ -361,3 +361,34 @@ func TestCloudInventorySerializesProviderIdentityAndNoSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestExtraPackagesRoundTrip(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	repo := RepositoryState{
+		Repo:          gh.Repo{Host: "github.com", Owner: "owner", Name: "repo", FullName: "owner/repo", Private: true},
+		Auth:          AuthReference{Source: "gh", Reference: "gh"},
+		Runner:        RunnerIdentity{Name: "runnerkit-owner-repo-local", Labels: []string{"self-hosted"}, Mode: "persistent", OS: "linux", Arch: "x64"},
+		Machine:       MachineRef{Kind: "byo-ssh"},
+		Provider:      ProviderRef{Kind: "byo"},
+		Cleanup:       CleanupMetadata{ManagedPaths: []string{}, ProviderResourceIDs: []string{}},
+		Safety:        SafetyMetadata{Code: "ok", Allowed: true},
+		ExtraPackages: []string{"libsecret-1-dev", "dbus-x11", "gnome-keyring"},
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := store.Save(State{SchemaVersion: SchemaVersion, Repositories: []RepositoryState{repo}}); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(loaded.Repositories) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(loaded.Repositories))
+	}
+	got := loaded.Repositories[0].ExtraPackages
+	if len(got) != 3 || got[0] != "libsecret-1-dev" || got[1] != "dbus-x11" || got[2] != "gnome-keyring" {
+		t.Fatalf("ExtraPackages = %v, want [libsecret-1-dev dbus-x11 gnome-keyring]", got)
+	}
+}

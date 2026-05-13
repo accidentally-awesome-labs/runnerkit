@@ -59,6 +59,32 @@ Ephemeral cloud runners still create billable Hetzner resources. Billing stops o
 
 For full guidance see the [Self-hosted Runner Safety Guide](safety.md).
 
+## Pre-installing CI dependencies
+
+If your CI workflows need OS packages beyond what the base image provides (e.g. native libraries for Node.js, GUI test dependencies), use `--extra-packages` to bake them in during provisioning:
+
+```bash
+runnerkit up --repo owner/name --cloud hetzner \
+  --extra-packages "libsecret-1-dev,dbus-x11,gnome-keyring,libpango1.0-dev"
+```
+
+For cloud runners, extra packages are installed via cloud-init during first boot — before RunnerKit connects over SSH. For BYO runners, they are installed alongside missing tools during the `fix_dependencies` bootstrap step.
+
+Extra packages are saved in RunnerKit state, so `runnerkit upgrade-runner` re-installs them automatically.
+
+You can also set them in `.runnerkit/config.yaml` so every `runnerkit up` for this project inherits them:
+
+```yaml
+defaults:
+  repo: owner/name
+  extra_packages:
+    - libsecret-1-dev
+    - dbus-x11
+    - gnome-keyring
+```
+
+Package names must be valid for the target OS package manager (apt on Ubuntu). Only alphanumerics, hyphens, dots, colons, underscores, and `+` are allowed.
+
 ## Add the workflow labels
 
 RunnerKit prints the exact labels to use. Add them to your workflow job yourself:
