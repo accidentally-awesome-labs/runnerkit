@@ -162,7 +162,7 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 		"visudo -cf /var/lib/runnerkit/installer.sudoers.staged",
 		"/etc/sudoers.d/runnerkit-installer",
 		"ALL=(root) NOPASSWD:",
-		"runnerkit-cloud-init-v2",
+		"runnerkit-cloud-init-v3",
 	} {
 		if !strings.Contains(ud, frag) {
 			t.Fatalf("cloud-init user-data missing %q:\n%s", frag, ud)

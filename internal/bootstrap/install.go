@@ -28,6 +28,20 @@ type Options struct {
 	// .runnerkit/config.yaml extra_packages.
 	ExtraPackages []string
 
+	// CloudProvisioned skips BaselinePackages in fix_dependencies on the
+	// cloud path because cloud-init already installed them.
+	CloudProvisioned bool
+
+	// OSReleaseID is the /etc/os-release ID field (e.g. "ubuntu",
+	// "debian"). Used to gate Ubuntu-specific provisioning steps like
+	// setup_runner_image.
+	OSReleaseID string
+
+	// ImageSetupVersion, when non-empty, records the image setup marker
+	// version currently on the host. Used by upgrade-runner to decide
+	// whether to re-run setup_runner_image.
+	ImageSetupVersion string
+
 	// RunnerCacheRoot, when set, overrides SharedRunnerCacheRoot for the
 	// download_runner step (tests and non-default layouts). Production
 	// leaves this empty so tarballs cache under /opt/actions-runner/runnerkit-shared-bin.
@@ -96,15 +110,22 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 		exec = remote.UnavailableExecutor{}
 	}
 	normalizeOptions(&opts)
-	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages)
+	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages, opts.CloudProvisioned)
 	commands := []remote.Command{
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(allPackages), Sudo: true},
-		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
-		downloadRunnerCommand(opts),
-		{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
-		{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
-		{ID: "verify_service", Script: "set -euo pipefail\ncd " + defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName)) + "\nsudo ./svc.sh status\n", Sudo: true},
 	}
+	if isUbuntuLike(opts.OSReleaseID) {
+		commands = append(commands, remote.Command{
+			ID: "setup_runner_image", Script: RenderImageSetupScript(opts.ServiceUser, opts.ImageSetupVersion), Sudo: true,
+		})
+	}
+	commands = append(commands,
+		remote.Command{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
+		downloadRunnerCommand(opts),
+		remote.Command{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
+		remote.Command{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
+		remote.Command{ID: "verify_service", Script: "set -euo pipefail\ncd " + defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName)) + "\nsudo ./svc.sh status\n", Sudo: true},
+	)
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
 		result, err := exec.Run(ctx, target, command)
@@ -140,17 +161,24 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		exec = remote.UnavailableExecutor{}
 	}
 	normalizeOptions(&opts)
-	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages)
+	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages, opts.CloudProvisioned)
 	commands := []remote.Command{
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(allPackages), Sudo: true},
-		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
-		downloadRunnerCommand(opts),
-		{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
-		{ID: "install_ephemeral_finalizer", Script: RenderEphemeralFinalizerScript(opts), Sudo: true},
-		{ID: "install_ephemeral_service", Script: RenderEphemeralServiceScript(opts), Sudo: true},
-		{ID: "install_ephemeral_ttl_timer", Script: RenderEphemeralTTLTimerScript(opts), Sudo: true},
-		{ID: "verify_ephemeral_service", Script: fmt.Sprintf("set -euo pipefail\nsystemctl is-active %s || systemctl status %s --no-pager\n", opts.EphemeralServiceName, opts.EphemeralServiceName), Sudo: true},
 	}
+	if isUbuntuLike(opts.OSReleaseID) {
+		commands = append(commands, remote.Command{
+			ID: "setup_runner_image", Script: RenderImageSetupScript(opts.ServiceUser, opts.ImageSetupVersion), Sudo: true,
+		})
+	}
+	commands = append(commands,
+		remote.Command{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
+		downloadRunnerCommand(opts),
+		remote.Command{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
+		remote.Command{ID: "install_ephemeral_finalizer", Script: RenderEphemeralFinalizerScript(opts), Sudo: true},
+		remote.Command{ID: "install_ephemeral_service", Script: RenderEphemeralServiceScript(opts), Sudo: true},
+		remote.Command{ID: "install_ephemeral_ttl_timer", Script: RenderEphemeralTTLTimerScript(opts), Sudo: true},
+		remote.Command{ID: "verify_ephemeral_service", Script: fmt.Sprintf("set -euo pipefail\nsystemctl is-active %s || systemctl status %s --no-pager\n", opts.EphemeralServiceName, opts.EphemeralServiceName), Sudo: true},
+	)
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
 		result, err := exec.Run(ctx, target, command)
@@ -258,22 +286,38 @@ func normalizeOptions(opts *Options) {
 	}
 }
 
-// BaselinePackages are OS packages that GitHub-hosted runners include
-// but bare Ubuntu cloud images do not. Without them, compiled-language
-// CI jobs fail with "linker cc not found" or missing pkg-config
-// probes. RunnerKit always installs these during fix_dependencies.
+// BaselinePackages matches the apt package set from the GitHub-hosted
+// Ubuntu 24.04 runner image (actions/runner-images). RunnerKit always
+// installs these during fix_dependencies so self-hosted runners have
+// the same toolchain CI workflows expect.
 var BaselinePackages = []string{
-	"build-essential",
-	"pkg-config",
-	"git",
+	"acl", "aria2", "autoconf", "automake", "binutils", "bison",
+	"brotli", "build-essential", "bzip2", "coreutils", "curl",
+	"dbus", "dnsutils", "dpkg-dev", "fakeroot", "file", "findutils",
+	"flex", "fonts-noto-color-emoji", "ftp", "g++", "gcc", "gnupg2",
+	"haveged", "iproute2", "iputils-ping", "jq", "libnss3-tools",
+	"libsqlite3-dev", "libssl-dev", "libtool", "libyaml-dev",
+	"locales", "lz4", "m4", "make", "mediainfo", "mercurial",
+	"net-tools", "netcat", "openssh-client", "p7zip-full",
+	"p7zip-rar", "parallel", "patchelf", "pigz", "pkg-config",
+	"pollinate", "python-is-python3", "rpm", "rsync", "shellcheck",
+	"sphinxsearch", "sqlite3", "ssh", "sshpass", "sudo", "swig",
+	"systemd-coredump", "tar", "telnet", "texinfo", "time", "tk",
+	"tree", "tzdata", "unzip", "upx", "wget", "xvfb", "xz-utils",
+	"zip", "zsync",
 }
 
-// mergePackages deduplicates missingTools, BaselinePackages, and
-// extraPackages into a single slice for RenderDependencyFixScript.
-func mergePackages(missingTools, extraPackages []string) []string {
-	seen := make(map[string]bool, len(missingTools)+len(BaselinePackages)+len(extraPackages))
+// mergePackages deduplicates missingTools, BaselinePackages (unless
+// cloud-init already installed them), and extraPackages into a single
+// slice for RenderDependencyFixScript.
+func mergePackages(missingTools, extraPackages []string, cloudProvisioned bool) []string {
+	var baseline []string
+	if !cloudProvisioned {
+		baseline = BaselinePackages
+	}
+	seen := make(map[string]bool, len(missingTools)+len(baseline)+len(extraPackages))
 	var merged []string
-	for _, sources := range [][]string{missingTools, BaselinePackages, extraPackages} {
+	for _, sources := range [][]string{missingTools, baseline, extraPackages} {
 		for _, pkg := range sources {
 			if !seen[pkg] {
 				seen[pkg] = true
@@ -282,4 +326,14 @@ func mergePackages(missingTools, extraPackages []string) []string {
 		}
 	}
 	return merged
+}
+
+// isUbuntuLike returns true for distro IDs where the full runner
+// image setup script (Docker, Chrome, NodeSource, etc.) is supported.
+func isUbuntuLike(osReleaseID string) bool {
+	switch osReleaseID {
+	case "ubuntu", "debian", "linuxmint":
+		return true
+	}
+	return false
 }

@@ -19,7 +19,19 @@ export HCLOUD_TOKEN=...
 
 RunnerKit injects **cloud-init user-data** when the Hetzner server is created. During first boot (before you rely on SSH for install), cloud-init stages the same **scoped** sudoers drop-in as the BYO one-liner (`/etc/sudoers.d/runnerkit-installer` — see [`install.sh`](../install.sh) and `internal/bootstrap/sudoers.go`), validates it with **`visudo`**, then installs it. The SSH user (`runnerkit-admin` by default) also keeps a quoted cloud-init **`NOPASSWD:ALL`** line for edge cases; the scoped file is what makes **`sudo apt-get`** and the rest of bootstrap reliable over a non-PTY channel.
 
-The VM records **`runnerkit-cloud-init-v2`** in **`/var/lib/runnerkit/cloud-init.json`** and in RunnerKit state for support/debug correlation. Readiness waits for **`cloud-init status` `done`** (not `error`); a failed `runcmd` (for example **`visudo`** rejecting staged sudoers) no longer masks as success. This path applies only to **RunnerKit-provisioned** Hetzner VMs. If you instead use **`--host user@…`** against a generic cloud image you created yourself, treat it like BYO: run **`runnerkit init --print-install-command`** on the host when sudo requires a password.
+The VM records **`runnerkit-cloud-init-v3`** in **`/var/lib/runnerkit/cloud-init.json`** and in RunnerKit state for support/debug correlation. Readiness waits for **`cloud-init status` `done`** (not `error`); a failed `runcmd` (for example **`visudo`** rejecting staged sudoers) no longer masks as success. This path applies only to **RunnerKit-provisioned** Hetzner VMs. If you instead use **`--host user@…`** against a generic cloud image you created yourself, treat it like BYO: run **`runnerkit init --print-install-command`** on the host when sudo requires a password.
+
+## Pre-installed software (GitHub runner parity)
+
+RunnerKit provisions cloud runners with the same software available on GitHub-hosted Ubuntu 24.04 runners:
+
+- **~75 apt packages** installed via cloud-init at first boot: `build-essential`, `gcc`, `g++`, `make`, `curl`, `jq`, `unzip`, `wget`, `pkg-config`, `gnupg2`, `sqlite3`, `libssl-dev`, and more.
+- **Language runtimes**: Node.js 20 LTS, Python 3 with pip/venv, Go (latest stable), Rust (latest stable), Java 17, .NET 8, Ruby (system).
+- **Container tools**: Docker CE with buildx and compose; the runner service user is added to the `docker` group.
+- **Browser testing**: Google Chrome, ChromeDriver (matching version), Firefox, Geckodriver.
+- **CLI tools**: GitHub CLI (`gh`), CMake, Ninja, zstd.
+
+Runtimes and tools are installed by the `setup_runner_image` bootstrap step after cloud-init completes. The cloud-init timeout is 15 minutes to accommodate the expanded package set on smaller VMs.
 
 ## Cost and billing caveat
 

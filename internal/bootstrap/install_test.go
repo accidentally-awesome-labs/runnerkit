@@ -423,7 +423,7 @@ func TestApplyRunsBootstrapCommandsInOrderAndRedactsToken(t *testing.T) {
 }
 
 func TestMergePackagesDeduplicates(t *testing.T) {
-	merged := mergePackages([]string{"curl", "tar"}, []string{"tar", "libsecret-1-dev"})
+	merged := mergePackages([]string{"curl", "tar"}, []string{"tar", "libsecret-1-dev"}, false)
 	// Must contain missingTools, baseline, and extras — deduplicated.
 	for _, pkg := range []string{"curl", "tar", "libsecret-1-dev"} {
 		found := false
@@ -460,7 +460,7 @@ func TestMergePackagesDeduplicates(t *testing.T) {
 }
 
 func TestMergePackagesEmptyExtra(t *testing.T) {
-	merged := mergePackages([]string{"curl", "tar"}, nil)
+	merged := mergePackages([]string{"curl", "tar"}, nil, false)
 	// Must contain missingTools + baseline.
 	for _, pkg := range []string{"curl", "tar"} {
 		found := false

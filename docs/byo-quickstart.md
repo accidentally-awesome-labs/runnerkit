@@ -32,7 +32,7 @@ Bootstrap runs over SSH without a TTY, so the SSH user must already have **scope
 
 2. SSH to the Linux host and paste the `curl … install.sh | sudo bash` line (or download `install.sh` from the matching [GitHub release](https://github.com/accidentally-awesome-labs/runnerkit/releases) and verify checksums per `README.md`).
 
-This installs `/etc/sudoers.d/runnerkit-installer` with NOPASSWD only for the bootstrap command set (`apt-get`/`dnf`/`yum`, `useradd`, `install`, `curl`, `sha256sum`, `chown`, `rm`, `su`, `tar`, `systemctl`, runner `svc.sh`). See [RKD-BOOT-015](troubleshooting/bootstrap.md#rkd-boot-015) if anything blocks.
+This installs `/etc/sudoers.d/runnerkit-installer` with NOPASSWD only for the bootstrap command set (`apt-get`/`dnf`/`yum`, `useradd`, `install`, `curl`, `sha256sum`, `tee`, `gpg`, `mkdir`, `unzip`, `usermod`, `dpkg`, `add-apt-repository`, `chown`, `rm`, `su`, `tar`, `systemctl`, runner `svc.sh`). See [RKD-BOOT-015](troubleshooting/bootstrap.md#rkd-boot-015) if anything blocks.
 
 To revert on the host:
 
@@ -71,6 +71,8 @@ runnerkit up --repo owner/name --host user@host \
 ```
 
 These are installed alongside RunnerKit's required tools during the `fix_dependencies` bootstrap step and saved in state so `runnerkit upgrade-runner` re-installs them.
+
+On Ubuntu/Debian BYO hosts, RunnerKit also installs ~75 baseline packages and a full runner image (Node.js, Go, Rust, Java, Docker, Chrome, Firefox, GitHub CLI, and more) to match GitHub-hosted runners — see the [Cloud quickstart](cloud-quickstart.md#pre-installed-software-github-runner-parity) for the full list. Non-Ubuntu hosts receive only the `fix_dependencies` step with baseline tools.
 
 RunnerKit prompts for unknown SSH host keys. Verify the `SHA256:` fingerprint before accepting it.
 

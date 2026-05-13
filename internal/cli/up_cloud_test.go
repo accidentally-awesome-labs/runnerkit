@@ -670,11 +670,11 @@ func TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget(t *testing.T) {
 		setEnv      bool
 		wantTimeout time.Duration
 	}{
-		{name: "default_budget", setEnv: false, wantTimeout: 10 * time.Minute},
+		{name: "default_budget", setEnv: false, wantTimeout: 15 * time.Minute},
 		{name: "override_45s", setEnv: true, envValue: "45s", wantTimeout: 45 * time.Second},
-		{name: "invalid_falls_back", setEnv: true, envValue: "not-a-duration", wantTimeout: 10 * time.Minute},
-		{name: "empty_falls_back", setEnv: true, envValue: "", wantTimeout: 10 * time.Minute},
-		{name: "zero_falls_back", setEnv: true, envValue: "0s", wantTimeout: 10 * time.Minute},
+		{name: "invalid_falls_back", setEnv: true, envValue: "not-a-duration", wantTimeout: 15 * time.Minute},
+		{name: "empty_falls_back", setEnv: true, envValue: "", wantTimeout: 15 * time.Minute},
+		{name: "zero_falls_back", setEnv: true, envValue: "0s", wantTimeout: 15 * time.Minute},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

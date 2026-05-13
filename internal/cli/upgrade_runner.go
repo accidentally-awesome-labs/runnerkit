@@ -106,16 +106,19 @@ func runUpgradeRunner(deps Dependencies, jsonOutput bool, noColor bool, opts *up
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the BYO persistent runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
+	isCloud := repoState.Machine.Kind == "cloud-ssh"
 	bopts := bootstrap.Options{
-		RunnerName:    repoState.Runner.Name,
-		RepoURL:       "https://github.com/" + repoState.Repo.FullName,
-		Labels:        repoState.Runner.Labels,
-		InstallPath:   repoState.Machine.InstallPath,
-		WorkDir:       repoState.Machine.WorkDir,
-		ServiceUser:   bootstrap.DefaultServiceUser,
-		Package:       pkg,
-		MissingTools:  nil,
-		ExtraPackages: repoState.ExtraPackages,
+		RunnerName:       repoState.Runner.Name,
+		RepoURL:          "https://github.com/" + repoState.Repo.FullName,
+		Labels:           repoState.Runner.Labels,
+		InstallPath:      repoState.Machine.InstallPath,
+		WorkDir:          repoState.Machine.WorkDir,
+		ServiceUser:      bootstrap.DefaultServiceUser,
+		Package:          pkg,
+		MissingTools:     nil,
+		ExtraPackages:    repoState.ExtraPackages,
+		CloudProvisioned: isCloud,
+		ImageSetupVersion: repoState.ImageSetupVersion,
 	}
 	if repoState.Ephemeral.Enabled {
 		bopts.Mode = "ephemeral"
@@ -127,6 +130,7 @@ func runUpgradeRunner(deps Dependencies, jsonOutput bool, noColor bool, opts *up
 	// install missing tools that are already present. Non-fatal.
 	if report, err := preflight.Run(ctx, deps.RemoteExecutor, target, preflight.Options{RunnerName: repoState.Runner.Name, AllowUnknownLinux: true}); err == nil {
 		bopts.MissingTools = report.FixableTools
+		bopts.OSReleaseID = report.OSReleaseID
 	}
 
 	if repoState.Ephemeral.Enabled {

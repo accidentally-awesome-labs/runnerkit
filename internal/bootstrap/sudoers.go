@@ -64,6 +64,9 @@ func RenderSudoersEntry(user string) string {
   /usr/bin/install, \
   /usr/bin/curl, \
   /usr/bin/sha256sum, \
+  /usr/bin/tee, /usr/bin/gpg, \
+  /bin/mkdir, /usr/bin/mkdir, /usr/bin/unzip, \
+  /usr/sbin/usermod, /usr/bin/dpkg, /usr/bin/add-apt-repository, \
   /bin/chown, /usr/bin/chown, \
   /bin/rm, /usr/bin/rm, \
   /bin/su, /usr/bin/su, \

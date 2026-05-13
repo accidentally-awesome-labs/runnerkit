@@ -187,7 +187,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 	autoDetected := autoDetectExtraPackages(deps, jsonOutput)
 	extraPkgs := resolveExtraPackages(opts.extraPackages, nil, autoDetected)
-	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs)
+	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs, false)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
 	}
@@ -768,7 +768,7 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the recommended cloud runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs)
+	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs, true)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
 	}
@@ -1043,7 +1043,7 @@ func runCloudInitWaitWithRetry(ctx context.Context, deps Dependencies, target re
 // probe budget to absorb slower cloud-init/user-data convergence under
 // real Hetzner load. Host key visibility can precede SSH auth readiness,
 // so cloud.cloudinit.wait must have additional runway.
-const defaultCloudInitTimeout = 10 * time.Minute
+const defaultCloudInitTimeout = 15 * time.Minute
 
 // cloudInitTimeoutFromEnv resolves RUNNERKIT_CLOUD_INIT_TIMEOUT into a
 // usable Duration. Empty / unparseable / non-positive values fall back
@@ -1341,12 +1341,13 @@ func buildCloudRepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSo
 			ManagedPaths:        []string{opts.InstallPath, opts.WorkDir},
 			ProviderResourceIDs: cloudProviderResourceIDList(resourceIDs),
 		},
-		Safety:           cloudSafetyMetadata(decision, now),
-		ExtraPackages:    input.ExtraPackages,
-		Operations:       []rkstate.OperationCheckpoint{},
-		RunnerKitVersion: deps.Version,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		Safety:            cloudSafetyMetadata(decision, now),
+		ExtraPackages:     input.ExtraPackages,
+		ImageSetupVersion: opts.ImageSetupVersion,
+		Operations:        []rkstate.OperationCheckpoint{},
+		RunnerKitVersion:  deps.Version,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
 
@@ -1585,19 +1586,21 @@ func verifyBYOFoundationForRegister(ctx context.Context, deps Dependencies, rend
 	return nil
 }
 
-func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap.RunnerPackage, report preflight.Report, extraPackages []string) bootstrap.Options {
+func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap.RunnerPackage, report preflight.Report, extraPackages []string, cloudProvisioned bool) bootstrap.Options {
 	installPath := filepath.Join("/opt/actions-runner", labelSet.RunnerName)
 	workDir := filepath.Join("/var/lib/runnerkit/work", labelSet.RunnerName)
 	return bootstrap.Options{
-		RunnerName:    labelSet.RunnerName,
-		RepoURL:       "https://github.com/" + repo.FullName,
-		Labels:        labelSet.Labels,
-		InstallPath:   installPath,
-		WorkDir:       workDir,
-		ServiceUser:   bootstrap.DefaultServiceUser,
-		Package:       pkg,
-		MissingTools:  report.FixableTools,
-		ExtraPackages: extraPackages,
+		RunnerName:       labelSet.RunnerName,
+		RepoURL:          "https://github.com/" + repo.FullName,
+		Labels:           labelSet.Labels,
+		InstallPath:      installPath,
+		WorkDir:          workDir,
+		ServiceUser:      bootstrap.DefaultServiceUser,
+		Package:          pkg,
+		MissingTools:     report.FixableTools,
+		ExtraPackages:    extraPackages,
+		CloudProvisioned: cloudProvisioned,
+		OSReleaseID:      report.OSReleaseID,
 	}
 }
 
@@ -1752,11 +1755,12 @@ func buildBYORepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSour
 		},
 		Provider:         rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
 		Cleanup:          rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
-		Safety:           safety,
-		ExtraPackages:    opts.ExtraPackages,
-		RunnerKitVersion: deps.Version,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		Safety:            safety,
+		ExtraPackages:     opts.ExtraPackages,
+		ImageSetupVersion: opts.ImageSetupVersion,
+		RunnerKitVersion:  deps.Version,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
 

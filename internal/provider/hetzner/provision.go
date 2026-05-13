@@ -20,7 +20,7 @@ import (
 const (
 	// CloudInitUserDataVersion is written into /var/lib/runnerkit/cloud-init.json
 	// on provisioned VMs and used as a state default when the inventory omits it.
-	CloudInitUserDataVersion = "runnerkit-cloud-init-v2"
+	CloudInitUserDataVersion = "runnerkit-cloud-init-v3"
 	defaultSSHUser           = "runnerkit-admin"
 	tagRunnerKitTrue         = "runnerkit=true"
 	tagManagedTrue           = "managed=true"

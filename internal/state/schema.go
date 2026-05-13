@@ -28,6 +28,7 @@ type RepositoryState struct {
 	Ephemeral              EphemeralMetadata     `json:"ephemeral,omitempty"`
 	Operations             []OperationCheckpoint `json:"operations,omitempty"`
 	ExtraPackages          []string              `json:"extra_packages,omitempty"`
+	ImageSetupVersion      string                `json:"image_setup_version,omitempty"`
 	RunnerKitVersion       string                `json:"runnerkit_version"`
 	RunnerTemplateVersion  string                `json:"runner_template_version,omitempty"`
 	ServiceTemplateVersion string                `json:"service_template_version,omitempty"`
