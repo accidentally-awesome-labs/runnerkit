@@ -14,6 +14,7 @@ func RenderDependencyFixScript(missing []string) string {
 	}
 	return "set -euo pipefail\n" +
 		"if command -v apt-get >/dev/null 2>&1; then\n" +
+		"  sudo add-apt-repository -y universe 2>/dev/null || true\n" +
 		"  sudo apt-get update\n" +
 		"  sudo apt-get install -y " + strings.Join(missing, " ") + "\n" +
 		"elif command -v dnf >/dev/null 2>&1; then\n" +

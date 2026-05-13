@@ -390,7 +390,12 @@ write_files:
     owner: root:root
     permissions: '0440'
     content: |
-%spackage_update: true
+%sapt:
+  sources_list: |
+    deb $MIRROR $RELEASE main restricted universe
+    deb $MIRROR $RELEASE-updates main restricted universe
+    deb $MIRROR $RELEASE-security main restricted universe
+package_update: true
 packages:
 %sruncmd:
   - mkdir -p /var/lib/runnerkit

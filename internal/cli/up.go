@@ -987,24 +987,34 @@ func waitCloudTargetReady(ctx context.Context, deps Dependencies, machine provid
 // present while status is `error`, and the `||` branch would exit 0 — SSH
 // bootstrap then hits `sudo: a password is required` within seconds.
 func cloudInitWaitScript() string {
+	// cloud-init 23.4+ exit codes: 0 = done, 1 = crash, 2 = recoverable error.
+	// Exit code 2 means cloud-init finished but some non-fatal module (e.g. a
+	// package in the packages: stanza) failed. The core runcmd/sudoers still
+	// ran, so we treat 2 as success and let bootstrap proceed.
 	return `set -euo pipefail
 if command -v cloud-init >/dev/null 2>&1; then
-  cloud-init status --wait || {
-    echo "runnerkit: cloud-init status --wait failed" >&2
-    cloud-init status --long 2>&1 || true
-    exit 1
-  }
-  if cloud-init status 2>/dev/null | tr -d '\r' | grep -q '^status: error'; then
-    echo "runnerkit: cloud-init finished with status=error (check runcmd / visudo for /etc/sudoers.d/runnerkit-installer)" >&2
+  cloud-init status --wait; rc=$?
+  if [ "$rc" -eq 1 ]; then
+    echo "runnerkit: cloud-init status --wait failed (exit $rc)" >&2
     cloud-init status --long 2>&1 || true
     exit 1
   fi
-  if ! cloud-init status 2>/dev/null | tr -d '\r' | head -n 1 | grep -qE '^status: (done|disabled)'; then
-    echo "runnerkit: cloud-init did not reach done/disabled after --wait" >&2
-    cloud-init status --long 2>&1 || true
-    exit 1
-  fi
-  exit 0
+  STATUS=$(cloud-init status 2>/dev/null | tr -d '\r' | head -n 1)
+  case "$STATUS" in
+    "status: done"|"status: disabled"|"status: recoverable error")
+      exit 0
+      ;;
+    "status: error")
+      echo "runnerkit: cloud-init finished with status=error (check runcmd / visudo for /etc/sudoers.d/runnerkit-installer)" >&2
+      cloud-init status --long 2>&1 || true
+      exit 1
+      ;;
+    *)
+      echo "runnerkit: cloud-init unexpected status: $STATUS" >&2
+      cloud-init status --long 2>&1 || true
+      exit 1
+      ;;
+  esac
 fi
 if test -f /var/lib/cloud/instance/boot-finished; then
   exit 0
