@@ -424,17 +424,67 @@ func TestApplyRunsBootstrapCommandsInOrderAndRedactsToken(t *testing.T) {
 
 func TestMergePackagesDeduplicates(t *testing.T) {
 	merged := mergePackages([]string{"curl", "tar"}, []string{"tar", "libsecret-1-dev"})
-	want := []string{"curl", "tar", "libsecret-1-dev"}
-	if strings.Join(merged, ",") != strings.Join(want, ",") {
-		t.Fatalf("mergePackages = %v, want %v", merged, want)
+	// Must contain missingTools, baseline, and extras — deduplicated.
+	for _, pkg := range []string{"curl", "tar", "libsecret-1-dev"} {
+		found := false
+		for _, m := range merged {
+			if m == pkg {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("mergePackages missing %q: %v", pkg, merged)
+		}
+	}
+	for _, pkg := range BaselinePackages {
+		found := false
+		for _, m := range merged {
+			if m == pkg {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("mergePackages missing baseline %q: %v", pkg, merged)
+		}
+	}
+	// No duplicates.
+	seen := map[string]bool{}
+	for _, m := range merged {
+		if seen[m] {
+			t.Fatalf("mergePackages has duplicate %q: %v", m, merged)
+		}
+		seen[m] = true
 	}
 }
 
 func TestMergePackagesEmptyExtra(t *testing.T) {
-	original := []string{"curl", "tar"}
-	merged := mergePackages(original, nil)
-	if len(merged) != 2 || merged[0] != "curl" || merged[1] != "tar" {
-		t.Fatalf("mergePackages with nil extras = %v, want %v", merged, original)
+	merged := mergePackages([]string{"curl", "tar"}, nil)
+	// Must contain missingTools + baseline.
+	for _, pkg := range []string{"curl", "tar"} {
+		found := false
+		for _, m := range merged {
+			if m == pkg {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("mergePackages missing %q: %v", pkg, merged)
+		}
+	}
+	for _, pkg := range BaselinePackages {
+		found := false
+		for _, m := range merged {
+			if m == pkg {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("mergePackages missing baseline %q: %v", pkg, merged)
+		}
 	}
 }
 

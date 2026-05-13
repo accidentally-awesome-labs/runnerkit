@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	hcloud "github.com/hetznercloud/hcloud-go/hcloud"
@@ -436,13 +437,15 @@ func TestCloudInitUserDataIncludesExtraPackages(t *testing.T) {
 	}
 }
 
-func TestCloudInitUserDataNoExtraPackages(t *testing.T) {
+func TestCloudInitUserDataIncludesBaselinePackages(t *testing.T) {
 	ud := cloudInitUserData("runnerkit-admin", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest", nil)
 	if !strings.Contains(ud, "  - sudo") {
 		t.Fatalf("cloud-init user-data missing sudo:\n%s", ud)
 	}
-	if strings.Contains(ud, "libsecret") {
-		t.Fatalf("unexpected extra package in user-data:\n%s", ud)
+	for _, pkg := range bootstrap.BaselinePackages {
+		if !strings.Contains(ud, "  - "+pkg) {
+			t.Fatalf("cloud-init user-data missing baseline package %q:\n%s", pkg, ud)
+		}
 	}
 }
 

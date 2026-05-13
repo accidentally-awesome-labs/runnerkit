@@ -40,7 +40,9 @@ CI workflows often need OS-level dependencies (native libraries, GUI test infras
 2. **`--extra-packages "pkg1,pkg2"`** — explicit CLI flag, merged on top of auto-detected.
 3. **`.runnerkit/config.yaml` `defaults.extra_packages`** — project-level defaults (plumbing ready, YAML loader not yet integrated).
 
-Cloud path: injected into cloud-init `packages:` (installed at first boot). BYO path: installed alongside missing tools during the `fix_dependencies` bootstrap step. Persisted in `RepositoryState.ExtraPackages` so **`runnerkit upgrade-runner`** re-installs them. Package names are validated: only alphanumerics, hyphens, dots, colons, underscores, and `+` are accepted. Implementation: `internal/cli/workflow_packages.go` (`scanWorkflowExtraPackages`, `extractAptPackages`), `internal/cli/up.go` (`autoDetectExtraPackages`, `resolveExtraPackages`, `parseExtraPackages`), `internal/provider/hetzner/provision.go` (`cloudInitUserData`), `internal/bootstrap/install.go` (`mergePackages`).
+**Baseline packages** (`bootstrap.BaselinePackages`): `build-essential`, `pkg-config`, `git` are always installed — they are present on GitHub-hosted runners but missing from bare Ubuntu cloud images. Without them, compiled-language CI fails with "linker cc not found" or missing pkg-config probes.
+
+Cloud path: baseline + extra packages injected into cloud-init `packages:` (installed at first boot). BYO path: installed alongside missing tools during the `fix_dependencies` bootstrap step. Persisted in `RepositoryState.ExtraPackages` so **`runnerkit upgrade-runner`** re-installs them. Package names are validated: only alphanumerics, hyphens, dots, colons, underscores, and `+` are accepted. Implementation: `internal/cli/workflow_packages.go` (`scanWorkflowExtraPackages`, `extractAptPackages`), `internal/cli/up.go` (`autoDetectExtraPackages`, `resolveExtraPackages`, `parseExtraPackages`), `internal/bootstrap/install.go` (`BaselinePackages`, `mergePackages`), `internal/provider/hetzner/provision.go` (`cloudInitUserData`).
 
 ## Multi-repo BYO (SEED-002, v1.2+)
 

@@ -258,24 +258,27 @@ func normalizeOptions(opts *Options) {
 	}
 }
 
-// mergePackages deduplicates missingTools and extraPackages into a
-// single slice suitable for RenderDependencyFixScript.
+// BaselinePackages are OS packages that GitHub-hosted runners include
+// but bare Ubuntu cloud images do not. Without them, compiled-language
+// CI jobs fail with "linker cc not found" or missing pkg-config
+// probes. RunnerKit always installs these during fix_dependencies.
+var BaselinePackages = []string{
+	"build-essential",
+	"pkg-config",
+	"git",
+}
+
+// mergePackages deduplicates missingTools, BaselinePackages, and
+// extraPackages into a single slice for RenderDependencyFixScript.
 func mergePackages(missingTools, extraPackages []string) []string {
-	if len(extraPackages) == 0 {
-		return missingTools
-	}
-	seen := make(map[string]bool, len(missingTools)+len(extraPackages))
+	seen := make(map[string]bool, len(missingTools)+len(BaselinePackages)+len(extraPackages))
 	var merged []string
-	for _, pkg := range missingTools {
-		if !seen[pkg] {
-			seen[pkg] = true
-			merged = append(merged, pkg)
-		}
-	}
-	for _, pkg := range extraPackages {
-		if !seen[pkg] {
-			seen[pkg] = true
-			merged = append(merged, pkg)
+	for _, sources := range [][]string{missingTools, BaselinePackages, extraPackages} {
+		for _, pkg := range sources {
+			if !seen[pkg] {
+				seen[pkg] = true
+				merged = append(merged, pkg)
+			}
 		}
 	}
 	return merged

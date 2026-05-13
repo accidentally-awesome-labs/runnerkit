@@ -366,6 +366,11 @@ func cloudInitUserData(user string, publicKey string, extraPackages []string) st
 	}
 	var packagesBlock strings.Builder
 	packagesBlock.WriteString("  - sudo\n")
+	for _, pkg := range bootstrap.BaselinePackages {
+		packagesBlock.WriteString("  - ")
+		packagesBlock.WriteString(pkg)
+		packagesBlock.WriteByte('\n')
+	}
 	for _, pkg := range extraPackages {
 		packagesBlock.WriteString("  - ")
 		packagesBlock.WriteString(pkg)
