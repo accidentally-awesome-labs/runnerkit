@@ -844,7 +844,7 @@ func TestIsValidPackageName(t *testing.T) {
 }
 
 func TestResolveExtraPackagesDeduplicates(t *testing.T) {
-	got := resolveExtraPackages("curl,libsecret-1-dev", []string{"libsecret-1-dev", "dbus-x11"})
+	got := resolveExtraPackages("curl,libsecret-1-dev", []string{"libsecret-1-dev", "dbus-x11"}, nil)
 	want := []string{"curl", "libsecret-1-dev", "dbus-x11"}
 	if len(got) != len(want) {
 		t.Fatalf("resolveExtraPackages = %v, want %v", got, want)
@@ -866,5 +866,18 @@ func TestBuildCloudProvisionInputIncludesExtraPackages(t *testing.T) {
 	)
 	if len(input.ExtraPackages) != 2 || input.ExtraPackages[0] != "libsecret-1-dev" {
 		t.Fatalf("ExtraPackages = %v, want %v", input.ExtraPackages, pkgs)
+	}
+}
+
+func TestResolveExtraPackagesMergesAutoDetected(t *testing.T) {
+	got := resolveExtraPackages("curl", nil, []string{"libssl-dev", "curl"})
+	want := []string{"curl", "libssl-dev"}
+	if len(got) != len(want) {
+		t.Fatalf("resolveExtraPackages = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("resolveExtraPackages[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }

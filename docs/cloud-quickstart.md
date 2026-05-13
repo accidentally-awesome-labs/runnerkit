@@ -61,7 +61,13 @@ For full guidance see the [Self-hosted Runner Safety Guide](safety.md).
 
 ## Pre-installing CI dependencies
 
-If your CI workflows need OS packages beyond what the base image provides (e.g. native libraries for Node.js, GUI test dependencies), use `--extra-packages` to bake them in during provisioning:
+RunnerKit **auto-detects** packages your workflows need by scanning `.github/workflows/*.yml` for `apt-get install` / `apt install` commands. When you run `runnerkit up` from a repo checkout, detected packages are merged in automatically and printed to stderr:
+
+```
+Auto-detected 5 workflow package(s): libsecret-1-dev, dbus-x11, gnome-keyring, libpango1.0-dev, libssl-dev
+```
+
+You can also specify packages explicitly with `--extra-packages` (they merge with auto-detected ones):
 
 ```bash
 runnerkit up --repo owner/name --cloud hetzner \

@@ -61,7 +61,9 @@ runnerkit up --repo owner/name --host user@host --yes
 runnerkit up --repo owner/name --host user@host:2222 --ssh-key ~/.ssh/id_ed25519 --yes
 ```
 
-If your CI workflows need additional OS packages (native libraries, GUI test dependencies, etc.), add them with `--extra-packages`:
+RunnerKit **auto-detects** packages your workflows need by scanning `.github/workflows/*.yml` for `apt-get install` / `apt install` commands. Detected packages are merged in automatically when you run from a repo checkout.
+
+You can also specify packages explicitly with `--extra-packages` (they merge with auto-detected ones):
 
 ```bash
 runnerkit up --repo owner/name --host user@host \

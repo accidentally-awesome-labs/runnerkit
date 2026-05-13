@@ -46,6 +46,8 @@ runnerkit upgrade-runner --repo owner/name --yes
 
 This re-applies the runner bootstrap on the saved host using the bundled
 pin. It is idempotent — safe to re-run if it fails partway through.
+Any extra packages saved in state (from `--extra-packages` or auto-detected
+from workflow files) are re-installed during the upgrade.
 
 For ephemeral runners (`--mode ephemeral`):
 

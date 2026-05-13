@@ -185,7 +185,8 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the Phase 2 BYO persistent runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
-	extraPkgs := resolveExtraPackages(opts.extraPackages, nil)
+	autoDetected := autoDetectExtraPackages(deps, jsonOutput)
+	extraPkgs := resolveExtraPackages(opts.extraPackages, nil, autoDetected)
 	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		bootstrapOpts = ephemeralBootstrapOptions(bootstrapOpts, opts.ephemeralTTL)
@@ -677,7 +678,8 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		}
 		return NewExitError(ExitGitHubAuth, err)
 	}
-	extraPkgs := resolveExtraPackages(opts.extraPackages, nil)
+	autoDetected := autoDetectExtraPackages(deps, jsonOutput)
+	extraPkgs := resolveExtraPackages(opts.extraPackages, nil, autoDetected)
 	input := buildCloudProvisionInput(deps, repo, opts, extraPkgs)
 	if modeDecision.Mode == runmode.ModeEphemeral {
 		input.Mode = runmode.ModeEphemeral
@@ -2246,29 +2248,42 @@ func isValidPackageName(name string) bool {
 	return len(name) > 0
 }
 
-// resolveExtraPackages merges CLI --extra-packages with project config
-// defaults, deduplicating while preserving order.
-func resolveExtraPackages(cliRaw string, projectDefaults []string) []string {
+// resolveExtraPackages merges CLI --extra-packages, project config
+// defaults, and auto-detected workflow packages — deduplicating while
+// preserving order (CLI first, then config, then auto-detected).
+func resolveExtraPackages(cliRaw string, projectDefaults []string, autoDetected []string) []string {
 	cliPkgs := parseExtraPackages(cliRaw)
-	if len(cliPkgs) == 0 && len(projectDefaults) == 0 {
+	if len(cliPkgs) == 0 && len(projectDefaults) == 0 && len(autoDetected) == 0 {
 		return nil
 	}
-	seen := make(map[string]bool, len(cliPkgs)+len(projectDefaults))
+	seen := make(map[string]bool, len(cliPkgs)+len(projectDefaults)+len(autoDetected))
 	var merged []string
-	for _, pkg := range cliPkgs {
-		if !seen[pkg] {
-			seen[pkg] = true
-			merged = append(merged, pkg)
-		}
-	}
-	for _, pkg := range projectDefaults {
-		pkg = strings.TrimSpace(pkg)
-		if pkg != "" && isValidPackageName(pkg) && !seen[pkg] {
-			seen[pkg] = true
-			merged = append(merged, pkg)
+	for _, sources := range [][]string{cliPkgs, projectDefaults, autoDetected} {
+		for _, pkg := range sources {
+			pkg = strings.TrimSpace(pkg)
+			if pkg != "" && isValidPackageName(pkg) && !seen[pkg] {
+				seen[pkg] = true
+				merged = append(merged, pkg)
+			}
 		}
 	}
 	return merged
+}
+
+// autoDetectExtraPackages scans .github/workflows/ in the current
+// working directory for apt-get install commands and returns the
+// discovered packages. Prints what was found when running in
+// interactive human mode.
+func autoDetectExtraPackages(deps Dependencies, jsonOutput bool) []string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	pkgs := scanWorkflowExtraPackages(cwd)
+	if len(pkgs) > 0 && !jsonOutput {
+		fmt.Fprintf(deps.Err, "Auto-detected %d workflow package(s): %s\n", len(pkgs), strings.Join(pkgs, ", "))
+	}
+	return pkgs
 }
 
 func runnerServiceName(runnerName string) string {

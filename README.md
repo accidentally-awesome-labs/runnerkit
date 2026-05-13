@@ -151,7 +151,7 @@ Provision cloud runner
 runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]
 ```
 
-See [docs/cloud-quickstart.md](docs/cloud-quickstart.md) for provider authentication, cost caveats, labels, status/logs/doctor, destroy verification, and live smoke-test guidance.
+RunnerKit auto-detects OS packages your workflows need (by scanning `.github/workflows/` for `apt-get install` commands) and bakes them into the runner during provisioning. You can also specify packages explicitly with `--extra-packages`. See [docs/cloud-quickstart.md](docs/cloud-quickstart.md) for provider authentication, cost caveats, labels, status/logs/doctor, destroy verification, and live smoke-test guidance.
 
 RunnerKit supports one recommended cloud path.
 The default cloud runner is persistent and intended for trusted private repositories.
