@@ -343,10 +343,6 @@ const (
 	modePromptMessage          = "Choose runner mode for `owner/name`:"
 	modeOptionPersistentLabel  = "Persistent trusted runner"
 	modeOptionPersistentDesc   = "Reuses one runner across trusted private jobs. Lowest ongoing friction, but unsafe for public, fork, or untrusted workflows."
-	modeOptionEphemeralBYOL    = "Ephemeral one-job runner on existing machine"
-	modeOptionEphemeralBYODesc = "GitHub assigns one job then deregisters the runner. The machine is reused, so this is not a clean VM."
-	modeOptionEphemeralCloudL  = "Ephemeral one-job cloud runner (Hetzner)"
-	modeOptionEphemeralCloudD  = "Stronger isolation for risky workloads. Creates billable resources until `runnerkit destroy` verifies cleanup."
 	modePersistentDefaultNote  = "Default mode: persistent for trusted private repositories."
 	modeEphemeralModeNote      = "Ephemeral mode: one GitHub job, automatic deregistration, TTL cleanup, and preserved troubleshooting logs."
 	modeNotFleetWarning        = "Ephemeral mode is not a fleet manager. RunnerKit creates one scoped runner; jobs with matching labels can still queue if no runner is online."
@@ -356,10 +352,20 @@ const (
 	modeEphemeralCloudCostCopy = "Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup."
 	modeTradeoffStepTitle      = "Runner mode selection"
 
-	// Internal mode-selection values for the interactive Select prompt.
-	modeChoicePersistentBYO  = "persistent-byo"
-	modeChoiceEphemeralBYO   = "ephemeral-byo"
-	modeChoiceEphemeralCloud = "ephemeral-cloud"
+	// Step 1: setup path selection (BYO vs Cloud).
+	setupPathPromptMessage = "Where should the runner run?"
+	setupPathBYOLabel      = "Bring Your Own machine (BYO)"
+	setupPathBYODesc       = "Use an existing Linux server you can SSH into."
+	setupPathCloudLabel    = "Cloud (Hetzner)"
+	setupPathCloudDesc     = "Provision a new cloud server. Creates billable resources until `runnerkit destroy` verifies cleanup."
+
+	// Step 2: mode selection (Persistent vs Ephemeral).
+	modePersistentDesc = "Reuses one runner across jobs. Lowest friction for trusted private repos."
+	modeEphemeralDesc  = "One job per runner registration. Deregisters automatically after each job."
+
+	// Internal choice values for the interactive Select prompts.
+	setupChoiceBYO   = "byo"
+	setupChoiceCloud = "cloud"
 )
 
 // resolveModeDecision normalizes the user-supplied --mode flag, prompts
@@ -390,24 +396,30 @@ func resolveModeDecision(ctx context.Context, deps Dependencies, renderer *ui.Re
 	if rawMode == "" && !hostSet && !cloudSet &&
 		!jsonOutput && !opts.nonInteractive && !opts.yes &&
 		deps.TTY.StdinTTY && deps.Prompts != nil {
-		message := strings.Replace(modePromptMessage, "owner/name", repo.FullName, 1)
-		choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: message}, []ui.Option{
-			{Value: modeChoicePersistentBYO, Label: modeOptionPersistentLabel, Description: modeOptionPersistentDesc},
-			{Value: modeChoiceEphemeralBYO, Label: modeOptionEphemeralBYOL, Description: modeOptionEphemeralBYODesc},
-			{Value: modeChoiceEphemeralCloud, Label: modeOptionEphemeralCloudL, Description: modeOptionEphemeralCloudD},
+
+		// Step 1: BYO vs Cloud.
+		setupPath, err := deps.Prompts.Select(ctx, ui.Prompt{Message: setupPathPromptMessage}, []ui.Option{
+			{Value: setupChoiceBYO, Label: setupPathBYOLabel, Description: setupPathBYODesc},
+			{Value: setupChoiceCloud, Label: setupPathCloudLabel, Description: setupPathCloudDesc},
 		})
 		if err != nil {
 			return runmode.Decision{}, err
 		}
-		switch choice {
-		case modeChoiceEphemeralCloud:
-			opts.mode = runmode.ModeEphemeral
+		if setupPath == setupChoiceCloud {
 			opts.cloud = provider.HetznerProvider
-		case modeChoiceEphemeralBYO:
-			opts.mode = runmode.ModeEphemeral
-		default:
-			opts.mode = runmode.ModePersistent
 		}
+
+		// Step 2: Persistent vs Ephemeral.
+		modeChoice, err := deps.Prompts.Select(ctx, ui.Prompt{
+			Message: strings.Replace(modePromptMessage, "owner/name", repo.FullName, 1),
+		}, []ui.Option{
+			{Value: runmode.ModePersistent, Label: modeOptionPersistentLabel, Description: modePersistentDesc},
+			{Value: runmode.ModeEphemeral, Label: "Ephemeral one-job runner", Description: modeEphemeralDesc},
+		})
+		if err != nil {
+			return runmode.Decision{}, err
+		}
+		opts.mode = modeChoice
 	}
 
 	mode := opts.mode

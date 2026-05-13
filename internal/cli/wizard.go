@@ -70,7 +70,7 @@ func runFirstRunWizard(ctx context.Context, cmd *cobra.Command, deps Dependencie
 		return NewExitError(ExitInvalidInput, err)
 	}
 	if choice == "cloud" {
-		_ = renderer.Step(1, 1, "Cloud setup", ui.Bullet("Run the guided cloud path (tokens via env / gh):"), ui.Next("runnerkit up --repo owner/name --cloud hetzner --mode persistent"), ui.Bullet("See docs/cloud-quickstart.md for credentials and sizing."))
+		_ = renderer.Step(1, 1, "Cloud setup", ui.Bullet("Run the guided cloud path (tokens via env / gh):"), ui.Next("runnerkit up --repo owner/name"), ui.Bullet("The command will ask whether you want BYO or Cloud and Persistent or Ephemeral."), ui.Bullet("See docs/cloud-quickstart.md for credentials and sizing."))
 		return nil
 	}
 

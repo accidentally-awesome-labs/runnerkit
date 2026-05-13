@@ -12,13 +12,17 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
-// recordingModePrompter captures the prompt message and option labels of
-// the mode/profile selection so tests can assert exact UI-SPEC copy.
+// recordingModePrompter captures every Select call so tests can assert
+// the two-step interactive flow (setup-path then mode).
 type recordingModePrompter struct {
-	selectMessage  string
-	selectOptions  []ui.Option
-	selectedValue  string
+	selectCalls    []recordedSelect
+	selectedValues []string // one per Select call; falls back to "byo"/"persistent"
 	confirmMessage string
+}
+
+type recordedSelect struct {
+	message string
+	options []ui.Option
 }
 
 func (p *recordingModePrompter) Confirm(_ context.Context, prompt ui.Prompt) (bool, error) {
@@ -27,12 +31,15 @@ func (p *recordingModePrompter) Confirm(_ context.Context, prompt ui.Prompt) (bo
 }
 
 func (p *recordingModePrompter) Select(_ context.Context, prompt ui.Prompt, options []ui.Option) (string, error) {
-	p.selectMessage = prompt.Message
-	p.selectOptions = append(p.selectOptions[:0], options...)
-	if p.selectedValue == "" {
-		return "persistent-byo", nil
+	idx := len(p.selectCalls)
+	p.selectCalls = append(p.selectCalls, recordedSelect{message: prompt.Message, options: options})
+	if idx < len(p.selectedValues) {
+		return p.selectedValues[idx], nil
 	}
-	return p.selectedValue, nil
+	if len(options) > 0 {
+		return options[0].Value, nil
+	}
+	return "", nil
 }
 
 func (p *recordingModePrompter) Input(context.Context, ui.Prompt) (string, error) {
@@ -40,7 +47,7 @@ func (p *recordingModePrompter) Input(context.Context, ui.Prompt) (string, error
 }
 
 func TestUpInteractiveModeSelectionUsesUISpecLabels(t *testing.T) {
-	prompter := &recordingModePrompter{selectedValue: "persistent-byo"}
+	prompter := &recordingModePrompter{selectedValues: []string{"byo", "persistent"}}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
 		Version:        "test-version",
@@ -57,26 +64,43 @@ func TestUpInteractiveModeSelectionUsesUISpecLabels(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("interactive mode dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
-	if prompter.selectMessage != "Choose runner mode for `owner/repo`:" {
-		t.Fatalf("select prompt = %q", prompter.selectMessage)
+	if len(prompter.selectCalls) != 2 {
+		t.Fatalf("expected 2 Select calls (setup-path + mode), got %d", len(prompter.selectCalls))
 	}
-	wantLabels := []string{
-		"Persistent trusted runner",
-		"Ephemeral one-job runner on existing machine",
-		"Ephemeral one-job cloud runner (Hetzner)",
+
+	// Step 1: setup-path prompt.
+	step1 := prompter.selectCalls[0]
+	if step1.message != "Where should the runner run?" {
+		t.Fatalf("step 1 prompt = %q", step1.message)
 	}
-	if len(prompter.selectOptions) != len(wantLabels) {
-		t.Fatalf("got %d options, want %d: %#v", len(prompter.selectOptions), len(wantLabels), prompter.selectOptions)
+	wantStep1Labels := []string{"Bring Your Own machine (BYO)", "Cloud (Hetzner)"}
+	if len(step1.options) != len(wantStep1Labels) {
+		t.Fatalf("step 1: got %d options, want %d: %#v", len(step1.options), len(wantStep1Labels), step1.options)
 	}
-	for i, want := range wantLabels {
-		if prompter.selectOptions[i].Label != want {
-			t.Fatalf("option[%d] label = %q, want %q", i, prompter.selectOptions[i].Label, want)
+	for i, want := range wantStep1Labels {
+		if step1.options[i].Label != want {
+			t.Fatalf("step 1 option[%d] label = %q, want %q", i, step1.options[i].Label, want)
 		}
 	}
-	wantValues := []string{"persistent-byo", "ephemeral-byo", "ephemeral-cloud"}
-	for i, want := range wantValues {
-		if prompter.selectOptions[i].Value != want {
-			t.Fatalf("option[%d] value = %q, want %q", i, prompter.selectOptions[i].Value, want)
+
+	// Step 2: mode prompt.
+	step2 := prompter.selectCalls[1]
+	if step2.message != "Choose runner mode for `owner/repo`:" {
+		t.Fatalf("step 2 prompt = %q", step2.message)
+	}
+	wantStep2Labels := []string{"Persistent trusted runner", "Ephemeral one-job runner"}
+	wantStep2Values := []string{"persistent", "ephemeral"}
+	if len(step2.options) != len(wantStep2Labels) {
+		t.Fatalf("step 2: got %d options, want %d: %#v", len(step2.options), len(wantStep2Labels), step2.options)
+	}
+	for i, want := range wantStep2Labels {
+		if step2.options[i].Label != want {
+			t.Fatalf("step 2 option[%d] label = %q, want %q", i, step2.options[i].Label, want)
+		}
+	}
+	for i, want := range wantStep2Values {
+		if step2.options[i].Value != want {
+			t.Fatalf("step 2 option[%d] value = %q, want %q", i, step2.options[i].Value, want)
 		}
 	}
 }

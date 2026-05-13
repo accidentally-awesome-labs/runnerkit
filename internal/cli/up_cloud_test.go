@@ -143,10 +143,14 @@ func TestUpUnsupportedCloudProviderErrors(t *testing.T) {
 }
 
 type recordingSetupPathPrompter struct {
-	selectPrompt  string
-	optionLabels  []string
-	confirmCalls  int
-	selectedValue string
+	selectCalls    []recordedSetupPathSelect
+	confirmCalls   int
+	selectedValues []string // one per Select call
+}
+
+type recordedSetupPathSelect struct {
+	prompt       string
+	optionLabels []string
 }
 
 func (p *recordingSetupPathPrompter) Confirm(context.Context, ui.Prompt) (bool, error) {
@@ -155,15 +159,19 @@ func (p *recordingSetupPathPrompter) Confirm(context.Context, ui.Prompt) (bool, 
 }
 
 func (p *recordingSetupPathPrompter) Select(_ context.Context, prompt ui.Prompt, options []ui.Option) (string, error) {
-	p.selectPrompt = prompt.Message
-	p.optionLabels = p.optionLabels[:0]
+	idx := len(p.selectCalls)
+	var labels []string
 	for _, opt := range options {
-		p.optionLabels = append(p.optionLabels, opt.Label)
+		labels = append(labels, opt.Label)
 	}
-	if p.selectedValue == "" {
-		return "byo", nil
+	p.selectCalls = append(p.selectCalls, recordedSetupPathSelect{prompt: prompt.Message, optionLabels: labels})
+	if idx < len(p.selectedValues) {
+		return p.selectedValues[idx], nil
 	}
-	return p.selectedValue, nil
+	if len(options) > 0 {
+		return options[0].Value, nil
+	}
+	return "", nil
 }
 
 func (p *recordingSetupPathPrompter) Input(context.Context, ui.Prompt) (string, error) {
@@ -171,10 +179,7 @@ func (p *recordingSetupPathPrompter) Input(context.Context, ui.Prompt) (string, 
 }
 
 func TestUpInteractiveNoHostOffersBYOAndCloudChoices(t *testing.T) {
-	// Phase 5 replaces the previous setup-path prompt with the explicit
-	// mode/profile prompt so users see persistent vs ephemeral tradeoffs
-	// before any setup-path mutation.
-	prompter := &recordingSetupPathPrompter{selectedValue: "persistent-byo"}
+	prompter := &recordingSetupPathPrompter{selectedValues: []string{"byo", "persistent"}}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
 		Version:        "test-version",
@@ -191,13 +196,43 @@ func TestUpInteractiveNoHostOffersBYOAndCloudChoices(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("interactive BYO dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
-	if prompter.selectPrompt != "Choose runner mode for `owner/repo`:" {
-		t.Fatalf("select prompt = %q", prompter.selectPrompt)
+	if len(prompter.selectCalls) < 2 {
+		t.Fatalf("expected at least 2 Select calls, got %d", len(prompter.selectCalls))
 	}
-	joined := strings.Join(prompter.optionLabels, "\n")
-	for _, want := range []string{"Persistent trusted runner", "Ephemeral one-job runner on existing machine", "Ephemeral one-job cloud runner (Hetzner)"} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("missing option %q in %#v", want, prompter.optionLabels)
+
+	// Step 1: setup-path (BYO vs Cloud).
+	step1 := prompter.selectCalls[0]
+	if step1.prompt != "Where should the runner run?" {
+		t.Fatalf("step 1 prompt = %q", step1.prompt)
+	}
+	for _, want := range []string{"Bring Your Own machine (BYO)", "Cloud (Hetzner)"} {
+		found := false
+		for _, label := range step1.optionLabels {
+			if label == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("step 1 missing option %q in %v", want, step1.optionLabels)
+		}
+	}
+
+	// Step 2: mode (Persistent vs Ephemeral).
+	step2 := prompter.selectCalls[1]
+	if step2.prompt != "Choose runner mode for `owner/repo`:" {
+		t.Fatalf("step 2 prompt = %q", step2.prompt)
+	}
+	for _, want := range []string{"Persistent trusted runner", "Ephemeral one-job runner"} {
+		found := false
+		for _, label := range step2.optionLabels {
+			if label == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("step 2 missing option %q in %v", want, step2.optionLabels)
 		}
 	}
 }
