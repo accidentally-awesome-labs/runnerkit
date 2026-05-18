@@ -1,0 +1,12 @@
+Step 1 of 1: cloud destroy
+OK Cloud runner destroyed. GitHub runner is absent and RunnerKit-created Hetzner
+   resources are deleted or verified non-billable.
+- remote_runner: done
+- github_runner: skipped GitHub runner already absent
+- provider_server: done
+- provider_ssh_key: done
+- provider_primary_ip: skipped auto_delete cascade
+- provider_primary_ip: skipped auto_delete cascade
+- provider_firewall: done
+- local_state: done
+

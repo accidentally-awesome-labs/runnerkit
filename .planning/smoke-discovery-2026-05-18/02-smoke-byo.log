@@ -1,0 +1,30 @@
+./scripts/smoke/byo-permission.sh "$RUNNERKIT_SMOKE_REPO" "$RUNNERKIT_SMOKE_BYO_HOST"
+===> [smoke-byo] Setting up isolated state dir
+===> [smoke-byo] runnerkit up --repo accidentally-awesome-labs/dat0 --host salar@mckee-small-desktop --mode persistent --yes
+Progress (byo-accidentally-awesome-labs/dat0__salar@mckee-small-desktop):
+[✓] Detect host / preflight
+[→] Confirm install plan
+[ ] GitHub registration token
+[ ] Remote bootstrap install
+[ ] Verify runner online
+Progress (byo-accidentally-awesome-labs/dat0__salar@mckee-small-desktop):
+[✓] Detect host / preflight
+[✓] Confirm install plan
+[→] GitHub registration token
+[ ] Remote bootstrap install
+[ ] Verify runner online
+Progress (byo-accidentally-awesome-labs/dat0__salar@mckee-small-desktop):
+[✓] Detect host / preflight
+[✓] Confirm install plan
+[✓] GitHub registration token
+[→] Remote bootstrap install
+[ ] Verify runner online
+ERROR RunnerKit could not apply the BYO runner install plan.
+NEXT Review the remote host output, fix the issue, and re-run runnerkit up.
+NEXT Remote stderr (unknown): Warning: Permanently added 'mckee-small-desktop'
+     (ED25519) to the list of known hosts. sudo: a terminal is required to read
+     the password; either use the -S option to read from standard input or
+     configure an askpass helper sudo: a password is required
+
+exit status 4
+make: *** [smoke-live-byo] Error 1

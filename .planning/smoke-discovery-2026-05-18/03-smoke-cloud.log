@@ -1,0 +1,116 @@
+[smoke-cloud] state dir: /var/folders/gc/mmsf5hkj517207_c2kskth9r0000gn/T/runnerkit-smoke-cloud-XXXXXXXX.jUoN3w5Up2
+===> [smoke-precheck] Hetzner empty-project precheck
+===> [smoke-precheck] OK — no orphan runnerkit-* resources
+===> [smoke-cloud] runnerkit up --repo accidentally-awesome-labs/dat0 --cloud hetzner --mode persistent --yes
+Step 1 of 1: Cloud runner provisioning plan
+WARNING Estimated cost is approximate. Provider pricing varies by region and
+        time; billing stops only after RunnerKit-created billable resources are
+        deleted or verified non-billable.
+- Provider: hetzner
+- Region: fsn1
+- Server type: cpx22
+- Image: ubuntu-24.04
+- Estimated cost: approx €0.0081/hour, approx €4.90/month
+- Resources: server, SSH key, firewall, public IPv4/IPv6
+- Not created: backups, snapshots, volumes, floating IPs
+- Resource names: server=runnerkit-accidentally-awesome-labs-dat0-local,
+  ssh_key=runnerkit-accidentally-awesome-labs-dat0-local-ssh-key,
+  firewall=runnerkit-accidentally-awesome-labs-dat0-local-firewall
+- Tags: runnerkit=true, managed=true, repo=accidentally-awesome-labs/dat0,
+  runner=runnerkit-accidentally-awesome-labs-dat0-local,
+  state_id=runnerkit-accidentally-awesome-labs-dat0-local, mode=persistent,
+  created_at=2026-05-18T17:31:09Z
+- SSH allowed CIDR: 0.0.0.0/0
+- Labels: [self-hosted, runnerkit, runnerkit-accidentally-awesome-labs-dat0,
+  linux, x64, persistent]
+- runs-on: [self-hosted, runnerkit, runnerkit-accidentally-awesome-labs-dat0, linux, x64, persistent]
+NEXT Future cleanup: runnerkit destroy --repo accidentally-awesome-labs/dat0
+
+Step 1 of 1: Cloud runner ready
+OK Runner name: runnerkit-accidentally-awesome-labs-dat0-local
+- Machine target: runnerkit-admin@138.201.93.188:22
+- Service name:
+  actions.runner.runnerkit-accidentally-awesome-labs-dat0-local.service
+- Labels: [self-hosted, runnerkit, runnerkit-accidentally-awesome-labs-dat0,
+  linux, x64, persistent]
+- runs-on: [self-hosted, runnerkit, runnerkit-accidentally-awesome-labs-dat0, linux, x64, persistent]
+WARNING Do not use runs-on: self-hosted alone for RunnerKit-managed runners.
+- GitHub runner ID: 60
+- Provider: Hetzner fsn1 cpx22 ubuntu-24.04
+- Public host: 138.201.93.188
+- Billable resources: server:131688953, ssh_key:112475383, firewall:10991183,
+  primary_ipv4:131437574, primary_ipv6:131437575
+- Cleanup: runnerkit destroy --repo accidentally-awesome-labs/dat0
+- State path:
+  /var/folders/gc/mmsf5hkj517207_c2kskth9r0000gn/T/runnerkit-smoke-cloud-XXXXXXXX.jUoN3w5Up2/state.json
+NEXT Add the runs-on snippet above to the workflow job you want to run on this
+     runner.
+- Install path:
+  /opt/actions-runner/runnerkit-accidentally-awesome-labs-dat0-local
+
+===> [smoke-cloud] runnerkit status --repo accidentally-awesome-labs/dat0
+Step 1 of 1: runner status
+OK Health: ready — Runner is online, idle, reachable over SSH, service is
+   active, and labels match.
+- Repository: accidentally-awesome-labs/dat0
+- Runner: runnerkit-accidentally-awesome-labs-dat0-local
+- Machine: runnerkit-admin@138.201.93.188:22
+- State path:
+  /var/folders/gc/mmsf5hkj517207_c2kskth9r0000gn/T/runnerkit-smoke-cloud-XXXXXXXX.jUoN3w5Up2/state.json
+- Sources:
+- State OK saved runner metadata found
+- Provider OK Hetzner fsn1 cpx22 ubuntu-24.04, server 131688953, state running,
+  public host 138.201.93.188
+- GitHub OK online, id 60, not busy
+- SSH OK reachable, host key matched
+- Service OK active
+  (actions.runner.accidentally-awesome-labs-dat0.runnerkit-accidentally-awesome-labs-dat0-local.service)
+- Labels OK saved labels match GitHub labels
+- runs-on: [self-hosted, runnerkit, runnerkit-accidentally-awesome-labs-dat0, linux, x64, persistent]
+WARNING Do not use runs-on: self-hosted alone for RunnerKit-managed runners.
+
+===> [smoke-cloud] runnerkit doctor --repo accidentally-awesome-labs/dat0
+Step 1 of 1: doctor
+- STAGE: running
+- Health: ready — Runner is online, idle, reachable over SSH, service is
+  active, and labels match.
+WARNING host_mem_low (warning)
+- Evidence: Low available memory: 3395244032 bytes (MemAvailable); below
+  recommended 4294967296 for heavy native CI.
+- Remediation: Use a larger host, add swap, reduce compiler parallelism (e.g.
+  CARGO_BUILD_JOBS=1), or read docs/troubleshooting/host-resources.md. See:
+  https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-016
+WARNING host_swap_constrained (warning)
+- Evidence: No swap and MemAvailable is 3395244032 bytes (under 8589934592).
+- Remediation: Add swap or RAM to reduce OOM risk during peak CI memory use.
+  See:
+  https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-017
+WARNING time_unsynchronized (warning)
+- Evidence: Remote time synchronization is not confirmed.
+- Remediation: Enable NTP/time sync if TLS or token expiry errors occur. See:
+  https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-009
+
+===> [smoke-cloud] doctor JSON contract (Phase 7: host_incident_hints + --deep)
+===> [smoke-doctor-json] baseline (--json)
+doctor JSON contract OK (baseline)
+===> [smoke-doctor-json] Phase 7 journal path (--deep --json)
+doctor JSON contract OK (deep)
+===> [smoke-cloud] list JSON contract (SEED-002)
+list JSON contract OK
+===> [smoke-cloud] runnerkit destroy --repo accidentally-awesome-labs/dat0 --yes
+Step 1 of 1: cloud destroy
+OK Cloud runner destroyed. GitHub runner is absent and RunnerKit-created Hetzner
+   resources are deleted or verified non-billable.
+- remote_runner: done
+- github_runner: skipped GitHub runner already absent
+- provider_server: done
+- provider_ssh_key: done
+- provider_primary_ip: skipped auto_delete cascade
+- provider_primary_ip: skipped auto_delete cascade
+- provider_firewall: done
+- local_state: done
+
+===> [smoke-cloud] OK — duration: 498s
+[smoke-cloud] CLOUD_DURATION_SECONDS=498
+===> [smoke-verify] Polling Hetzner for 404 on saved IDs (timeout: 300s)
+===> [smoke-verify] OK — every saved resource ID returns 404
