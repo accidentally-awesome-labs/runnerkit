@@ -22,10 +22,11 @@ A solo developer can get a reliable, cost-effective GitHub Actions self-hosted r
 - Phase 7 complete (2026-05-12, **v1.0.9**): Host RAM/swap warnings in preflight and `doctor` (RKD-BOOT-016/017), bounded journal heuristics for likely OOM / linker SIGKILL when the runner is unhealthy or with `doctor --deep`, JSON field **`host_incident_hints`**, troubleshooting in **`docs/troubleshooting/host-resources.md`**, live-smoke **`assert-doctor-json-contract.sh`**, and stable JSON arrays for **`host_incident_hints`** / **`next_actions`** in **`doctor --json`**. See [.planning/phases/07-host-capacity-and-oom-diagnostics/07-01-PLAN.md](phases/07-host-capacity-and-oom-diagnostics/07-01-PLAN.md).
 - Phase 08 complete (2026-05-12, **v1.1.0**): SEED-004 tier 1 UX polish — first-run wizard (no subcommand), **`--explain`** / **`--unicode`**, **`stage`** + **`schema_version`** on **`status --json`** and **`doctor --json`**, boxed commands, BYO **`up`/`register`** checklist + **`sessions/`** persistence, **`doctor --fix`** / **`--ignore`** + **`config.json`**, troubleshooting [**`docs/troubleshooting/doctor-ux.md`**](docs/troubleshooting/doctor-ux.md). Tier 2: [.planning/phases/08-ux-polish-seed-004/08-02-TIER2-PLAN.md](phases/08-ux-polish-seed-004/08-02-TIER2-PLAN.md).
 - **SEED-002 multi-repo (2026-05-12, v1.2.0):** Several private repos on one BYO host — shared **`runnerkit-runner`** + versioned tarball cache under **`/opt/actions-runner/runnerkit-shared-bin/<version>/`**, **`register`** lifecycle path with **`lifecycle_foundation_missing`** when foundation is absent, **`list`** / **`list --json`** with host grouping, **`unregister`** alias of **`down`**, **`doctor`** shared-host hint, live-smoke **`assert-list-json-contract.sh`** and env-gated second-repo BYO path (**`RUNNERKIT_SMOKE_MULTI_REPO`**, **`RUNNERKIT_SMOKE_REPO2`**). See [**`docs/troubleshooting/multi-repo.md`**](docs/troubleshooting/multi-repo.md).
+- Phase 6 complete (2026-05-13, **v1.3.2**): Tag-triggered GoReleaser pipeline with cosign-signed 4-platform binaries, Homebrew Cask publishing to a separate tap repo, lazy 24h update notifier, channel-detecting `runnerkit upgrade`, idempotent `upgrade-runner`, forward-only state migration, stable `RKD-<COMPONENT>-NNN` error code registry, 6-component troubleshooting docs, live smoke harness, BYO non-TTY sudo gap closures (Bugs 24-27, 31), Hetzner cloud-init v3 with scoped sudoers and `--extra-packages` baseline-package parity with GitHub-hosted runner image.
 
 ### Active
 
-_(none — next milestone TBD.)_
+_(none — next milestone planning pending. Candidate inputs: `.planning/seeds/SEED-001`, `SEED-003`; remainder of SEED-001/004 not yet shipped.)_
 
 ### Out of Scope
 
@@ -37,7 +38,11 @@ _(none — next milestone TBD.)_
 
 ## Current State
 
-Phases 5–6 are complete for the v1 line; **Phase 7** shipped in **v1.0.9** (host RAM/swap, journal hints, **`host_incident_hints`**). **Phase 08 / SEED-004 tier 1** shipped in **v1.1.0** (wizard, stage JSON, explain, doctor fix, BYO checklists). **SEED-002** (multi-repo per BYO host, shared runner cache, **`list`**) shipped in **v1.2.0**. RunnerKit still centers **`--mode persistent|ephemeral`**, mode-aware safety, Hetzner as the default cloud path, and CLI-only operations. Maintainer releases follow **`docs/release-process.md`** (including **`make smoke-live`** before tags).
+**Milestone v1.3.2 complete (2026-05-13).** All 6 planned phases shipped: CLI foundation, BYO happy path, BYO ops/diagnostics, Hetzner cloud, scoped ephemeral mode + safety profiles, and release/upgrade/docs/v1 validation. Inline patches shipped in `v1.0.x` (Phase 7 host RAM/swap + journal OOM hints in v1.0.9), `v1.1.0` (SEED-004 tier 1 UX polish — wizard, stage JSON, explain, doctor fix, BYO checklists), `v1.2.0` (SEED-002 multi-repo BYO with shared runner cache + `list`), and `v1.3.x` (cloud-init v3 with scoped sudoers, baseline-package + workflow auto-detect parity with GitHub-hosted Ubuntu 24.04 runner image, BYO non-TTY sudo gap closure).
+
+RunnerKit centers **`--mode persistent|ephemeral`**, mode-aware safety, Hetzner as the default cloud path, and CLI-only operations. Maintainer releases follow **`docs/release-process.md`** (including **`make smoke-live`** before tags). Distribution: **Homebrew Cask** via `accidentally-awesome-labs/homebrew-tap`, cosign-signed binaries via GitHub Releases.
+
+**Next:** milestone TBD. Run `/gsd:new-milestone` when ready.
 
 ## Context
 
@@ -68,13 +73,16 @@ Important product shape decisions gathered during initialization:
 
 | Decision                                                           | Rationale                                                                                                                                                                          | Outcome     |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| Start with GitHub Actions                                          | User selected GitHub Actions as the first platform; narrow support improves quality.                                                                                               | - Pending   |
-| Optimize for solo developers                                       | User selected solo developers as the first audience; this keeps v1 simple and cost-focused.                                                                                        | - Pending   |
-| Make the interface CLI-only                                        | User selected CLI-only for day-to-day use; avoids dashboard scope and supports fast setup.                                                                                         | - Pending   |
+| Start with GitHub Actions                                          | User selected GitHub Actions as the first platform; narrow support improves quality.                                                                                               | ✓ Good — v1.3.2 ships GitHub-only with no support pressure for other CI |
+| Optimize for solo developers                                       | User selected solo developers as the first audience; this keeps v1 simple and cost-focused.                                                                                        | ✓ Good — v1.3.2 wizard + checklists keep first-run friction low |
+| Make the interface CLI-only                                        | User selected CLI-only for day-to-day use; avoids dashboard scope and supports fast setup.                                                                                         | ✓ Good — no dashboard scope creep through v1.3.2 |
 | Register runners only, do not edit workflows                       | User wants the tool to register runners and labels; developers update workflow files themselves. Phase 2 completion output and docs print snippets without mutating workflow YAML. | Accepted    |
 | Support BYO machines and cloud provisioning                        | Phases 2-4 delivered the BYO Linux/systemd persistent lifecycle and one recommended Hetzner cloud path through setup, operations, recovery/destroy, and cleanup documentation.     | Accepted    |
 | Support both ephemeral and persistent runner models with a default | Phase 2 established persistent as the trusted-private default; Phase 5 added explicit `--mode persistent\|ephemeral` with 24h ephemeral TTL, mode-aware safety policy, and tradeoff rendering before mutation. | Accepted    |
-| Defer enterprise features                                          | User explicitly scoped out enterprise controls for v1.                                                                                                                             | - Pending   |
+| Defer enterprise features                                          | User explicitly scoped out enterprise controls for v1.                                                                                                                             | ✓ Good — none shipped through v1.3.2; not a blocker |
+| Tag releases from upstream only                                    | GoReleaser OIDC signing requires push from `accidentally-awesome-labs/runnerkit`; fork tags break signing and don't update brew/releases.                                          | Accepted — codified in `docs/release-process.md` |
+| Baseline-package parity with GitHub-hosted runner image            | v1.3.x users hit "linker cc not found"/missing pkg-config on minimal Ubuntu hosts; `bootstrap.BaselinePackages` plus `--extra-packages` plus workflow auto-detection fill the gap. | Accepted — shipped 2026-05-15ish during v1.3.x |
+| Cloud-init v3 with scoped sudoers + readiness gate                 | Hetzner runs needed `cloud-init status --wait` rejection of `status: error` and scoped sudoers up front to avoid `host.privilege.cloud_bootstrap` failures during bootstrap.       | Accepted — `hetzner.CloudInitUserDataVersion = runnerkit-cloud-init-v3` |
 | Use real GitHub service as production default                      | Phase 1 verification found fake-permitted auth/metadata unsafe; production now defaults to `gh.NewService` with `github.OSCommandRunner{}` while tests inject fakes explicitly.    | Accepted    |
 | Store explicit SSH host-key trust                                  | Phase 2 requires accepted fingerprints in state and fail-closed behavior on mismatch before remote mutation.                                                                       | Accepted    |
 | Install persistent BYO service as non-root                         | Phase 2 bootstrap uses the dedicated `runnerkit-runner` service user and never installs the service as root by default.                                                            | Accepted    |
@@ -102,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-_Last updated: 2026-05-12 — SEED-002 multi-repo + env-gated BYO second-repo smoke; v1.2.0._
+_Last updated: 2026-05-18 — milestone v1.3.2 archived; all 6 phases shipped, 33/33 requirements complete._

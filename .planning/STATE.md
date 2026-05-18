@@ -1,193 +1,62 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0.0
-milestone_name: milestone
-status: executing
-stopped_at: Plan 06-07 attempt-19 smoke-red — Bug 31 (preflight `sudo -n true` probe not in byo-prepare scoped allowlist; Path C broken end-to-end; Path B requires TTY which non-automation contexts cannot provide). v1.0.0 tag BLOCKED until Plan 06-13 lands. Evidence: .planning/phases/06-release-upgrade-docs-and-v1-validation/smoke-byo-attempt-19.log + 06-GAP-byo-sudo-handling.md Bug 31 section.
-last_updated: "2026-05-08T00:00:00.000Z"
-last_activity: 2026-05-08
+milestone: v1.3.2
+milestone_name: Self-hosted GitHub Actions runner v1
+status: milestone_complete
+last_updated: "2026-05-18T00:30:00.000Z"
+last_activity: 2026-05-18
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 31
-  completed_plans: 30
+  completed_phases: 6
+  total_plans: 35
+  completed_plans: 35
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-29)
+See: .planning/PROJECT.md (updated 2026-05-18 after v1.3.2 milestone)
 
 **Core value:** A solo developer can get a reliable, cost-effective GitHub Actions self-hosted runner online and usable in a project in about 10 minutes, without manual GitHub runner setup headaches.
-**Current focus:** Phase 06 — release-upgrade-docs-and-v1-validation
+
+**Current focus:** Planning next milestone. Candidate inputs in `.planning/seeds/SEED-001` and `SEED-003`.
 
 ## Current Position
 
-Phase: 06 (release-upgrade-docs-and-v1-validation) — EXECUTING
-Plan: 2 of 12
-Status: Ready to execute
-Last activity: 2026-05-07
+Milestone v1.3.2 archived to `.planning/milestones/v1.3.2-{ROADMAP,REQUIREMENTS}.md` on 2026-05-18. All 6 phases complete; 33/33 requirements complete. No active phase.
 
-Milestone Progress: [███████░░░] 67%
-
-## Performance Metrics
-
-**Velocity:**
-
-- Total plans completed: 16
-- Average duration: 27 min
-- Total execution time: 7.2 hours
-
-**By Phase:**
-
-| Phase | Plans | Total   | Avg/Plan |
-| ----- | ----- | ------- | -------- |
-| 01    | 4/4   | 71 min  | 18 min   |
-| 02    | 4/4   | 95 min  | 24 min   |
-| 03    | 4/4   | 176 min | 44 min   |
-| 04    | 4/4   | 90 min  | 23 min   |
-
-**Recent Trend:**
-
-- Last 5 plans: 03-04 (52 min), 04-01 (9 min), 04-02 (15 min), 04-03 (27 min), 04-04 (39 min)
-- Trend: Phase 4 is complete: RunnerKit now has Hetzner provisioning, shared cloud runner bootstrap, final cloud state, provider-aware status/logs/doctor, billable destroy verification, and cloud quickstart documentation. Phase 5 planning is complete with 3 plans for scoped ephemeral mode and safety profiles.
-
-_Updated after each plan completion_
-| Phase 05 P01 | 16 | 3 tasks | 11 files |
-| Phase 05-scoped-ephemeral-mode-and-safety-profiles P02 | 23 min | 3 tasks | 24 files |
-| Phase 05-scoped-ephemeral-mode-and-safety-profiles P03 | 16 min | 3 tasks | 13 files |
-| Phase 06-release-upgrade-docs-and-v1-validation P02 | 12 min | 3 tasks tasks | 12 files files |
-| Phase 06-release-upgrade-docs-and-v1-validation P03 | 14m | 4 tasks tasks | 20 files files |
-| Phase 06-release-upgrade-docs-and-v1-validation P01 | 5m | 4 tasks (5 planned; Task 5 is human-action checkpoint) tasks | 6 files files |
-| Phase 06-release-upgrade-docs-and-v1-validation P04 | 8m | 3 of 4 tasks (Task 4 is checkpoint:human-action awaiting maintainer) tasks | 11 created + 2 modified files |
-| Phase 06-release-upgrade-docs-and-v1-validation P05 | 8m | 2 tasks | 12 files |
-| Phase 06-release-upgrade-docs-and-v1-validation P06 | 11m | 3 tasks tasks | 15 files (4 created, 11 modified) files |
-| Phase 06-release-upgrade-docs-and-v1-validation P08 | 5m | 2 tasks tasks | 4 files (1 production, 2 test, 1 smoke) files |
-| Phase 06-release-upgrade-docs-and-v1-validation P10 | 12m | 5 tasks tasks | 9 files (5 production, 4 test) files |
-| Phase 06-release-upgrade-docs-and-v1-validation P11 | 18m | 4 tasks (Bugs 24-27) tasks | 9 production + 5 test files files |
-| Phase 06-release-upgrade-docs-and-v1-validation P12 | 26min | 3 tasks (TDD: 6 commits) tasks | 8 files files |
+Run `/gsd:new-milestone` to start the next cycle.
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Full decision history lives in `.planning/PROJECT.md` "Key Decisions" table and `.planning/milestones/v1.3.2-ROADMAP.md` per-plan summaries.
 
-- Initialization: GitHub Actions only for v1; CLI-only interface; solo developers first.
-- Initialization: Support both BYO machines and one recommended low-cost cloud provisioning path.
-- Initialization: Persistent runners are the default for trusted private repos; ephemeral mode is explicit for stronger isolation.
-- Roadmap: Build BYO persistent runner before cloud provisioning; harden diagnostics/cleanup before adding billable cloud resources.
-- Phase 1 context: Prefer richer CLI wizard/TUI setup, `gh` auth first with fine-grained token fallback, git remote repo detection with confirmation, fail-closed permission handling, and optional project config plus user-local state.
-- Plan 01-01: Use Cobra v1.10.1 for the RunnerKit CLI command tree.
-- Plan 01-01: Centralize current human and JSON output through a renderer that adds `redactions_applied: true`.
-- Plan 01-02: Use runner registration token creation as the runner-management permission check and immediately register returned tokens with the redactor.
-- Plan 01-02: Block public repositories by default with `public_repo_risk`; require explicit `--allow-public-repo-risk` for future persistent setup.
-- Plan 01-03: Persist Phase 1 foundation state as versioned, secret-free JSON with atomic writes and migration hooks.
-- Plan 01-03: Use stable `runnerkit-owner-repo` labels plus explicit `runs-on` guidance; never recommend `self-hosted` alone.
-- Plan 01-03: Require typed `replace owner/repo` or `--yes --replace` before replacing existing repo state.
-- Plan 01-04: Production `runnerkit up` now defaults to `gh.NewService` plus `github.OSCommandRunner{}`; fake-permitted GitHub behavior is test-only.
-- Plan 01-04: The real GitHub service caches credentials in memory only and uses registration-token creation plus repository metadata for permission/safety checks.
-- Phase 2 context: Extend `runnerkit up` for BYO with wizard-first SSH detail collection and automation-friendly host flags.
-- Phase 2 context: Prompt with SSH host fingerprint, record accepted fingerprint in state, and fail closed on mismatch.
-- Phase 2 context: Support common systemd Linux best-effort; unknown or unverified distros warn, require explicit override, then try.
-- Phase 2 context: Run full preflight before remote mutation, show fix plans before applying changes, and report remote progress with redacted actionable failure copy.
-- Phase 2 context: Exact privilege flow is planner discretion, but the persistent runner service must not run as root by default.
-- Plan 02-01: BYO SSH target parsing, host-key trust, and preflight checks are separate packages behind `remote.Executor`.
-- Plan 02-02: Bootstrap uses pinned GitHub Actions runner 2.334.0 packages and installs the service as `runnerkit-runner`.
-- Plan 02-03: Runner registration is just-in-time after preflight and duplicate checks; state is saved only after GitHub reports the runner online with RunnerKit labels.
-- Plan 02-04: Persistent BYO is documented and warned as trusted-private-repository only; RunnerKit prints snippets and does not edit workflow YAML.
-- Phase 3 context: `runnerkit status` should default to the current repo, stay read-only, use fast health probes, show derived health plus source facts, include the saved `runs-on` snippet, flag label drift, and expose the same model in JSON.
-- Phase 3 context: BYO cleanup should use `runnerkit down`; interactive cleanup asks artifact-by-artifact, while `down --yes` applies a safe default plan limited to RunnerKit-managed runner-specific artifacts.
-- Phase 4 context: Cloud provider/profile is planner discretion after research, optimized for smooth setup/reliability over absolute lowest cost; cloud auth should reuse provider CLI/env credentials; interactive `runnerkit up` offers cloud vs BYO when no host is provided; non-interactive cloud requires explicit cloud flags; provisioning plans show cost, resources, identity/tags, labels, and exact `runnerkit destroy`; state stores full cloud resource inventory; `runnerkit destroy` verifies GitHub removal plus provider resources absent/non-billable and keeps pending checkpoints on partial failure.
-- Plan 04-01: Hetzner is the first registered cloud provider path, with default `fsn1`/`cpx22`/`ubuntu-24.04`/`runnerkit-admin` planning profile and env-only token discovery.
-- Plan 04-01: Non-interactive cloud setup requires explicit `--cloud hetzner --yes`; missing `--host` plus `--yes` fails before provider, remote, state, or registration-token side effects.
-- Plan 04-01: Cloud pre-provisioning uses non-token runner-management read checks and renders plan-before-mutation output with cost caveat, resource names/tags, labels, and future destroy command.
-- Plan 04-02: Use hcloud-go v1.59.2 (not /v2) for the Hetzner adapter while the module targets Go 1.22.
-- Plan 04-02: Store full Hetzner cloud inventory under ProviderRef.Cloud while preserving existing provider kind/ids/region compatibility.
-- Plan 04-02: Persist cloud_provision_pending immediately after billable resources exist and cloud_readiness_pending if provider, SSH, cloud-init, or preflight readiness fails.
-- Plan 04-02: Keep provider-only readiness in internal/provider/hetzner and CLI-owned SSH/cloud-init/BYO preflight readiness before any registration-token creation.
-- Plan 04-03: Cloud runner installation reuses the BYO bootstrap.Apply/service/online-verification path after provider and SSH readiness pass.
-- Plan 04-03: Successful cloud setup replaces pending checkpoints with final cloud-ssh state, GitHub runner ID, provider inventory, and deterministic cleanup IDs.
-- Plan 04-03: Status and doctor use provider Describe for cloud facts while logs use saved provider metadata; operations never call provider mutation methods.
-- Plan 04-04: Cloud cleanup uses `runnerkit destroy`; it plans GitHub, remote, provider, and local-state cleanup before mutation, verifies Hetzner resources absent/non-billable before state removal, and keeps pending checkpoints for partial cleanup.
-- [Phase 05]: Mode and safety-profile decisions live in a new internal/runmode package so the CLI, labels, state, and tests share one typed Decision.
-- [Phase 05]: The runner-mode prompt replaces the previous setup-path prompt; selecting persistent-byo or ephemeral-byo lets resolveBYOTarget collect a host while ephemeral-cloud selects --cloud hetzner.
-- [Phase 05]: Public/fork persistent setup blocks with the new UI-SPEC body and DangerousPersistentOverrideCopy before any GitHub auth, registration token, remote, provider, or state mutation; ephemeral cloud is the recommended public/fork path; ephemeral BYO on public/fork requires typed ack or --allow-ephemeral-byo-risk --yes.
-- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: Ephemeral lifecycle classification (waiting/busy/completed/ttl_expired/cleanup_pending) runs before persistent github_runner_missing in ops.Classify so completed auto-deregistration is reported as terminal progress.
-- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: bootstrap.ApplyEphemeral mirrors Apply's command shape but replaces svc.sh install/start with finalizer/service/TTL-timer/verify steps; ServiceNotActiveError surfaces only for ephemeral install/verify failures.
-- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: ephemeral.logs.preserve runs before file/provider mutation in down/destroy and never blocks cleanup; failures record ephemeral_log_preservation_pending and surface via ephemeral_cleanup_pending classification.
-- [Phase 05-scoped-ephemeral-mode-and-safety-profiles]: Plan 05-02: provider.ProvisionInput.Mode drives HetznerOwnershipTags mode=ephemeral and ephemeral cloud resource names; persistent default unchanged.
-- [Phase 05]: Plan 05-03: docs/safety.md owns canonical Phase 5 safety copy; README/BYO/cloud quickstarts link to it and only repeat sentences required by docs grep contract.
-- [Phase 05]: Plan 05-03: Mode-decision warnings (notably the public/fork ephemeral cloud recommendation) merge into ephemeral BYO/cloud completion via mergeWarnings with de-duplication so safety guidance flows to user-visible output.
-- [Phase 05]: Plan 05-03: classifyEphemeral prefers observed remote sentinel finalizer status over saved RepositoryState so freshly-completed/TTL-expired ephemeral runners classify as terminal even when state on disk records 'pending'.
-- [Phase 05]: Plan 05-03: EphemeralBYO/Cloud RepositoryState fixtures share the deterministic ephemeral runner name runnerkit-owner-repo-ephemeral-20260501t183000 so status/logs/doctor/down/destroy regressions assert exact ephemeral artifact paths.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: Side-by-side state backup is taken in Store.Load (not Migrate) so it captures the ORIGINAL raw bytes byte-for-byte before any parsing.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: ErrSchemaTooNew refuses to mutate (no backup, no rewrite) when on-disk schema_version is newer than the binary; maps to ExitStateSchemaTooNew = 7.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: Lazy update-check honors six silent paths (jsonOutput, $CI, $RUNNERKIT_NO_UPDATE_NOTIFIER, network error, fresh cache, same-version response); uses conditional GET via ETag to avoid re-downloading payloads.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: runnerkit upgrade is print-only (channel-detect Homebrew/binary/unknown); reads latest from cache so the command is instantaneous and deterministic in CI.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-02: upgrade-runner refuses without --force when ephemeral FinalizerStatus is waiting/busy/empty; no-ops on completed/ttl_expired; State.RunnerTemplateVersion is bumped only after Apply returns nil.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: STATE and CORE codes share docs/troubleshooting/cleanup.md so the file matrix stays at exactly 6 (auth, ssh, bootstrap, github, provider, cleanup) per D-14.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: RKD-BOOT-001 reserved; RKD-BOOT-002 maps to runner_version_stale (Plan 06-02), the most-likely runtime warning. Reserved-numbering note in README components-table footnote prevents the gap from looking like a docs bug.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: Append (not prepend) RKD codes to remediation arrays so existing tests indexing remediation[0] keep passing; the stable code lives at remediation[len-1].
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: errcodes.URL detection rule — keep .md suffix iff base contains /blob/ (GitHub blob URLs) and strip it otherwise (static-site URLs). No separate config flag required.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-03: ErrSchemaTooNew embeds RKD-STATE-004 + default URL via errcodes.FormatLine so err.Error() carries the stable code without wrapper at every call site; errors.Is wiring preserved.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Single-tag release pipeline (vX.Y.Z push from upstream) produces 4-platform binaries + sha256 checksums + cosign keyless sigstore bundle + Homebrew Cask formula update via GoReleaser v2 in one workflow run.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Cosign signs ONLY checksums.txt (signs[].artifacts: checksum) per D-04, using bundle output (.sigstore.json) over the deprecated v1/v2 .sig+.crt format; bundle is verifiable via cosign verify-blob with cert-identity pinned to the workflow path + tag ref.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Tag-only trigger (on: push: tags: ['v*']) with no pull_request/workflow_dispatch sidesteps fork-PR OIDC strip (Pitfall 1). PR validation runs goreleaser check + snapshot build + 4-arch dist assertion + go test ./... on a separate workflow with no signing.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: README install verification cert-identity URL is string-equal to the workflow file path (.github/workflows/release.yml@refs/tags/${TAG}) embedded in cosign keyless cert; OIDC issuer is locked to https://token.actions.githubusercontent.com (NOT the user-OAuth issuer).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01: Homebrew Cask publishing requires cross-repo PAT (HOMEBREW_TAP_GITHUB_TOKEN) because default GITHUB_TOKEN cannot push outside the workflow's own repo. Tap repo (salar/homebrew-runnerkit) and PAT secret are documented in docs/release-process.md as one-time maintainer prerequisites; Task 5 is a human-action checkpoint pending external resolution.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01 Task 5 closure: org migrated from 'salar' to 'accidentally-awesome-labs' (commit c359831). All release artifacts, Go module path, 79 source files, troubleshooting docs, and update/errcodes URL constants renamed in one atomic commit. Tap repo accidentally-awesome-labs/homebrew-runnerkit created (public, main, Casks/.gitkeep) and HOMEBREW_TAP_GITHUB_TOKEN PAT secret stored in accidentally-awesome-labs/runnerkit settings. Task 5 resolved 'tap-ready'.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-01 Task 5 closure: HOMEBREW_TAP_GITHUB_TOKEN PAT was pasted into chat during external resolution. Maintainer advised to rotate the token (revoke pasted PAT, generate new one, replace secret) before the public v1.0.0 tag push. PAT value is NOT recorded in any committed file or planning doc.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: cmd/_smokebin/ pattern — Go binaries excluded from default builds via _ directory prefix; invoked by shell scripts with go run. Tests still execute when targeted directly.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: D-12 gate 1 (empty-project precheck) is a HARD gate before any runnerkit up; refuses if any Server/SSHKey/PrimaryIP/Firewall has a runnerkit- Name prefix. D-12 gate 2 (destroy-verify) polls every 500ms via hcloud.IsError(err, hcloud.ErrorCodeNotFound) until every saved cloud ID returns 404 or RUNNERKIT_SMOKE_TIMEOUT (default 300s) elapses.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: scripts/smoke/cloud-end-to-end.sh installs trap cleanup EXIT INT TERM that runs runnerkit destroy --yes if state.json exists (Pitfall 7). State.json is snapshotted to state-after-destroy.json before destroy executes so the verifier can recover IDs even after destroy removes the repo entry. EXIT trap is disarmed on success but INT/TERM stays armed for the verify phase.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: hcloud-go v1.59.2 IDs are int (not int64). cloudIDs struct + verifierClient interface use plain int, matching internal/provider/hetzner/client.go and the upstream module surface. Plan body suggested int64; auto-fixed to int.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-04: D-11 enforced by absence — make smoke-live targets are NOT referenced by any .github/workflows/*.yml file. Maintainer must run them manually before tagging; CI environment never holds real PAT or HCLOUD_TOKEN secrets.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: host.privilege.password_required preflight result is SeverityWarning (not Failure) so report.Passed() stays true; this preserves Path B fallback reachability (Plan 06-06) without short-circuiting the existing happy path.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: download_runner is factored into a shared downloadRunnerCommand(opts) helper consumed by Apply, ApplyEphemeral, AND the integration test, so production drift physically cannot bypass the real-shell test.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: bootstrap_failed surfaces 'Remote stderr (commandID): ...' through renderer.Redactor().String(); CommandID extracted from remote.RemoteError via errors.As, fallback 'unknown' when error path predates wrapping.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-05: integration test double-gated by //go:build integration AND RUNNERKIT_INTEGRATION=1 env var so go test ./... and CI ignore it; only make test-integration runs the real-shell path.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: sudo password flows via remote.Command.Env['RUNNERKIT_SUDO_PASSWORD'] + RedactArgs append, NOT a new SudoPassword field on remote.Command. Script wrapper reads env via printf|sudo -S so the literal never appears in rendered Script string.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: ui.PasswordPrompter is an OPTIONAL capability interface, not a required Prompter method. Callers type-assert via deps.Prompts.(ui.PasswordPrompter), so all existing fake Prompter implementations remain compatible.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: byo_host_prepared doctor finding uses ops.SeverityPass (informational/positive) since ops.Severity has only pass/warning/error — no SeverityInfo. Pass is the closest analog and renders correctly via ui.Success in renderDoctorHuman.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: visudo runs on the REMOTE host inside RemoteVisudoCheckScript, NOT locally. Atomic-rename pattern (tmp → visudo -cf → mv on success only, exit 21 otherwise) guarantees /etc/sudoers.d/runnerkit-installer is never persisted with malformed content — locks out are physically impossible.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-06: --yes does NOT imply --non-interactive for sudo password input. --yes accepts safe defaults; sudo password is a separate human-input concern that always requires a TTY prompt unless --non-interactive is explicitly set. Locked in by TestUp_SudoPasswordPrompt_YesDoesNotImplyNonInteractive.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: register_runner uses 'sudo su -s /bin/bash - <user> -c "..."' instead of 'sudo -u <user> ./config.sh ...' so a host with only (root) NOPASSWD: ALL or only the byo-prepare scoped sudoers entry is sufficient — closes Bug 3 from 06-GAP-byo-sudo-handling.md (Task F).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08 follow-through (2026-05-11): RenderRemoveConfigScript and RenderReconfigureScript now also use `sudo su -s /bin/bash - <user> -c "cd ... && ./config.sh ..."` for Path C parity. Recovery/down/destroy no longer depend on `sudo -u` runas semantics.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-08: smoke harness exit codes 3=config.sh missing (Plan 06-05) vs 4=.runner sentinel missing (Plan 06-08) so Plan 06-07 attempt-2 re-smoke can branch on cause. Cloud path verifiably unchanged: internal/provider/hetzner not modified, hetzner package tests stay green.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: ops.ProbeRemoteStatus falls back to systemctl list-units to resolve actual unit name when saved simplified ServiceName returns LoadState=not-found (Bug 19); resolution matched by <runner-name>.service suffix to handle GitHub's actions.runner.<owner-repo>.<runner-name>.service form.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: ops.CompareLabels normalizes via strings.ToLower for set membership (Bug 20). Same family as Plan 06-09 Bug 16 (runnerOnlineWithLabels) but in the status/doctor drift detector code path.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: down probes 'sudo -n true' once before remote cleanup; on password-required stderr (markers: 'password is required', 'a terminal is required', 'no tty present') it prompts via ui.PasswordPrompter and threads the literal through wrapDownSudoCommand using the same printf|sudo -S -v cred-priming pattern bootstrap.wrapSudoCommand uses (Plan 06-09 Bug 10). NOPASSWD/Path C hosts keep the unwrapped happy path (Bug 21).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: hetzner.ProbeHostKeyWithRetry default budget = 60 attempts × 5s = ~5min wall-clock, easily covering Hetzner cloud-init's typical 30-90s host-key install window with residential-IP retry headroom. Empty fingerprint with nil error counts as failure. Sleep is injectable for tests so they don't burn wall-clock time (Bug 22).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-10: cloud destroy ordering — detach firewall (RemoveResources) + unassign primary IPv4 + unassign primary IPv6 BEFORE server.Delete; then delete server, ssh_key, primary IPs, firewall last. Already-absent (404) on detach/unassign is silenced; on delete it's still treated as skipped. Client interface gained DetachFirewallFromServer + UnassignPrimaryIP backed by hcloud-go v1.59.2's Firewall.RemoveResources(FirewallResourceTypeServer) and PrimaryIP.Unassign (Bug 23).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 24 — selectHostKeyLine in remote.scanHostKey picks a deterministic line from ssh-keyscan output by preferring algorithms in order (ed25519 > ecdsa > rsa > dss) with lexicographic tiebreak. Both up's Probe and status's ProbeHostKey route through the same selector, so identical multi-key sshd output collapses to the same chosen line and FingerprintSHA256 stays byte-stable across calls — host_key_match property restored.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 25 — drop sshReachable from down's sudo-probe gate (down.go:239). Probe + prompt now runs whenever targetErr == nil && needsAnyRemoteSudo(selected). Closes the cascade where Bug 24's false-positive caused Plan 06-10 Bug 21's prompt to be skipped, and any later sudo-touching cleanup ran without -S threading.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 26 — cloud destroy relies on Hetzner auto_delete=true cascade for primary IPs. ServerCreatePublicNet with EnableIPv4=true, EnableIPv6=true, IPv4=nil, IPv6=nil makes Hetzner allocate fresh primary IPs that carry AutoDelete: true by default. Plan 06-10 Bug 23's manual unassign step is removed entirely (it required server power-off, surfacing live as Server must be offline for this action). Firewall detach STILL runs first (no power-off requirement). UnassignPrimaryIP method survives on Client interface as legacy-state fallback.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-11: Bug 27 — scoped sudoers entry switches /opt/runnerkit-runner/svc.sh (legacy literal that never matched runtime install dir) to /opt/actions-runner/runnerkit-*/svc.sh (sudoers * wildcard glob). Sudoers * does NOT match /, so the glob is bounded to a single directory level — same safety bounds as the original literal. Maintainer must re-run runnerkit byo-prepare once after Plan 06-11 lands to refresh the entry on the smoke host before attempt-17.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-12: Bug 28 — probeSudoNeedsPassword now inspects result.ExitCode + result.Stderr/Stdout regardless of err; the early err-guard at down.go:440-443 was misclassifying password-protected sudo (rc=1 + marker + *exec.ExitError wrapper from real SSH executor) as 'no password needed'. New flow: ExitCode==0 → passwordless; ExitCode!=0 with marker substring → needs prompt; otherwise fall through (preserves graceful semantics for dial-timeout / context-cancel where ExitCode = -1).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-12: Bug 29 — cloud.cloudinit.wait command sets explicit Timeout via cloudInitTimeoutFromEnv() (default 5m, RUNNERKIT_CLOUD_INIT_TIMEOUT override). Default aligned with hetzner.HostKeyProbeOptions Attempts × Interval = 60 × 5s = 300s so cloud-up has a single coherent deadline. os.Getenv (not deps.Env) used to match internal/update/check.go RUNNERKIT_NO_UPDATE_NOTIFIER precedent and avoid a Dependencies surface change.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: Plan 06-12: Bug 30 — destroy is cascade-aware. New CloudInventory.PrimaryIPv4AutoDelete + PrimaryIPv6AutoDelete bool fields (additive omitempty, no schema bump from "2"); provision.go records them at create time when resourceIDs[primary_ipvN] != "" (the EnableIPv4/IPv6 PublicNet contract from Plan 06-11 Bug 26). destroy.go skips DeletePrimaryIP entirely when AutoDelete=true (Status=skipped Message="auto_delete cascade"); legacy fallback wraps the call in a bounded retry that treats 409 must_be_unassigned as transient via new isCascadeInFlightError predicate until 404 (cascade complete via isAlreadyAbsentError) or RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT (default 30s) expires. Plan 06-11 Bug 26 contract preserved (no unassign:* calls anywhere in any test path).
-- [Phase 06-release-upgrade-docs-and-v1-validation]: 2026-05-11 logging hardening: structured slog is wired across CLI command boundaries, remote executor commands, GitHub API calls, and Hetzner provision/destroy/verify summaries. `RUNNERKIT_LOG` gates level and `RUNNERKIT_LOG_DEST` routes sink (`stderr`/`stdout`/`file:<path>`). Debug remote IO is redacted + bounded for safe diagnostics and future telemetry export.
-- [Phase 06-release-upgrade-docs-and-v1-validation]: 2026-05-11 smoke rerun result: BYO down and cloud destroy are green after reordering service teardown to uninstall-before-remove (`svc.sh uninstall` prior to `config.sh remove`) to satisfy current Actions runner remove semantics.
+Cross-milestone decisions carried forward:
+
+- GitHub Actions is the sole CI target (no plans to expand in v1.x).
+- CLI-only interface; no dashboard.
+- Persistent BYO is the trusted-private default; ephemeral is explicit for stronger isolation.
+- Hetzner is the recommended cloud provider; provider plugin surface kept generic for future additions.
+- Releases tag-driven from upstream `accidentally-awesome-labs/runnerkit` only (forks break OIDC signing).
+- `bootstrap.BaselinePackages` enforces GitHub-hosted Ubuntu 24.04 runner-image parity on BYO/cloud hosts.
 
 ### Pending Todos
 
-[From .planning/todos/pending/ - ideas captured during sessions]
-
-None yet.
+None.
 
 ### Blockers/Concerns
 
-[Issues that affect future work]
+Carried forward into next-milestone planning:
 
-- Plan 01-02/01-04 validation note: automated fixtures cover GitHub success/denial/redaction/default-path behavior; a controlled live GitHub permission smoke remains recommended before public release.
-- Phase 4 validation note: a controlled live Hetzner smoke remains recommended before public release because it creates billable resources and needs real credentials.
-- Plan 01-01 validation note: `go run` wraps non-zero binary exits as process exit 1 while printing `exit status 6`; the direct built binary exits 6 for input-required paths.
+- **Maintainer human-action checkpoints** — `make smoke-live` against real billable Hetzner + GitHub credentials remains a manual pre-tag step (see `docs/release-process.md`). Not yet automated; intentional per security posture.
+- **`gsd-tools milestone complete --help` foot-gun** — CLI treats `--help` as a positional version argument and produces bogus archive files. Upstream fix recommended.
+- **Cost/usage tracking not instrumented** — model/session counts not captured during v1.3.2. Consider lightweight per-phase token logging for v1.4+.
 
 ## Session Continuity
 
-Last session: 2026-05-08T00:00:00.000Z
-Stopped at: Plan 06-07 attempt-19 smoke-red — Bug 31 (preflight `sudo -n true` probe not in byo-prepare scoped allowlist; Path C broken; Path B needs TTY). Next: `/gsd:plan-phase 06 --gaps` to file Plan 06-13 closing Bug 31, then attempt-20 re-smoke.
+Last session: 2026-05-18 (milestone archival)
+Stopped at: Milestone v1.3.2 archived. No active work.
 Resume file: None

@@ -1,167 +1,43 @@
 # Roadmap: RunnerKit
 
-## Overview
+## Milestones
 
-RunnerKit v1 builds from a safe CLI foundation into a usable self-hosted GitHub Actions runner workflow for solo developers. The sequence proves the fastest BYO Linux persistent-runner path first, hardens diagnostics and cleanup before adding billable cloud resources, then adds scoped ephemeral operation, release packaging, upgrade support, and documentation needed for a confident public v1.
+- ✅ **v1.3.2 Self-hosted GitHub Actions runner v1** — Phases 1-6 (shipped 2026-05-13)
 
 ## Phases
 
-**Phase Numbering:**
+<details>
+<summary>✅ v1.3.2 Self-hosted GitHub Actions runner v1 (Phases 1-6) — SHIPPED 2026-05-13</summary>
 
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- [x] Phase 1: CLI, Auth, State, and Safety Foundation (4/4 plans) — completed 2026-04-29
+- [x] Phase 2: BYO Persistent Runner Happy Path (4/4 plans) — completed 2026-04-29
+- [x] Phase 3: Operations, Diagnostics, and BYO Cleanup (4/4 plans) — completed 2026-04-29
+- [x] Phase 4: Recommended Cloud Path and Billable Cleanup (4/4 plans) — completed 2026-05-01
+- [x] Phase 5: Scoped Ephemeral Mode and Safety Profiles (3/3 plans) — completed 2026-05-02
+- [x] Phase 6: Release, Upgrade, Docs, and v1 Validation (16/16 plans) — completed 2026-05-13
 
-Decimal phases appear between their surrounding integers in numeric order.
+Full details: [`.planning/milestones/v1.3.2-ROADMAP.md`](milestones/v1.3.2-ROADMAP.md)
 
-- [x] **Phase 1: CLI, Auth, State, and Safety Foundation** - Establish the installable CLI shell, guided setup skeleton, GitHub authentication, versioned state, and redaction rules. _(completed 2026-04-29)_
-- [x] **Phase 2: BYO Persistent Runner Happy Path** - Let a solo developer connect an existing Linux machine and register a repository-scoped persistent runner with labels and next-step guidance. _(completed 2026-04-29)_
-- [x] **Phase 3: Operations, Diagnostics, and BYO Cleanup** - Make managed BYO runners observable, recoverable, and safely removable when GitHub, SSH, or local state is imperfect. _(completed 2026-04-29)_
-- [x] **Phase 4: Recommended Cloud Path and Billable Cleanup** - Add one low-cost cloud provisioning path that reuses the BYO lifecycle and can be destroyed without surprise bills. _(completed 2026-05-01)_
-- [x] **Phase 5: Scoped Ephemeral Mode and Safety Profiles** - Add explicit ephemeral mode for stronger isolation and make mode tradeoffs understandable before selection. _(completed 2026-05-02)_
-- [ ] **Phase 6: Release, Upgrade, Docs, and v1 Validation** - Package RunnerKit for real users, document operations, and validate the end-to-end v1 promise.
+</details>
 
-## Phase Details
+### 📋 Next Milestone (Planned)
 
-### Phase 1: CLI, Auth, State, and Safety Foundation
+Next milestone not yet defined. Candidate inputs:
 
-**Goal**: RunnerKit has a runnable CLI foundation that can safely authenticate to GitHub, explain setup prerequisites, persist non-secret state, and redact sensitive data before any real runner install flow depends on it.
-**Depends on**: Nothing (first phase)
-**Requirements**: [CLI-01, CLI-02, GH-01, STATE-01, STATE-02]
-**Success Criteria** (what must be TRUE):
+- `.planning/seeds/SEED-001-bootstrap-lifecycle-split.md`
+- `.planning/seeds/SEED-002-multi-repo-per-host.md` *(partially shipped in v1.2.0)*
+- `.planning/seeds/SEED-003-claude-code-plugin-skill-mcp.md`
+- `.planning/seeds/SEED-004-ux-polish-layer.md` *(partially shipped in v1.1.0)*
 
-1. Developer can install or locally run a `runnerkit` binary and start a guided setup flow that explains prerequisites before making changes.
-2. Developer can authenticate RunnerKit for a target GitHub repository using only the permissions required for runner management.
-3. RunnerKit persists versioned local state/config for repo scope, runner identity, labels, machine path, provider IDs, and cleanup metadata.
-4. RunnerKit redacts tokens, secrets, and sensitive machine/provider values from state-adjacent logs, diagnostics, and command output.
-   **Plans**: 4 plans
-
-Plans:
-
-- [x] 01-01-PLAN.md — Go CLI skeleton, command routing, prompts, flags, output conventions, guided setup scaffold, and redaction minimum.
-- [x] 01-02-PLAN.md — GitHub repo resolution, least-privilege authentication, runner-token adapter, safety gate, and API test fixtures.
-- [x] 01-03-PLAN.md — Versioned state/config schema, label conventions, fake adapters, and idempotent workflow primitives.
-- [x] 01-04-PLAN.md — Production GitHub service wiring, real CLI defaults, and default-path auth/safety regression tests.
-
-### Phase 2: BYO Persistent Runner Happy Path
-
-**Goal**: A developer with an existing Linux machine can complete the core happy path: SSH preflight, non-root runner bootstrap, GitHub runner registration, service start, labels, and clear workflow guidance.
-**Depends on**: Phase 1
-**Requirements**: [CLI-03, CLI-04, GH-02, GH-04, GH-05, MACH-01, MACH-02, RUN-01, RUN-03, DOC-01]
-**Success Criteria** (what must be TRUE):
-
-1. Developer can connect RunnerKit to a supported Linux machine over SSH, pass preflight checks, and bootstrap a dedicated non-root runner service.
-2. Developer can register a repository-scoped persistent GitHub Actions runner without manually copying GitHub setup commands.
-3. Developer can complete the supported BYO happy path in about 10 minutes and see a completion summary with runner name, labels, machine target, and next workflow step.
-4. Developer can target the runner with predictable RunnerKit labels using copy-paste `runs-on` guidance, while RunnerKit does not edit workflow YAML.
-5. Developer receives clear warnings before using persistent runners on public, fork-based, or otherwise untrusted workloads, and can follow a concise BYO quickstart.
-   **Plans**: 4 plans
-
-Plans:
-
-- [x] 02-01: SSH connectivity, host-key handling, Linux/systemd support matrix, and remote preflight checks.
-- [x] 02-02: Remote bootstrap installer for dependencies, dedicated runner user, official runner download, and managed service setup.
-- [x] 02-03: Repository-scoped registration, stable runner naming/labels, service start verification, and completion summary.
-- [x] 02-04: Persistent default profile, public/fork risk warnings, BYO smoke test, and BYO quickstart documentation.
-
-### Phase 3: Operations, Diagnostics, and BYO Cleanup
-
-**Goal**: RunnerKit reduces self-hosted-runner fragility by reconciling state across GitHub, SSH, and systemd, exposing logs, diagnosing common failures, recovering persistent runners, and cleaning up BYO installs safely.
-**Depends on**: Phase 2
-**Requirements**: [GH-03, REL-01, REL-02, REL-03, REL-04, CLEAN-02, CLEAN-03]
-**Success Criteria** (what must be TRUE):
-
-1. Developer can run `runnerkit status` and see GitHub runner status, local service status, labels, and machine reachability for managed runners.
-2. Developer can run `runnerkit logs` and `runnerkit doctor` to inspect relevant logs and receive actionable remediation guidance without manual SSH spelunking.
-3. Developer can restart or recover a stopped/offline RunnerKit-managed persistent runner through documented or guided CLI steps.
-4. Developer can deregister stale GitHub runner records and remove BYO runner files/services without deleting unrelated user data, even when some state is missing.
-   **Plans**: 4 plans
-
-Plans:
-
-- [x] 03-01: Multi-source status reconciliation across local state, GitHub runner inventory, SSH reachability, and systemd.
-- [x] 03-02: Remote/local log collection, diagnostic checks, redacted output, and actionable `doctor` findings.
-- [x] 03-03: Guided persistent-runner restart, re-registration, and recovery workflows for common offline/stopped-service failures.
-- [x] 03-04: BYO cleanup flow, stale GitHub deregistration, partial-state checkpoints, and safe file/service removal.
-
-### Phase 4: Recommended Cloud Path and Billable Cleanup
-
-**Goal**: Developers without a machine can provision one recommended low-cost cloud runner path, manage it through the same lifecycle as BYO, and destroy billable resources with confidence.
-**Depends on**: Phase 3
-**Requirements**: [MACH-03, MACH-04, MACH-05, CLEAN-01, CLEAN-04, DOC-02]
-**Success Criteria** (what must be TRUE):
-
-1. Developer can provision one recommended low-cost cloud machine path from RunnerKit when they do not already have a machine.
-2. Developer can install and manage the cloud runner through the same registration, status, logs, doctor, and cleanup lifecycle as BYO machines.
-3. RunnerKit state shows enough machine/provider identity to safely manage, reconcile, or remove the cloud runner later.
-4. Developer can run a cleanup/destroy flow that shows a plan, removes GitHub registration and RunnerKit-created cloud resources, and verifies those resources are no longer billable.
-5. Developer can follow a concise cloud quickstart for the supported provider path.
-   **Plans**: 4 plans
-
-Plans:
-
-- [x] 04-01: Provider interface, selected low-cost default cloud profile, credential checks, and provisioning plan output.
-- [x] 04-02: Cloud VM, SSH key, firewall/network, tags, and readiness workflow for the recommended provider.
-- [x] 04-03: Cloud runner installation using the shared BYO bootstrap, state reconciliation, and status/logs integration.
-- [x] 04-04: Cloud destroy, orphan/billing verification, provider-state cleanup, and cloud quickstart documentation.
-
-### Phase 5: Scoped Ephemeral Mode and Safety Profiles
-
-**Goal**: RunnerKit offers an explicit stronger-isolation ephemeral option without pretending to be a full autoscaling fleet manager, and helps developers choose the right mode for their workload.
-**Depends on**: Phase 4
-**Requirements**: [RUN-02, RUN-04, DOC-03]
-**Success Criteria** (what must be TRUE):
-
-1. Developer can understand the cost, isolation, cleanup, and operational tradeoffs between persistent and ephemeral runner modes before selecting a mode.
-2. Developer can choose an explicit ephemeral runner option/profile when they want stronger isolation.
-3. Ephemeral runs have bounded lifecycle behavior with cleanup finalizers, TTL-style safeguards, and useful log preservation for troubleshooting.
-4. Developer can read safety guidance explaining when persistent self-hosted runners are unsafe and when ephemeral mode is recommended.
-   **Plans**: 3 plans
-
-Plans:
-
-- [x] 05-01: Mode/profile selection UX, safety policy, and persistent-vs-ephemeral tradeoff explanations.
-- [x] 05-02: Ephemeral registration/lifecycle implementation with TTLs, cleanup finalizers, and log preservation.
-- [x] 05-03: Safety guide, risky-workload validation, and end-to-end tests for trusted and untrusted workflow scenarios.
-
-### Phase 6: Release, Upgrade, Docs, and v1 Validation
-
-**Goal**: RunnerKit becomes shippable for early users with official distribution, an upgrade path that prevents runner rot, operational documentation, and validation that the v1 experience meets the 10-minute reliable-runner promise.
-**Depends on**: Phase 5
-**Requirements**: [REL-05, DOC-04]
-**Success Criteria** (what must be TRUE):
-
-1. Developer can install an official RunnerKit release binary/package and follow a documented CLI/runner upgrade path that avoids immediate runner rot.
-2. RunnerKit can migrate versioned state safely across supported releases or clearly block with recovery guidance.
-3. Developer can read cleanup and troubleshooting guidance for common setup, runner, GitHub, SSH, provider, and cleanup failures.
-4. A fresh user can complete at least one supported setup path in about 10 minutes, run a GitHub Actions job on RunnerKit labels, and clean up confidently.
-   **Plans**: 13 plans (4 original + 9 gap closure)
-
-Plans:
-
-- [x] 06-01-release-packaging-PLAN.md — GoReleaser v2 + cosign keyless + Homebrew Cask + tag-triggered release workflow + PR CI gate + README install matrix + maintainer release-process docs.
-- [x] 06-02-upgrade-and-state-migration-PLAN.md — Lazy 24h-cached update notice + runnerkit upgrade (channel detect, print-only) + runnerkit upgrade-runner (re-Apply with bundled pin) + forward-only state migration with side-by-side backup + ExitStateSchemaTooNew + doctor stale-runner finding.
-- [x] 06-03-troubleshooting-docs-and-rkd-codes-PLAN.md — internal/errcodes/ stable RKD-<COMPONENT>-NNN registry + RUNNERKIT_DOCS_BASE override + 6 docs/troubleshooting/ component files with explicit anchors and Symptom/Diagnosis/Fix structure + CLI emit-site wiring.
-- [x] 06-04-v1-validation-and-live-smoke-PLAN.md — make smoke-live targets + cmd/_smokebin/empty_precheck + destroy_verify (D-12 gates 1+2) + 10-min stopwatch checklist + 06-VERIFICATION.md baseline + RELEASE-NOTES-v1.0.0.md.
-- [x] 06-05-byo-bootstrap-blocker-fixes-PLAN.md — gap closure (Tasks A + E from 06-GAP-byo-sudo-handling.md): preflight `sudo -n true` probe (Bug 1) + sudo-prefixed download_runner curl/sha256sum/tar (Bug 2) + redacted-stderr surfacing on bootstrap_failed + RKD-BOOT-015 docs entry + build-tag-guarded integration test + smoke script config.sh assertion.
-- [x] 06-06-byo-prepare-and-sudo-prompt-PLAN.md — gap closure (Tasks B + C + D): Path B interactive sudo password fallback in `runnerkit up` + `redact.SudoPassword` + `runnerkit byo-prepare` command with scoped sudoers template + visudo validation + atomic rename + `--remove` + `byo_host_prepared` doctor finding + docs/byo-quickstart Sudo Setup section + README link.
-- [ ] 06-07-live-smoke-rerun-and-baseline-fillin-PLAN.md — maintainer human-action checkpoint: re-run `make smoke-live` end-to-end against fresh BYO + real Hetzner project (no manual sudoers workaround), fill 06-VERIFICATION baseline + RELEASE-NOTES-v1.0.0.md stopwatch numbers, signal smoke-green for v1.0.0 tag push.
-- [x] 06-08-byo-register-runner-runas-fix-PLAN.md — gap closure (Task F from 06-GAP-byo-sudo-handling.md): replace `sudo -u runnerkit-runner ./config.sh` with `sudo su -s /bin/bash - runnerkit-runner -c` in RenderInstallScript + RenderEphemeralInstallScript so register_runner runs from a root sudo context (closes Bug 3 register_runner runas mismatch); script_test.go presence/absence assertions; install_integration_test.go no-(ALL)-runas sub-case; smoke harness .runner sentinel assertion. Unblocks Plan 06-07 attempt-2.
-- [x] 06-09-byo-bootstrap-and-online-fixes-PLAN.md — gap closure (Tasks G..T from 06-GAP-byo-sudo-handling.md): 15 BYO bootstrap blockers across Plan 06-07 attempts 2-15 against `salar@mckee-small-desktop` (Ubuntu 24.04). Closes Bugs 4-18: ui.Prompter wiring, sudo mktemp under fs.protected_regular=2, word-boundary sudo rewrite, preflight ExitError + curl rate-limit, configure_runner Sudo flag, cred-prime wrap, su login shell cwd, ServiceNotActiveError stderr, idempotent .runner + systemd cleanup, verify_service cd, case-insensitive label match, isRunnerKitManagedRunner self-collision skip, smoke harness sudo drop. BYO smoke completes end-to-end: BYO_DURATION_SECONDS=125, runner id 24 online.
-- [x] 06-10-status-down-cloud-fixes-PLAN.md — gap closure: 5 post-up + cloud bugs surfaced during Plan 06-07 attempt-15. Bug 19 (status systemd unit name lookup), Bug 20 (status+doctor case-sensitive label drift), Bug 21 (down sudo without TTY), Bug 22 (cloud SSH host-key probe lacks retry), Bug 23 (cloud destroy ordering — orphans firewall + primary IPs). Required to unblock Plan 06-07 smoke-green.
-- [x] 06-11-status-down-sudoers-cloud-destroy-fixes-PLAN.md — gap closure: 4 surgical fixes surfaced during Plan 06-07 attempt-16 (BYO + Hetzner). Bug 24 (status SSH host-key fingerprint mismatch on multi-key sshd hosts — selectHostKeyLine deterministic algorithm-preference selector), Bug 25 (down sudo-prompt gate dropped sshReachable so probe runs even on Bug 24 false-positive), Bug 26 (cloud destroy relies on Hetzner auto_delete=true cascade for primary IPs, removes Plan 06-10 Bug 23 unassign step that hit `Server must be offline`), Bug 27 (scoped sudoers svc.sh path uses sudoers `*` glob `/opt/actions-runner/runnerkit-*/svc.sh` matching the actual runtime install dir).
-- [x] 06-12-down-sudo-probe-cloud-init-and-destroy-cascade-fixes-PLAN.md — gap closure: 3 surgical fixes surfaced during Plan 06-07 attempt-17 BYO+cloud smoke (smoke-output.log, 2026-05-06). Bug 28 (down `probeSudoNeedsPassword` early-returns on `err = exit status N` from real SSH executor — pre-fix probe never inspects ExitCode/Stderr markers; Plan 06-11 Bug 25 unit test masked the regression with a fake executor that returned err=nil for non-zero rc). Bug 29 (cloud-up `cloud.cloudinit.wait` lacks explicit Timeout, aborts at 42s vs Hetzner cloud-init typical 60-120s; new `RUNNERKIT_CLOUD_INIT_TIMEOUT` env override aligned with Plan 06-10 Bug 22 host-key probe budget — default 300s). Bug 30 (cloud destroy `DeletePrimaryIP` races vs auto_delete cascade; Hetzner returns 409 `must_be_unassigned` (not 404) while cascade in flight — `isAlreadyAbsentError` only matches 404 so destroy reports `provider_primary_ip: pending` despite empty post-test project. Fix: skip explicit DeletePrimaryIP when `Cloud.PrimaryIPv4AutoDelete=true`/`PrimaryIPv6AutoDelete=true` (recorded at provision time per Plan 06-11 Bug 26 EnableIPv4/EnableIPv6 default); legacy state retries 409 via new `isCascadeInFlightError` predicate bounded by `RUNNERKIT_DESTROY_PRIMARY_IP_TIMEOUT`).
-- [ ] 06-13-preflight-probe-allowlist-fix-PLAN.md — gap closure: 1 surgical fix surfaced during Plan 06-07 attempt-19 BYO smoke under non-TTY automation (smoke-byo-attempt-19.log, 2026-05-08). Bug 31 (preflight `sudo -n true` probe is NOT in byo-prepare scoped allowlist; Path C never bypasses Path B TTY prompt because the probe exits 1 even on a fully-prepared host; v1.0.0 BYO smoke broken in non-TTY automation). Fix: replace `Script: "sudo -n true"` with `Script: "sudo -n install --version >/dev/null"` at internal/preflight/checks.go:148 — `/usr/bin/install` IS in the byo-prepare allowlist and is a RequiredTools member, so the probe binds end-to-end to the scoped sudoers contract. Command.ID stays `probe_sudo_n` so existing fakes are unaffected. Adds TestCheckPrivilege_AllowsScopedSudoers regression test source-code-binding the Script literal. Unblocks Plan 06-07 attempt-20 / v1.0.0 tag push.
+Run `/gsd:new-milestone` to start the next milestone cycle.
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
-
-| Phase                                          | Plans Complete | Status      | Completed  |
-| ---------------------------------------------- | -------------- | ----------- | ---------- |
-| 1. CLI, Auth, State, and Safety Foundation     | 4/4            | Complete    | 2026-04-29 |
-| 2. BYO Persistent Runner Happy Path            | 4/4            | Complete    | 2026-04-29 |
-| 3. Operations, Diagnostics, and BYO Cleanup    | 4/4            | Complete    | 2026-04-29 |
-| 4. Recommended Cloud Path and Billable Cleanup | 4/4            | Complete    | 2026-05-01 |
-| 5. Scoped Ephemeral Mode and Safety Profiles   | 3/3            | Complete    | 2026-05-02 |
-| 6. Release, Upgrade, Docs, and v1 Validation   | 11/13          | Plans 06-09..06-12 complete (Bugs 4-30); Plan 06-13 filed (Bug 31 — preflight probe in byo-prepare allowlist) for Plan 06-07 attempt-20 unblock; Plan 06-07 maintainer smoke-green pending | -          |
+| Phase | Milestone | Plans Complete | Status | Completed |
+| --- | --- | --- | --- | --- |
+| 1. CLI, Auth, State, and Safety Foundation | v1.3.2 | 4/4 | Complete | 2026-04-29 |
+| 2. BYO Persistent Runner Happy Path | v1.3.2 | 4/4 | Complete | 2026-04-29 |
+| 3. Operations, Diagnostics, and BYO Cleanup | v1.3.2 | 4/4 | Complete | 2026-04-29 |
+| 4. Recommended Cloud Path and Billable Cleanup | v1.3.2 | 4/4 | Complete | 2026-05-01 |
+| 5. Scoped Ephemeral Mode and Safety Profiles | v1.3.2 | 3/3 | Complete | 2026-05-02 |
+| 6. Release, Upgrade, Docs, and v1 Validation | v1.3.2 | 16/16 | Complete | 2026-05-13 |
