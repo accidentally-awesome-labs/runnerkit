@@ -51,6 +51,17 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // includes the full root-runas command surface used by Apply/RenderInstallScript
 // so Path C (`runnerkit byo-prepare`) works end-to-end in non-interactive runs.
 //
+// Bug 33 (smoke-discovery 2026-05-18): the GitHub-hosted runner image parity
+// step (RenderImageSetupScript) and the ephemeral log-preservation step in
+// script.go use `sudo ln`, `sudo chmod`, `sudo cp`, and `sudo cat` for
+// post-fix_dependencies work — symlinking Go/chromedriver binaries into
+// /usr/local/bin, marking geckodriver executable, preserving ephemeral runner
+// _diag logs, and reading back the installed sudoers fragment for verification.
+// None of these were in the allowlist, so bootstrap failed at setup_runner_image
+// with the same "terminal is required" symptom Bug 32 fixed elsewhere. Adding
+// them here closes the bug class for v1.3.x; v1.4.0 (install.sh pivot) will
+// tighten these to path-scoped entries to reduce attack surface.
+//
 // Critical: this is NOT a blanket NOPASSWD ALL. The user retains
 // password-protected sudo for everything else.
 //
@@ -68,6 +79,10 @@ func RenderSudoersEntry(user string) string {
   /bin/mkdir, /usr/bin/mkdir, /usr/bin/unzip, \
   /usr/sbin/usermod, /usr/bin/dpkg, /usr/bin/add-apt-repository, \
   /bin/chown, /usr/bin/chown, \
+  /bin/chmod, /usr/bin/chmod, \
+  /bin/cp, /usr/bin/cp, \
+  /bin/cat, /usr/bin/cat, \
+  /bin/ln, /usr/bin/ln, \
   /bin/rm, /usr/bin/rm, \
   /bin/su, /usr/bin/su, \
   /bin/tar, /usr/bin/tar, \

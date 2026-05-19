@@ -45,6 +45,30 @@ func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 	return cmd
 }
 
+// doctorJSONError emits a doctor --json error envelope that satisfies the JSON
+// contract documented in CLAUDE.md (schema_version, stage, next_actions[],
+// host_incident_hints[] always present as arrays, never null). Falls back to
+// renderer.Error for human output.
+//
+// Bug 33-C (smoke-discovery 2026-05-18): `runnerkit doctor --json` with no
+// state (the most common error path during agent / MCP exploratory probing)
+// previously returned a stripped envelope missing all 4 contract fields,
+// breaking downstream JSON consumers without the smoke harness catching it.
+func doctorJSONError(renderer *ui.Renderer, jsonOutput bool, st stage.Stage, code, message string, remediation []string) error {
+	if !jsonOutput {
+		return renderer.Error(code, message, remediation)
+	}
+	base := map[string]any{
+		"ok":                  false,
+		"command":             "doctor",
+		"error":               map[string]any{"code": code, "message": message, "remediation": remediation},
+		"next_actions":        []map[string]any{},
+		"host_incident_hints": []ops.HostIncidentHint{},
+	}
+	nextaction.ApplySchemaAndStage(base, string(st))
+	return renderer.JSON(base)
+}
+
 func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOptions) error {
 	defer maybeShowUpdateNotice(deps, jsonOutput)
 	renderer := newRenderer(deps, jsonOutput, noColor)
@@ -56,12 +80,12 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	store := rkstate.NewStore(deps.StateBaseDir)
 	repoState, ok, err := store.GetRepository(repo.FullName)
 	if err != nil {
-		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + "."})
+		_ = doctorJSONError(renderer, jsonOutput, stage.NoLocalState, "state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + "."})
 		return NewExitError(ExitStateIO, err)
 	}
 	if !ok {
 		message := "No RunnerKit-managed runner found for " + repo.FullName + "."
-		_ = renderer.Error("state_not_found", message, []string{"Run runnerkit up --repo " + repo.FullName + " --host user@host first."})
+		_ = doctorJSONError(renderer, jsonOutput, stage.NoLocalState, "state_not_found", message, []string{"Run runnerkit up --repo " + repo.FullName + " --host user@host first."})
 		return NewExitError(ExitStateIO, errors.New(message))
 	}
 	renderer.Redactor().Register(redact.MachineRef, repoState.Machine.HostRef)
@@ -78,19 +102,19 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	st := stage.InferFromDoctor(status.Observed, report.Health, checks)
 
 	if opts.fix && jsonOutput {
-		_ = renderer.Error("doctor_fix_json", "doctor --fix cannot be combined with --json (re-run without --json to apply fixes).", nil)
+		_ = doctorJSONError(renderer, jsonOutput, st, "doctor_fix_json", "doctor --fix cannot be combined with --json (re-run without --json to apply fixes).", nil)
 		return NewExitError(ExitInvalidInput, errors.New("doctor fix with json"))
 	}
 
 	cfg, err := LoadUserConfig(deps.StateBaseDir)
 	if err != nil {
-		_ = renderer.Error("user_config_io", "RunnerKit can't read config.json.", []string{err.Error()})
+		_ = doctorJSONError(renderer, jsonOutput, st, "user_config_io", "RunnerKit can't read config.json.", []string{err.Error()})
 		return NewExitError(ExitStateIO, err)
 	}
 	if len(opts.ignore) > 0 {
 		cfg.DoctorIgnoreFindingIDs = mergeUniqueStrings(cfg.DoctorIgnoreFindingIDs, opts.ignore)
 		if err := SaveUserConfig(deps.StateBaseDir, cfg); err != nil {
-			_ = renderer.Error("user_config_io", "RunnerKit can't write config.json.", []string{err.Error()})
+			_ = doctorJSONError(renderer, jsonOutput, st, "user_config_io", "RunnerKit can't write config.json.", []string{err.Error()})
 			return NewExitError(ExitStateIO, err)
 		}
 	}
@@ -100,7 +124,7 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 
 	if opts.fix {
 		if !opts.fixYes && deps.Prompts == nil {
-			_ = renderer.Error("doctor_fix_requires_prompts", "doctor --fix needs an interactive terminal or pass --yes.", nil)
+			_ = doctorJSONError(renderer, jsonOutput, st, "doctor_fix_requires_prompts", "doctor --fix needs an interactive terminal or pass --yes.", nil)
 			return NewExitError(ExitInputRequired, errors.New("doctor fix prompts"))
 		}
 		if err := applyDoctorFixes(ctx, deps, renderer, repo, report, ignoreMap, opts.fixYes, noColor); err != nil {
