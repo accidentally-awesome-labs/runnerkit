@@ -1,0 +1,8 @@
+[sudo] password for maintainer: ==> runnerkit-install.sh (draft) — host aa3fce2cd63f (ubuntu 24.04)
+==> service user: runnerkit-runner
+==> creating service user runnerkit-runner
+==> installing baseline packages (minimal subset for demo)
+debconf: delaying package configuration, since apt-utils is not installed
+/tmp/runnerkit-installer.bjvy4y: parsed OK
+==> installed scoped sudoers fragment at /etc/sudoers.d/runnerkit-installer
+==> done. Host is ready for: runnerkit register --host maintainer@aa3fce2cd63f --repo owner/name

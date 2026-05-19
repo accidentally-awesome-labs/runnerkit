@@ -1,0 +1,56 @@
+===> generated ephemeral ssh keypair at /var/folders/gc/mmsf5hkj517207_c2kskth9r0000gn/T/runnerkit-byo-exp-XXXXXX.Ane3MQW9WM
+===> building runnerkit-byo-host image
+sha256:7fbca817f1a7b5d2040e3de0ce1ff10f5f40e655386b2cd66e595149647379a6
+===> container started: runnerkit-byo-experiment (host port 22822)
+===> sshd reachable (after 1s)
+
+===> PRE-INSTALL: maintainer sudo state
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+sudo: a password is required
+  (expected: password required)
+
+===> RUNNING runnerkit-install.sh on host via 'curl | sudo bash' simulation
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+[sudo] password for maintainer: ==> runnerkit-install.sh (draft) — host cf34729dc85c (ubuntu 24.04)
+==> service user: runnerkit-runner
+==> creating service user runnerkit-runner
+==> installing baseline packages (minimal subset for demo)
+debconf: delaying package configuration, since apt-utils is not installed
+/tmp/runnerkit-installer.YD9Ntf: parsed OK
+==> installed scoped sudoers fragment at /etc/sudoers.d/runnerkit-installer
+==> done. Host is ready for: runnerkit register --host maintainer@cf34729dc85c --repo owner/name
+===> install duration: 11s
+
+===> POST-INSTALL: validate non-TTY sudo for allowlist commands
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+--- baseline (already worked pre-fix) ---
+  apt-get: OK
+  install: OK
+  tar: OK
+--- v1.3.3 fix candidates (new in allowlist) ---
+rm: cannot remove '/tmp/exp-b': Operation not permitted
+  ln: FAIL
+  chmod: OK
+rm: cannot remove '/tmp/exp-dst': Operation not permitted
+  cp: FAIL
+  cat: OK
+--- NOT allowlisted (control — should fail) ---
+  whoami: blocked (expected)
+  ls: blocked (expected)
+
+===> INSTALL FACTS
+Install duration: 11s
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+Container OS: PRETTY_NAME="Ubuntu 24.04.4 LTS"
+NAME="Ubuntu"
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+Service user present?  yes
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+Sudoers file present?  yes
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+Shared-bin dir?        yes
+Warning: Permanently added '[127.0.0.1]:22822' (ED25519) to the list of known hosts.
+Baseline pkgs present? /usr/bin/gcc
+
+===> experiment complete — see install-output.log + post-install-check.log
+===> cleanup

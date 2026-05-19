@@ -1,0 +1,12 @@
+--- baseline (already worked pre-fix) ---
+  apt-get: OK
+  install: OK
+  tar: OK
+--- v1.3.3 fix candidates (new in allowlist) ---
+  ln: OK
+  chmod: OK
+  cp: OK
+  cat: OK
+--- NOT allowlisted (control — should fail) ---
+  whoami: blocked (expected)
+  ls: blocked (expected)
