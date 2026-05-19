@@ -21,30 +21,54 @@ Triggered by maintainer pivoting away from speculative milestone scoping (archit
 
 ## Bugs found
 
-### Bug A — `sudo ln` missing from scoped sudoers allowlist (P0)
+### Bug A — Scoped sudoers allowlist missing FOUR commands (P0, expanded after static analysis)
 
 **Location:** `internal/bootstrap/sudoers.go::RenderSudoersEntry`
 
-**Used by:** `internal/bootstrap/image_setup.go:64, 65, 121`
-- `sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go`
-- `sudo ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt`
-- `sudo ln -sf /usr/local/share/chromedriver-linux64/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver`
+| Missing command | Where used | Smoke surface |
+|---|---|---|
+| `sudo ln` | `internal/bootstrap/image_setup.go:64, 65, 121` — Go binary + chromedriver symlinks | **Confirmed RED in BYO smoke** at `setup_runner_image` |
+| `sudo chmod` | `internal/bootstrap/image_setup.go:143` — `chmod +x /usr/local/bin/geckodriver` | Latent — would fail the same way if smoke reached it (it doesn't because `ln` fails first) |
+| `sudo cp` | `internal/bootstrap/script.go:258, 259` — ephemeral runner log preservation during `down`/`destroy` | Latent for **ephemeral mode** (today's smoke uses persistent) |
+| `sudo cat` | `internal/bootstrap/sudoers.go:120` — `RemoteSudoersReadScript` reads installed fragment for verification | Latent — runs post-install during readback |
 
-**Direct evidence:** `ssh salar@mckee-small-desktop 'sudo -n ln -sf /tmp/a /tmp/b'` → `password required` exit 1. Compare `sudo -n apt-get -h` → exit 0 (allowlisted) and `sudo -n install --version` → exit 0 (preflight probe passes).
+**Direct evidence (`ln`):** `ssh salar@mckee-small-desktop 'sudo -n ln -sf /tmp/a /tmp/b'` → `password required` exit 1. Compare `sudo -n apt-get -h` → exit 0 (allowlisted) and `sudo -n install --version` → exit 0 (preflight probe passes).
 
-**Smoke surface:** `make smoke-live-byo` fails at "Remote bootstrap install" step with `Remote stderr: ... sudo: a terminal is required to read the password`. The error doesn't name which command — it's `ln` invoked inside `setup_runner_image` after `fix_dependencies`.
+**Static analysis** (`/tmp/sudo-static-check.sh` — cross-references all `\bsudo <cmd>` invocations in `internal/bootstrap/*.go` against `RenderSudoersEntry`):
+- Allowlist (basenames): `add-apt-repository apt-get chown curl dnf dpkg gpg install mkdir rm sha256sum su systemctl tar tee unzip useradd usermod yum`
+- Missing (filtering comment-text noise): `ln`, `chmod`, `cp`, `cat`
+- Sudo commands inside `RemoteVisudoCheckScript` (`mktemp`, `mv`, `visudo`, `tee`, `chmod`) run *during* `byo-prepare` with Path-B password and so don't need allowlist coverage.
 
-**Impact:** **Every Ubuntu/Debian BYO host using Path C scoped sudoers cannot complete `runnerkit up`** since `setup_runner_image` is gated only by `isUbuntuLike(opts.OSReleaseID)`. Path B (interactive password) would work but requires a TTY, which non-TTY automation contexts (smoke, agent) can't provide.
+**Smoke surface (today):** `make smoke-live-byo` fails at "Remote bootstrap install" step with `Remote stderr: ... sudo: a terminal is required to read the password`. The error doesn't name the command — it's `ln` inside `setup_runner_image` after `fix_dependencies`.
 
-**Fix sketch:**
+**Impact:**
+- **Every Ubuntu/Debian BYO host using Path C scoped sudoers cannot complete `runnerkit up`** since `setup_runner_image` is gated only by `isUbuntuLike(opts.OSReleaseID)`.
+- Ephemeral-mode `down`/`destroy` log preservation latently broken (`sudo cp`).
+- Path B (interactive password) works but requires a TTY — non-TTY automation can't proceed.
+
+**Fix sketch (immediate v1.3.3 patch):**
 ```go
-// internal/bootstrap/sudoers.go
-return fmt.Sprintf(`...
-  /bin/ln, /usr/bin/ln, \      // ADD THIS LINE
-  /bin/su, /usr/bin/su, \
-  ...`)
+// internal/bootstrap/sudoers.go::RenderSudoersEntry
+return fmt.Sprintf(`# /etc/sudoers.d/runnerkit-installer (managed by runnerkit install.sh)
+%s ALL=(root) NOPASSWD: \
+  ... existing entries ...
+  /bin/ln, /usr/bin/ln, \
+  /bin/chmod, /usr/bin/chmod, \
+  /bin/cp, /usr/bin/cp, \
+  /bin/cat, /usr/bin/cat, \
+  ... existing entries ...
+`, user)
 ```
-One-line patch; size ~14 bytes in the sudoers fragment. Could ship as **v1.3.3**.
+
+**Security caveat:** unconditional `sudo cp` and `sudo cat` are latent privilege escalation vectors (read/write any file as root). Naively widening the allowlist trades reliability for attack surface. A safer expansion uses path-scoped wildcards similar to the existing `/opt/actions-runner/runnerkit-*/svc.sh` pattern:
+```
+  /usr/local/bin/ln, /usr/local/bin/chmod, \
+  /var/lib/runnerkit/ephemeral/logs/*, \           // for sudo cp targets
+  /etc/sudoers.d/runnerkit-installer, \            // for sudo cat readback
+```
+This requires deeper review and may be the right v1.4.0 work, not v1.3.3 quick-fix.
+
+**SEED-001 validation:** The allowlist grows every time bootstrap gains a step. This is the architectural problem SEED-001 calls out — the scoped-sudoers approach doesn't scale. Either we keep expanding the allowlist (and the attack surface), or we move the privileged setup to `install.sh` running once on the host with a single sudo prompt.
 
 ### Bug B — Stale on-disk sudoers fragment not auto-refreshed (P1)
 
