@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ops"
@@ -75,11 +73,11 @@ func TestRecoverDryRunRestartReinstallMissingYesAndHostKeyBlock(t *testing.T) {
 
 	remoteExec = recoveryRemote("not-found")
 	_, _, err = executeStatusForTest(t, stateDir, github, remoteExec, "recover", "--repo", repo.Repo.FullName, "--reinstall-service", "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("recover reinstall returned error: %v", err)
+	if err == nil || ExitCode(err) != ExitInvalidInput {
+		t.Fatalf("recover --reinstall-service must be refused (A-06b): ExitCode=%d err=%v", ExitCode(err), err)
 	}
-	if !commandIDsContain(remoteExec, "recover.service.reinstall") || !commandIDsContain(remoteExec, "recover.service.verify") {
-		t.Fatalf("reinstall did not run expected commands: %#v", remoteExec.CommandIDs())
+	if len(remoteExec.CommandIDs()) != 0 {
+		t.Fatalf("refused reinstall ran remote commands: %#v", remoteExec.CommandIDs())
 	}
 
 	_, _, err = executeStatusForTest(t, stateDir, github, recoveryRemote("failed"), "recover", "--repo", repo.Repo.FullName, "--restart-service", "--no-color")
@@ -97,40 +95,43 @@ func TestRecoverDryRunRestartReinstallMissingYesAndHostKeyBlock(t *testing.T) {
 	}
 }
 
-func TestRecoverReregisterUpdatesGitHubRunnerID(t *testing.T) {
-	stateDir := t.TempDir()
-	repo := saveHealthyState(t, stateDir)
-	removalToken := strings.Join([]string{"removal", "token", "recover", "secret"}, "-")
-	registrationToken := strings.Join([]string{"registration", "token", "recover", "secret"}, "-")
-	github := &testsupport.GitHubService{RemovalToken: gh.RunnerToken{Token: removalToken, ExpiresAt: time.Now().Add(time.Hour)}, RegistrationToken: gh.RunnerToken{Token: registrationToken, ExpiresAt: time.Now().Add(time.Hour)}, Runners: []gh.Runner{{ID: 456, Name: repo.Runner.Name, Status: "online", Labels: repo.Runner.Labels}}}
-	remoteExec := recoveryRemote("active")
-	out, errOut, err := executeStatusForTest(t, stateDir, github, remoteExec, "--json", "recover", "--repo", repo.Repo.FullName, "--reregister", "--yes", "--no-color")
-	if err != nil {
-		t.Fatalf("recover reregister returned error: %v\nstderr=%s", err, errOut)
-	}
-	for _, want := range []string{"recover.service.stop", "recover.service.uninstall", "recover.runner.remove", "recover.runner.configure", "recover.runner.start"} {
-		if !commandIDsContain(remoteExec, want) {
-			t.Fatalf("reregister missing command %q in %#v", want, remoteExec.CommandIDs())
+// A-06b (P1-10): --reregister and --reinstall-service are refused with
+// command_disabled before any GitHub, SSH or state access, and print the
+// manual re-register steps.
+func TestRecoverDisabledActionsRefuseWithManualSteps(t *testing.T) {
+	for _, flag := range []string{"--reregister", "--reinstall-service"} {
+		for _, dryRun := range []bool{false, true} {
+			stateDir := t.TempDir()
+			repo := saveHealthyState(t, stateDir)
+			before, err := os.ReadFile(state.NewStore(stateDir).Path())
+			if err != nil {
+				t.Fatalf("read state: %v", err)
+			}
+			github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+			remoteExec := recoveryRemote("active")
+			args := []string{"recover", "--repo", repo.Repo.FullName, flag, "--yes", "--no-color"}
+			if dryRun {
+				args = append(args, "--dry-run")
+			}
+			_, errOut, err := executeStatusForTest(t, stateDir, github, remoteExec, args...)
+			if err == nil || ExitCode(err) != ExitInvalidInput {
+				t.Fatalf("%s dry-run=%v: ExitCode=%d err=%v", flag, dryRun, ExitCode(err), err)
+			}
+			for _, want := range []string{"disabled", "runnerkit down --repo owner/repo", "runnerkit up --repo owner/repo"} {
+				if !strings.Contains(errOut, want) {
+					t.Fatalf("%s refusal missing %q:\n%s", flag, want, errOut)
+				}
+			}
+			if len(remoteExec.CommandIDs()) != 0 || remoteExec.ProbeHostKeyCalls != 0 {
+				t.Fatalf("%s refusal touched the host: %#v", flag, remoteExec.CommandIDs())
+			}
+			if github.CreateRegistrationTokenCalls != 0 || github.CreateRemovalTokenCalls != 0 || github.DeleteRunnerCalls != 0 || github.ListRunnersCalls != 0 {
+				t.Fatalf("%s refusal called GitHub: %#v", flag, github)
+			}
+			after, err := os.ReadFile(state.NewStore(stateDir).Path())
+			if err != nil || string(after) != string(before) {
+				t.Fatalf("%s refusal changed state.json (err=%v)", flag, err)
+			}
 		}
-	}
-	if !strings.Contains(out, `"github_runner_id":456`) || !strings.Contains(out, `"state_updated":true`) {
-		t.Fatalf("recover json missing updated runner ID:\n%s", out)
-	}
-	stateBytes, err := os.ReadFile(state.NewStore(stateDir).Path())
-	if err != nil {
-		t.Fatalf("read state: %v", err)
-	}
-	for _, raw := range []string{removalToken, registrationToken} {
-		if strings.Contains(out, raw) || strings.Contains(errOut, raw) || strings.Contains(string(stateBytes), raw) {
-			t.Fatalf("token leaked: %q\nstdout=%s\nstderr=%s\nstate=%s", raw, out, errOut, stateBytes)
-		}
-	}
-	var persisted state.State
-	if err := json.Unmarshal(stateBytes, &persisted); err != nil {
-		t.Fatalf("state json invalid: %v", err)
-	}
-	updated := persisted.Repositories[0]
-	if updated.Cleanup.GitHubRunnerID != 456 || len(updated.Operations) == 0 || updated.Operations[0].Artifact != "github_runner_id" {
-		t.Fatalf("state not updated with checkpoint: %#v", updated)
 	}
 }

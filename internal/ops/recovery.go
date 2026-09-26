@@ -9,10 +9,61 @@ import (
 type RecoveryAction string
 
 const (
-	ActionRestartService   RecoveryAction = "restart_service"
+	ActionRestartService RecoveryAction = "restart_service"
+	// ActionReinstallService and ActionReregisterRunner are disabled in
+	// v1.3.4 (P1-10): reinstall ran `svc.sh install` on top of an existing
+	// unit, and reregister uninstalled the service and then only ran
+	// `svc.sh start`. The planner never recommends them and refuses them
+	// when requested; the constants stay for the flag and JSON vocabulary.
 	ActionReinstallService RecoveryAction = "reinstall_service"
 	ActionReregisterRunner RecoveryAction = "reregister_runner"
 )
+
+// DisabledRecoveryAction reports whether action is refused in this release.
+func DisabledRecoveryAction(action RecoveryAction) bool {
+	return action == ActionReinstallService || action == ActionReregisterRunner
+}
+
+// IsCloudState reports whether the saved state describes a RunnerKit-managed
+// cloud server (Hetzner). Cleanup and re-registration for those go through
+// `runnerkit destroy`, never `runnerkit down`, which would drop the only
+// record of a server that keeps billing.
+func IsCloudState(repoState state.RepositoryState) bool {
+	return repoState.Provider.Kind == "hetzner" || repoState.Provider.Name == "hetzner"
+}
+
+// CleanupDryRunCommand is the cleanup preview matching the saved state:
+// `destroy --dry-run` for RunnerKit-managed cloud servers, `down --dry-run`
+// otherwise.
+func CleanupDryRunCommand(repoState state.RepositoryState) string {
+	repo := repoState.Repo.FullName
+	if IsCloudState(repoState) {
+		return "runnerkit destroy --repo " + repo + " --dry-run"
+	}
+	return "runnerkit down --repo " + repo + " --dry-run"
+}
+
+// ManualReregisterSteps is the supported way to reinstall or re-register a
+// runner while `upgrade-runner`, `doctor --fix`, `recover --reinstall-service`
+// and `recover --reregister` are disabled: remove the runner with the
+// cleanup command, then run `runnerkit up` again, which requests a fresh
+// registration token and installs the service from scratch. repo may be ""
+// when it is not known yet.
+func ManualReregisterSteps(repo string, cloud bool) []string {
+	if strings.TrimSpace(repo) == "" {
+		repo = "owner/name"
+	}
+	if cloud {
+		return []string{
+			"Re-register by hand: run runnerkit destroy --repo " + repo + " --dry-run to review, then runnerkit destroy --repo " + repo + " (removes the GitHub registration and the Hetzner server).",
+			"Then run runnerkit up --repo " + repo + " again with your original flags to create and register a fresh runner.",
+		}
+	}
+	return []string{
+		"Re-register by hand: run runnerkit down --repo " + repo + " --dry-run to review, then runnerkit down --repo " + repo + " (removes the GitHub registration and the service).",
+		"Then run runnerkit up --repo " + repo + " --host user@host to install and register a fresh runner.",
+	}
+}
 
 type RecoveryStep struct {
 	ID                   string         `json:"id"`
@@ -33,6 +84,14 @@ type RecoveryPlan struct {
 
 func BuildRecoveryPlan(repoState state.RepositoryState, observed ObservedRunner, requested []RecoveryAction, dryRun bool) RecoveryPlan {
 	plan := RecoveryPlan{Repo: repoState.Repo.FullName, RunnerName: repoState.Runner.Name, DryRun: dryRun, Steps: []RecoveryStep{}}
+	manual := strings.Join(ManualReregisterSteps(repoState.Repo.FullName, IsCloudState(repoState)), " ")
+	for _, action := range requested {
+		if DisabledRecoveryAction(action) {
+			plan.Blocked = true
+			plan.BlockReason = "recover " + string(action) + " is disabled in this release (known issue). " + manual
+			return plan
+		}
+	}
 	if observed.SSH.HostKey == "mismatch" {
 		plan.Blocked = true
 		plan.BlockReason = "SSH host key mismatch; verify the machine identity before recovery."
@@ -45,10 +104,13 @@ func BuildRecoveryPlan(repoState state.RepositoryState, observed ObservedRunner,
 	}
 	actions := append([]RecoveryAction(nil), requested...)
 	if len(actions) == 0 {
-		action, ok := recommendedRecoveryAction(repoState, observed)
+		action, ok := recommendedRecoveryAction(observed)
 		if !ok {
 			plan.Blocked = true
 			plan.BlockReason = "No recovery action is recommended; run runnerkit doctor --repo " + repoState.Repo.FullName + "."
+			if needsReregistration(observed) {
+				plan.BlockReason = "The runner needs a service reinstall or re-registration, which recover cannot do in this release. " + manual
+			}
 			return plan
 		}
 		actions = append(actions, action)
@@ -59,29 +121,31 @@ func BuildRecoveryPlan(repoState state.RepositoryState, observed ObservedRunner,
 	return plan
 }
 
-func recommendedRecoveryAction(repoState state.RepositoryState, observed ObservedRunner) (RecoveryAction, bool) {
+// recommendedRecoveryAction only ever recommends restart_service. Cases that
+// need a reinstall or re-registration are reported by needsReregistration
+// with manual steps instead (A-06b).
+func recommendedRecoveryAction(observed ObservedRunner) (RecoveryAction, bool) {
+	if serviceMissing(observed.Service) {
+		return "", false
+	}
 	if serviceFailed(observed.Service) || (observed.Service.ActiveState != "" && observed.Service.ActiveState != "active") {
 		return ActionRestartService, true
 	}
-	if (observed.Service.LoadState == "not-found" || strings.Contains(strings.ToLower(observed.Service.Error), "missing")) && repoState.Machine.InstallPath != "" {
-		return ActionReinstallService, true
-	}
-	if !observed.GitHub.Found || !observed.Labels.Match {
-		if repoState.Machine.InstallPath != "" {
-			return ActionReregisterRunner, true
-		}
-	}
 	return "", false
+}
+
+func needsReregistration(observed ObservedRunner) bool {
+	return serviceMissing(observed.Service) || !observed.GitHub.Found || !observed.Labels.Match
+}
+
+func serviceMissing(service ServiceFact) bool {
+	return service.LoadState == "not-found" || strings.Contains(strings.ToLower(service.Error), "missing")
 }
 
 func recoveryStep(repoState state.RepositoryState, action RecoveryAction) RecoveryStep {
 	switch action {
 	case ActionRestartService:
 		return RecoveryStep{ID: "restart_service", Action: action, Description: "Restart systemd service " + repoState.Machine.ServiceName, CommandID: "recover.service.restart", RequiresConfirmation: true}
-	case ActionReinstallService:
-		return RecoveryStep{ID: "reinstall_service", Action: action, Description: "Reinstall and start service from " + repoState.Machine.InstallPath, CommandID: "recover.service.reinstall", RequiresConfirmation: true}
-	case ActionReregisterRunner:
-		return RecoveryStep{ID: "reregister_runner", Action: action, Description: "Re-register " + repoState.Runner.Name + " with saved labels and work dir " + repoState.Machine.WorkDir, CommandID: "recover.runner.configure", RequiresConfirmation: true}
 	default:
 		return RecoveryStep{ID: string(action), Action: action, Description: string(action), RequiresConfirmation: true}
 	}

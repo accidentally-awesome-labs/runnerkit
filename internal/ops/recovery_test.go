@@ -19,14 +19,8 @@ func TestBuildRecoveryPlanSelectsActionsAndBlocksUnsafeCases(t *testing.T) {
 	if len(plan.Steps) != 1 || plan.Steps[0].Action != ActionRestartService || plan.Steps[0].Description != "Restart systemd service actions.runner.runnerkit-owner-repo-local.service" {
 		t.Fatalf("failed service should select restart_service: %#v", plan)
 	}
-	observed = baseRecoveryObserved(repo)
-	observed.GitHub = GitHubFact{Found: false}
-	plan = BuildRecoveryPlan(repo, observed, nil, false)
-	if len(plan.Steps) != 1 || plan.Steps[0].Action != ActionReregisterRunner {
-		t.Fatalf("missing GitHub runner should select reregister_runner: %#v", plan)
-	}
-	plan = BuildRecoveryPlan(repo, baseRecoveryObserved(repo), []RecoveryAction{ActionReinstallService}, false)
-	if len(plan.Steps) != 1 || plan.Steps[0].Action != ActionReinstallService {
+	plan = BuildRecoveryPlan(repo, baseRecoveryObserved(repo), []RecoveryAction{ActionRestartService}, false)
+	if len(plan.Steps) != 1 || plan.Steps[0].Action != ActionRestartService {
 		t.Fatalf("explicit action should be preserved: %#v", plan)
 	}
 	observed = baseRecoveryObserved(repo)

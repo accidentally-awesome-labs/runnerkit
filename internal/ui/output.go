@@ -116,6 +116,7 @@ func (r *Renderer) Warning(title string, body []string, next string) error {
 }
 
 func (r *Renderer) Error(code string, message string, remediation []string) error {
+	MarkErrorRendered()
 	if r.format == FormatJSON {
 		return r.JSON(map[string]any{
 			"ok": false,
@@ -162,6 +163,9 @@ func objectWithRedactionsFlag(v any) (any, error) {
 		return nil, err
 	}
 	if object, ok := payload.(map[string]any); ok {
+		if okValue, present := object["ok"]; present && okValue == false {
+			MarkErrorRendered()
+		}
 		object["redactions_applied"] = true
 		return object, nil
 	}

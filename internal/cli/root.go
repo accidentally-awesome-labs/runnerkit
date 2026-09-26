@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	gh "github.com/accidentally-awesome-labs/runnerkit/internal/github"
@@ -14,6 +16,7 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/rklog"
+	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/nextaction"
 	"github.com/spf13/cobra"
@@ -64,6 +67,12 @@ func normalizeDependencies(deps Dependencies) Dependencies {
 	}
 	if deps.Logger == nil {
 		deps.Logger = rklog.NewFromEnv(deps.Err)
+	}
+	// config.json (doctor --ignore) and sessions/ (BYO checklists)
+	// resolve relative to StateBaseDir. Leaving it "" made both land in
+	// the process CWD, often the user's repository checkout (P1-3).
+	if strings.TrimSpace(deps.StateBaseDir) == "" {
+		deps.StateBaseDir = rkstate.DefaultBaseDir()
 	}
 	if deps.Clock == nil {
 		deps.Clock = time.Now
@@ -128,7 +137,38 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.SetIn(deps.In)
 	root.SetOut(deps.Out)
 	root.SetErr(deps.Err)
-	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+	// --version prints exactly "runnerkit <version>" (P1-1: it used to be a
+	// silent no-op because Version was never set).
+	root.Version = deps.Version
+	root.SetVersionTemplate("runnerkit {{.Version}}\n")
+	// Unknown subcommands exit 2 like other usage errors. Cobra's own check
+	// (legacyArgs) returns a plain error that maps to exit 1; keep its wording
+	// and "Did you mean this?" suggestions.
+	root.SuggestionsMinimumDistance = 2
+	root.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		var suggestions strings.Builder
+		if names := cmd.SuggestionsFor(args[0]); len(names) > 0 {
+			suggestions.WriteString("\n\nDid you mean this?\n")
+			for _, name := range names {
+				suggestions.WriteString("\t" + name + "\n")
+			}
+		}
+		return NewExitError(ExitInvalidInput, fmt.Errorf("unknown command %q for %q%s", args[0], cmd.CommandPath(), suggestions.String()))
+	}
+	// SilenceErrors stays on so each failure is printed exactly once: flag
+	// errors are rendered here, command errors by their RunE, and anything
+	// left unrendered by cmd/runnerkit via ReportUnrenderedError.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		asJSON := jsonOutput || argsRequestJSON(os.Args[1:])
+		message := "invalid_flag: " + err.Error()
+		if asJSON {
+			message = err.Error()
+		}
+		renderer := newRenderer(deps, asJSON, noColor)
+		_ = renderer.Error("invalid_flag", message, []string{"Run '" + cmd.CommandPath() + " --help' for usage."})
 		return NewExitError(ExitInvalidInput, err)
 	})
 	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
@@ -174,6 +214,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newStateCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpgradeCommand(deps, &jsonOutput, &noColor))
 	root.AddCommand(newUpgradeRunnerCommand(deps, &jsonOutput, &noColor))
+	root.AddCommand(newRemovedByoPrepareCommand(deps, &noColor))
 
 	return root
 }

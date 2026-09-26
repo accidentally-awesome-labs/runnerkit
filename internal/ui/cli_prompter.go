@@ -13,8 +13,9 @@ import (
 )
 
 // CLIPrompter is the production-binary Prompter used by cmd/runnerkit
-// for interactive Confirm/Select/Password input. It satisfies both
-// ui.Prompter (Confirm, Select) and ui.PasswordPrompter (Password).
+// for interactive Confirm/Select/Input/Password input. It satisfies
+// ui.Prompter (Confirm, Select), ui.InputPrompter (Input) and
+// ui.PasswordPrompter (Password).
 //
 // Password collection uses golang.org/x/term.ReadPassword on the
 // underlying *os.File's fd to disable terminal echo. If the input
@@ -27,6 +28,16 @@ type CLIPrompter struct {
 	out    io.Writer
 	reader *bufio.Reader
 }
+
+// Compile-time guards: the production prompter must keep satisfying every
+// optional capability the CLI type-asserts for. v1.3.x shipped without
+// Input, so typed confirmations (destroy, --replace, BYO host entry)
+// failed in real terminals while tests using fakes passed.
+var (
+	_ Prompter         = (*CLIPrompter)(nil)
+	_ InputPrompter    = (*CLIPrompter)(nil)
+	_ PasswordPrompter = (*CLIPrompter)(nil)
+)
 
 // NewCLIPrompter returns a CLIPrompter that reads from in and writes
 // prompts to out. Pass os.Stdin / os.Stdout in production. Tests may
@@ -97,6 +108,18 @@ func (p *CLIPrompter) Select(_ context.Context, prompt Prompt, options []Option)
 		return "", fmt.Errorf("ui: selection %d out of range (expected 1-%d)", n, len(options))
 	}
 	return options[n-1].Value, nil
+}
+
+// Input renders prompt.Help (when set) and prompt.Message, reads one
+// line and returns it with the trailing \r\n removed. Surrounding
+// spaces are preserved so callers comparing typed confirmation phrases
+// decide for themselves how strict to be.
+func (p *CLIPrompter) Input(_ context.Context, prompt Prompt) (string, error) {
+	if strings.TrimSpace(prompt.Help) != "" {
+		fmt.Fprintln(p.out, prompt.Help)
+	}
+	fmt.Fprint(p.out, prompt.Message+" ")
+	return p.readLine()
 }
 
 // Password reads a sensitive value from the underlying *os.File with

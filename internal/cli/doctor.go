@@ -39,8 +39,10 @@ func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "show pass findings")
 	cmd.Flags().BoolVar(&opts.deep, "deep", false, "collect extra host evidence (e.g. journal OOM hints) even when the runner looks healthy")
 	cmd.Flags().BoolVar(&opts.withLogSnippets, "with-log-snippets", false, "with heuristics, include short matching log lines (use when sharing diagnostics)")
-	cmd.Flags().BoolVar(&opts.fix, "fix", false, "attempt safe auto-remediation for supported findings")
-	cmd.Flags().BoolVar(&opts.fixYes, "yes", false, "with --fix, skip confirmation prompts (use only in trusted automation)")
+	// --fix only ever ran upgrade-runner, which is disabled (A-06a); the
+	// flags stay so existing scripts get the explanation.
+	cmd.Flags().BoolVar(&opts.fix, "fix", false, "disabled in this release (known issue); prints the manual steps")
+	cmd.Flags().BoolVar(&opts.fixYes, "yes", false, "ignored; doctor --fix is disabled")
 	cmd.Flags().StringSliceVar(&opts.ignore, "ignore", nil, "persistently ignore a doctor finding id (repeatable flag)")
 	return cmd
 }
@@ -72,6 +74,9 @@ func doctorJSONError(renderer *ui.Renderer, jsonOutput bool, st stage.Stage, cod
 func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOptions) error {
 	defer maybeShowUpdateNotice(deps, jsonOutput)
 	renderer := newRenderer(deps, jsonOutput, noColor)
+	if opts.fix {
+		return refuseDoctorFix(renderer, jsonOutput, opts.repo)
+	}
 	ctx := context.Background()
 	repo, err := resolveReadOnlyRepo(ctx, deps, renderer, opts.repo, "Pass --repo owner/name or run runnerkit doctor from a GitHub repository.")
 	if err != nil {
@@ -101,11 +106,6 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	appendSharedHostDoctorFinding(&report, store, repoState)
 	st := stage.InferFromDoctor(status.Observed, report.Health, checks)
 
-	if opts.fix && jsonOutput {
-		_ = doctorJSONError(renderer, jsonOutput, st, "doctor_fix_json", "doctor --fix cannot be combined with --json (re-run without --json to apply fixes).", nil)
-		return NewExitError(ExitInvalidInput, errors.New("doctor fix with json"))
-	}
-
 	cfg, err := LoadUserConfig(deps.StateBaseDir)
 	if err != nil {
 		_ = doctorJSONError(renderer, jsonOutput, st, "user_config_io", "RunnerKit can't read config.json.", []string{err.Error()})
@@ -121,16 +121,6 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	ignoreMap := doctorIgnoreSet(cfg.DoctorIgnoreFindingIDs)
 	display := report
 	display.Findings = filterDoctorFindings(report.Findings, ignoreMap)
-
-	if opts.fix {
-		if !opts.fixYes && deps.Prompts == nil {
-			_ = doctorJSONError(renderer, jsonOutput, st, "doctor_fix_requires_prompts", "doctor --fix needs an interactive terminal or pass --yes.", nil)
-			return NewExitError(ExitInputRequired, errors.New("doctor fix prompts"))
-		}
-		if err := applyDoctorFixes(ctx, deps, renderer, repo, report, ignoreMap, opts.fixYes, noColor); err != nil {
-			return NewExitError(ExitSafetyGate, err)
-		}
-	}
 
 	if jsonOutput {
 		// Nil slices in map[string]any marshal as JSON null; tooling expects arrays.

@@ -7,10 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/errcodes"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ops"
-	"github.com/accidentally-awesome-labs/runnerkit/internal/redact"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
@@ -41,14 +39,19 @@ func newRecoverCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobr
 	cmd.Flags().BoolVar(&opts.yes, "yes", false, "apply the displayed recovery plan")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "preview recovery without mutation")
 	cmd.Flags().BoolVar(&opts.restartService, "restart-service", false, "restart the recorded systemd service")
-	cmd.Flags().BoolVar(&opts.reinstallService, "reinstall-service", false, "reinstall and start the recorded service")
-	cmd.Flags().BoolVar(&opts.reregister, "reregister", false, "re-register the runner with fresh GitHub tokens")
+	// --reinstall-service and --reregister stay registered so existing
+	// scripts get the explanation below instead of an unknown-flag error.
+	cmd.Flags().BoolVar(&opts.reinstallService, "reinstall-service", false, "disabled in this release (known issue); prints the manual steps")
+	cmd.Flags().BoolVar(&opts.reregister, "reregister", false, "disabled in this release (known issue); prints the manual steps")
 	return cmd
 }
 
 func runRecover(deps Dependencies, jsonOutput bool, noColor bool, opts *recoverOptions) error {
 	renderer := newRenderer(deps, jsonOutput, noColor)
 	ctx := context.Background()
+	if opts.reinstallService || opts.reregister {
+		return refuseDisabledRecoverAction(renderer, opts)
+	}
 	repo, err := resolveReadOnlyRepo(ctx, deps, renderer, opts.repo, "Pass --repo owner/name or run runnerkit recover from a GitHub repository.")
 	if err != nil {
 		return err
@@ -111,6 +114,24 @@ func runRecover(deps Dependencies, jsonOutput bool, noColor bool, opts *recoverO
 	return renderer.Step(1, 1, "recovery complete", lines...)
 }
 
+// refuseDisabledRecoverAction rejects `recover --reinstall-service` and
+// `recover --reregister` before any GitHub, SSH or state access (A-06b,
+// P1-10). In v1.3.3 reinstall ran `svc.sh install` on top of the existing
+// unit, and reregister uninstalled the service and then only ran
+// `svc.sh start`, leaving the runner without a service.
+func refuseDisabledRecoverAction(renderer *ui.Renderer, opts *recoverOptions) error {
+	flag := "--reregister"
+	if opts.reinstallService {
+		flag = "--reinstall-service"
+	}
+	message := "recover " + flag + " is disabled in this release (known issue): in v1.3.3 and earlier it could leave the runner without an installed service."
+	remediation := []string{"recover --restart-service still works when the service exists but is stopped or failed."}
+	remediation = append(remediation, ops.ManualReregisterSteps(opts.repo, false)...)
+	remediation = append(remediation, "For a RunnerKit-created Hetzner server use runnerkit destroy instead of runnerkit down.")
+	_ = renderer.Error("command_disabled", message, remediation)
+	return NewExitError(ExitInvalidInput, errors.New("recover "+flag+" is disabled"))
+}
+
 func requestedRecoveryActions(opts *recoverOptions) []ops.RecoveryAction {
 	var actions []ops.RecoveryAction
 	if opts.restartService {
@@ -166,90 +187,13 @@ func applyRecoveryPlan(ctx context.Context, deps Dependencies, renderer *ui.Rend
 				runnerID = runner.ID
 			}
 			results = append(results, recoveryResult{Step: string(step.Action), Status: "done"})
-		case ops.ActionReinstallService:
-			script := "cd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh install runnerkit-runner && sudo ./svc.sh start && sudo ./svc.sh status"
-			if err := runRecoveryCommand(ctx, deps.RemoteExecutor, target, remote.Command{ID: "recover.service.reinstall", Script: script, Timeout: 60 * time.Second}); err != nil {
-				return nil, false, runnerID, recoveryCommandError(renderer, err)
-			}
-			if err := runRecoveryCommand(ctx, deps.RemoteExecutor, target, remote.Command{ID: "recover.service.verify", Script: "systemctl is-active " + shellQuote(resolvedUnit), Timeout: 15 * time.Second}); err != nil {
-				return nil, false, runnerID, recoveryCommandError(renderer, err)
-			}
-			if runner, ok, err := waitForRunnerOnline(ctx, deps, repoState.Repo, repoState.Runner.Name, repoState.Runner.Labels); err != nil {
-				return nil, false, runnerID, err
-			} else if !ok {
-				return nil, false, runnerID, NewExitError(ExitSafetyGate, errors.New("runner_online_timeout"))
-			} else {
-				runnerID = runner.ID
-			}
-			results = append(results, recoveryResult{Step: string(step.Action), Status: "done"})
-		case ops.ActionReregisterRunner:
-			updated, id, reregisterResults, err := applyReregister(ctx, deps, renderer, store, target, repoState)
-			results = append(results, reregisterResults...)
-			if err != nil {
-				return nil, false, runnerID, err
-			}
-			stateUpdated = stateUpdated || updated
-			runnerID = id
+		default:
+			// reinstall_service and reregister_runner are refused before a
+			// plan is applied (A-06b); never run an unknown action.
+			return nil, false, runnerID, NewExitError(ExitInvalidInput, fmt.Errorf("recovery action %q is not supported", step.Action))
 		}
 	}
 	return results, stateUpdated, runnerID, nil
-}
-
-func applyReregister(ctx context.Context, deps Dependencies, renderer *ui.Renderer, store rkstate.Store, target remote.Target, repoState rkstate.RepositoryState) (bool, int64, []recoveryResult, error) {
-	var results []recoveryResult
-	resolvedUnit := ops.ResolveActionsRunnerSystemdUnit(ctx, deps.RemoteExecutor, target, repoState.Machine.ServiceName)
-	_ = runRecoveryCommand(ctx, deps.RemoteExecutor, target, remote.Command{ID: "recover.service.stop", Script: "sudo systemctl stop " + shellQuote(resolvedUnit) + " || true", Timeout: 30 * time.Second})
-	results = append(results, recoveryResult{Step: "recover.service.stop", Status: "done"})
-	teardownScript := renderBYORunnerSvcTeardownScript(repoState.Machine.InstallPath, resolvedUnit)
-	_ = runRecoveryCommand(ctx, deps.RemoteExecutor, target, remote.Command{ID: "recover.service.uninstall", Script: teardownScript, Timeout: 60 * time.Second})
-	results = append(results, recoveryResult{Step: "recover.service.uninstall", Status: "done"})
-	removal, err := deps.GitHub.CreateRemovalToken(ctx, repoState.Repo)
-	if err != nil {
-		_ = renderer.Error("github_permission_denied", "RunnerKit can't create a fresh runner removal token.", []string{"Verify GitHub credentials can manage repository runners for " + repoState.Repo.FullName + "."})
-		return false, repoState.Cleanup.GitHubRunnerID, results, NewExitError(ExitGitHubAuth, err)
-	}
-	renderer.Redactor().Register(redact.RunnerRemovalToken, removal.Token)
-	removeResult, removeErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "recover.runner.remove", Script: bootstrap.RenderRemoveConfigScript(repoState.Machine.InstallPath, bootstrap.DefaultServiceUser), Env: map[string]string{"RUNNERKIT_REMOVAL_TOKEN": removal.Token}, RedactArgs: []string{removal.Token}, Timeout: 60 * time.Second})
-	if removeErr != nil || removeResult.ExitCode != 0 {
-		text := removeResult.Stdout + " " + removeResult.Stderr
-		if !isAlreadyAbsent(text) {
-			return false, repoState.Cleanup.GitHubRunnerID, results, recoveryCommandError(renderer, errors.New("recover.runner.remove failed"))
-		}
-		results = append(results, recoveryResult{Step: "recover.runner.remove", Status: "skipped", Message: "already absent"})
-	} else {
-		results = append(results, recoveryResult{Step: "recover.runner.remove", Status: "done"})
-	}
-	registration, err := deps.GitHub.CreateRegistrationToken(ctx, repoState.Repo)
-	if err != nil {
-		_ = renderer.Error("github_permission_denied", "RunnerKit can't create a fresh runner registration token.", []string{"Verify GitHub credentials can manage repository runners for " + repoState.Repo.FullName + "."})
-		return false, repoState.Cleanup.GitHubRunnerID, results, NewExitError(ExitGitHubAuth, err)
-	}
-	renderer.Redactor().Register(redact.RunnerRegistrationToken, registration.Token)
-	configureScript := bootstrap.RenderReconfigureScript(bootstrap.Options{RunnerName: repoState.Runner.Name, RepoURL: "https://github.com/" + repoState.Repo.FullName, Labels: repoState.Runner.Labels, InstallPath: repoState.Machine.InstallPath, WorkDir: repoState.Machine.WorkDir, ServiceUser: bootstrap.DefaultServiceUser})
-	if err := runRecoveryCommand(ctx, deps.RemoteExecutor, target, remote.Command{ID: "recover.runner.configure", Script: configureScript, Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": registration.Token}, RedactArgs: []string{registration.Token}, Timeout: 60 * time.Second}); err != nil {
-		return false, repoState.Cleanup.GitHubRunnerID, results, recoveryCommandError(renderer, err)
-	}
-	results = append(results, recoveryResult{Step: "recover.runner.configure", Status: "done"})
-	if err := runRecoveryCommand(ctx, deps.RemoteExecutor, target, remote.Command{ID: "recover.runner.start", Script: "cd " + shellQuote(repoState.Machine.InstallPath) + " && sudo ./svc.sh start && sudo ./svc.sh status", Timeout: 60 * time.Second}); err != nil {
-		return false, repoState.Cleanup.GitHubRunnerID, results, recoveryCommandError(renderer, err)
-	}
-	results = append(results, recoveryResult{Step: "recover.runner.start", Status: "done"})
-	runner, ok, err := waitForRunnerOnline(ctx, deps, repoState.Repo, repoState.Runner.Name, repoState.Runner.Labels)
-	if err != nil {
-		return false, repoState.Cleanup.GitHubRunnerID, results, err
-	}
-	if !ok {
-		return false, repoState.Cleanup.GitHubRunnerID, results, NewExitError(ExitSafetyGate, errors.New("runner_online_timeout"))
-	}
-	repoState.Cleanup.GitHubRunnerID = runner.ID
-	repoState.Operations = append(repoState.Operations, rkstate.OperationCheckpoint{Command: "recover", Artifact: "github_runner_id", Status: "updated", Message: "re-registered runner", UpdatedAt: deps.Clock()})
-	repoState.UpdatedAt = deps.Clock()
-	if err := store.UpdateRepository(repoState); err != nil {
-		_ = renderer.Error("state_io_failed", "RunnerKit can't save recovered runner state.", []string{"Check permissions for " + store.Path() + "."})
-		return false, repoState.Cleanup.GitHubRunnerID, results, NewExitError(ExitStateIO, err)
-	}
-	results = append(results, recoveryResult{Step: "state", Status: "updated", Message: fmt.Sprintf("github_runner_id=%d", runner.ID)})
-	return true, runner.ID, results, nil
 }
 
 func runRecoveryCommand(ctx context.Context, executor remote.Executor, target remote.Target, command remote.Command) error {
