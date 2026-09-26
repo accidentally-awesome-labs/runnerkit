@@ -23,6 +23,7 @@ const (
 
 	StepFixDependencies  = "fix_dependencies"
 	StepCreateRunnerUser = "create_runner_user"
+	StepSetupRunnerImage = "setup_runner_image"
 	StepDownloadRunner   = "download_runner"
 	StepConfigureRunner  = "configure_runner"
 	StepInstallService   = "install_service"
@@ -89,6 +90,37 @@ func BootstrapPlan() Plan {
 			{ID: StepVerifyService, Name: "Verify service", Status: StepPending},
 		},
 	}
+}
+
+// SetupRunnerImageName is the plan text for setup_runner_image. It is the
+// consent point for what the step does as root, so it names the Docker
+// group grant and the third-party apt sources.
+const SetupRunnerImageName = "Set up runner image: install Docker CE, language runtimes and browsers from third-party apt sources (Docker, NodeSource, Microsoft, Google Chrome, Mozilla PPA, GitHub CLI) and add the runner user to the docker group (root-equivalent for every job)"
+
+// BootstrapPlanWithImageSetup is BootstrapPlan with setup_runner_image
+// after create_runner_user, matching the order bootstrap.Apply runs on
+// Ubuntu/Debian hosts.
+func BootstrapPlanWithImageSetup() Plan {
+	plan := BootstrapPlan()
+	steps := make([]Step, 0, len(plan.Steps)+1)
+	for _, step := range plan.Steps {
+		steps = append(steps, step)
+		if step.ID == StepCreateRunnerUser {
+			steps = append(steps, Step{ID: StepSetupRunnerImage, Name: SetupRunnerImageName, Status: StepPending})
+		}
+	}
+	plan.Steps = steps
+	return plan
+}
+
+// HasStep reports whether the plan contains a step with the given ID.
+func (p Plan) HasStep(id string) bool {
+	for _, step := range p.Steps {
+		if step.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (p Plan) Checklist() []string {

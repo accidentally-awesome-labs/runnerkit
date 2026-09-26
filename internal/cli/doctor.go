@@ -158,7 +158,7 @@ func collectDoctorHostHints(ctx context.Context, deps Dependencies, repoState rk
 func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState) ops.DeepChecks {
 	target, err := targetFromState(repoState)
 	if err != nil {
-		return ops.DeepChecks{InstallPathError: err.Error(), WorkDirError: err.Error()}
+		return ops.DeepChecks{InstallPathError: err.Error(), WorkDirError: err.Error(), InstallPathProbeErr: true, WorkDirProbeErr: true}
 	}
 	installScript := "test -f " + shellQuote(repoState.Machine.InstallPath+"/config.sh") + " && test -f " + shellQuote(repoState.Machine.InstallPath+"/run.sh") + " && test -f " + shellQuote(repoState.Machine.InstallPath+"/.runner")
 	workScript := "test -d " + shellQuote(repoState.Machine.WorkDir)
@@ -170,6 +170,8 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 	// is enough to emit the informational `byo_host_prepared` finding.
 	byoResult, byoErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.byo_host_prepared", Script: "test -f " + bootstrap.SudoersFilePath, Timeout: 5 * time.Second})
 	checks := ops.DeepChecks{InstallPathOK: installErr == nil && installResult.ExitCode == 0, WorkDirOK: workErr == nil && workResult.ExitCode == 0, Preflight: report, BYOHostPrepared: byoErr == nil && byoResult.ExitCode == 0}
+	checks.InstallPathProbeErr = !checks.InstallPathOK && !remoteProbeRan(installResult, installErr)
+	checks.WorkDirProbeErr = !checks.WorkDirOK && !remoteProbeRan(workResult, workErr)
 	if !checks.InstallPathOK {
 		checks.InstallPathError = strings.TrimSpace(installResult.Stderr + " " + installResult.Stdout)
 		if checks.InstallPathError == "" && installErr != nil {
@@ -183,6 +185,17 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 		}
 	}
 	return checks
+}
+
+// remoteProbeRan reports whether a remote check actually executed on the
+// host: no executor error, or a remote non-zero exit. ssh reports its own
+// connection failures as exit 255, and a missing ssh binary or other local
+// failure as -1 (see remote.SystemExecutor).
+func remoteProbeRan(result remote.Result, err error) bool {
+	if err == nil {
+		return true
+	}
+	return result.ExitCode > 0 && result.ExitCode != 255
 }
 
 func renderDoctorHuman(renderer *ui.Renderer, report ops.DoctorReport, verbose bool, st stage.Stage) error {

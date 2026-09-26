@@ -40,7 +40,7 @@ release-snapshot: ## Local GoReleaser dry-run (validates the build matrix).
 # CI environment must NOT hold the real GitHub PAT or HCLOUD_TOKEN
 # secrets these targets depend on.
 
-smoke-live: smoke-live-byo smoke-live-cloud smoke-stopwatch ## Run all live smokes (BYO + Hetzner + 10-minute stopwatch). Maintainer-only.
+smoke-live: smoke-live-byo smoke-live-cloud smoke-stopwatch ## Run all live smokes (BYO + Hetzner + setup-timing checklist pointer). Maintainer-only.
 
 smoke-live-byo: ## Phase 1 outstanding: live GitHub permission smoke. Requires RUNNERKIT_SMOKE_BYO_HOST and RUNNERKIT_SMOKE_REPO.
 	@test -n "$$RUNNERKIT_SMOKE_BYO_HOST" || { echo "RUNNERKIT_SMOKE_BYO_HOST=user@host required"; exit 2; }
@@ -54,7 +54,7 @@ smoke-live-byo: ## Phase 1 outstanding: live GitHub permission smoke. Requires R
 	@command -v python3 >/dev/null || { echo "python3 required for scripts/smoke/assert-doctor-json-contract.sh"; exit 2; }
 	./scripts/smoke/byo-permission.sh "$$RUNNERKIT_SMOKE_REPO" "$$RUNNERKIT_SMOKE_BYO_HOST"
 
-smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES BILLABLE RESOURCES. Requires HCLOUD_TOKEN and RUNNERKIT_SMOKE_REPO.
+smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES BILLABLE RESOURCES. Requires HCLOUD_TOKEN, RUNNERKIT_SMOKE_REPO and RUNNERKIT_SMOKE_CLOUD_REGION.
 	@test -n "$$HCLOUD_TOKEN"         || { echo "HCLOUD_TOKEN required"; exit 2; }
 	@test -n "$$RUNNERKIT_SMOKE_REPO" || { echo "RUNNERKIT_SMOKE_REPO=owner/name required (maintainer-controlled trusted repo, NOT public)"; exit 2; }
 	@command -v gh >/dev/null || { echo "gh CLI not installed"; exit 2; }
@@ -68,6 +68,6 @@ smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES
 		./scripts/smoke/hetzner-destroy-verify.sh "$${RUNNERKIT_SMOKE_TIMEOUT:-300}" && \
 		rm -rf "$$RUNNERKIT_SMOKE_STATE_DIR"
 
-smoke-stopwatch: ## 10-minute stopwatch checklist (D-13). Maintainer manually records into RELEASE-NOTES-vX.Y.Z.md.
-	@echo "Open docs/release-process.md '## Stopwatch Checklist' and follow the BYO + Hetzner end-to-end timing."
-	@echo "Record durations into RELEASE-NOTES-v$${VER:-1.0.0}.md and .planning/phases/06-release-upgrade-docs-and-v1-validation/06-VERIFICATION.md."
+smoke-stopwatch: ## Optional setup-timing checklist (D-13). Timings are for your own notes, not a setup-time promise.
+	@echo "Open docs/release-process.md '## Setup timing (optional)' and follow the BYO + Hetzner timing checklist."
+	@echo "Record durations in your own notes; do not publish them as a setup-time promise."

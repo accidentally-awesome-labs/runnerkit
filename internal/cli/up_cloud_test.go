@@ -407,7 +407,7 @@ func TestUpCloudMissingCredentialsUsesUISpecCopy(t *testing.T) {
 		t.Fatalf("expected missing credentials input-required, err=%v", err)
 	}
 	combined := out.String() + errOut.String()
-	for _, want := range []string{"Hetzner credentials are missing. Export HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN", "runnerkit up --repo owner/name --cloud", "hetzner.", "Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>"} {
+	for _, want := range []string{"Hetzner credentials are missing. Export HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN", "runnerkit up --repo owner/name", "--experimental --cloud hetzner --cloud-region fsn1.", "Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>"} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("missing credential copy %q:\n%s", want, combined)
 		}

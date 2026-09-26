@@ -270,3 +270,24 @@ func firstLines(s string, n int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// SEC-R2: the plan shown for --dry-run and before the confirmation lists
+// setup_runner_image on Ubuntu/Debian (where Apply runs it) and names the
+// docker group grant; other hosts do not run it and do not list it.
+func TestPlanDisclosesSetupRunnerImageOnUbuntu(t *testing.T) {
+	ubuntu := Plan(Options{OSReleaseID: "ubuntu"})
+	var ids []string
+	for _, step := range ubuntu.Steps {
+		ids = append(ids, step.ID)
+		if step.ID == "setup_runner_image" && !strings.Contains(step.Name, "docker group") {
+			t.Fatalf("setup_runner_image step does not name the docker group grant: %q", step.Name)
+		}
+	}
+	want := "fix_dependencies,create_runner_user,setup_runner_image,download_runner,configure_runner,install_service,verify_service"
+	if strings.Join(ids, ",") != want {
+		t.Fatalf("ubuntu plan = %v, want %s", ids, want)
+	}
+	if Plan(Options{OSReleaseID: "fedora"}).HasStep("setup_runner_image") {
+		t.Fatal("non-Ubuntu plan must not list setup_runner_image")
+	}
+}

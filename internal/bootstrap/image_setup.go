@@ -142,7 +142,10 @@ fi
 # ── Geckodriver ──
 if ! command -v geckodriver >/dev/null 2>&1; then
   echo "Installing Geckodriver..."
-  GD_VER=$(curl -fsSL https://api.github.com/repos/mozilla/geckodriver/releases/latest 2>/dev/null | grep -oP '"tag_name":\s*"v\K[^"]+' | head -1)
+  # '|| true': under set -euo pipefail a failed or rate-limited
+  # api.github.com lookup (unauthenticated, 60 req/h per IP) used to
+  # abort the whole step instead of reaching the empty-GD_VER skip.
+  GD_VER=$(curl -fsSL https://api.github.com/repos/mozilla/geckodriver/releases/latest 2>/dev/null | grep -oP '"tag_name":\s*"v\K[^"]+' | head -1 || true)
   if [ -n "$GD_VER" ]; then
     curl -fsSL "https://github.com/mozilla/geckodriver/releases/download/v${GD_VER}/geckodriver-v${GD_VER}-linux64.tar.gz" -o /tmp/geckodriver.tar.gz
     sudo tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin geckodriver

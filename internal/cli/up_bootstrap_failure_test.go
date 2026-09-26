@@ -77,6 +77,10 @@ func TestUp_BootstrapFailed_NamesFailingStepAndCommand(t *testing.T) {
 		"Failed command (exit 4): sudo mkdir -p /etc/apt/keyrings",
 		"a terminal is required",
 		"E: Unable to locate package nodejs",
+		// v1.3.4 e2e: a sudo password prompt on an older install.sh host
+		// must say how to get unstuck.
+		"re-run the current install.sh once",
+		`install.sh" | sudo bash`,
 	} {
 		if !strings.Contains(combined, want) {
 			t.Errorf("remediation missing %q:\n%s", want, combined)
@@ -155,4 +159,36 @@ func TestLastCommandFailureContext(t *testing.T) {
 			t.Fatalf("id = %q", id)
 		}
 	})
+}
+
+func TestSudoPasswordPromptRemediation(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stderr, stdout string
+		want           bool
+	}{
+		"v1.3.3 sudoers lacks mkdir":  {stderr: "sudo: a terminal is required to read the password; either use the -S option\nsudo: a password is required\nRKFAIL:sudo mkdir -p /etc/apt/keyrings\n", want: true},
+		"no tty present (older sudo)": {stderr: "sudo: no tty present and no askpass program specified\n", want: true},
+		"unrelated apt failure":       {stderr: "E: Unable to locate package foo\nRKFAIL:sudo apt-get install -y foo\n", want: false},
+		"download 403":                {stderr: "curl: (22) The requested URL returned error: 403\n", want: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result := bootstrap.Result{Commands: []remote.Result{{ExitCode: 0}, {ExitCode: 1, Stderr: tc.stderr, Stdout: tc.stdout}}}
+			got := sudoPasswordPromptRemediation(result, "1.3.4")
+			if !tc.want {
+				if len(got) != 0 {
+					t.Fatalf("unexpected hint: %q", got)
+				}
+				return
+			}
+			joined := strings.Join(got, "\n")
+			for _, want := range []string{"/etc/sudoers.d/runnerkit-installer", "older install.sh", "re-run runnerkit up", HostInstallOneLiner("1.3.4")} {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("hint missing %q:\n%s", want, joined)
+				}
+			}
+		})
+	}
+	if got := sudoPasswordPromptRemediation(bootstrap.Result{}, "1.3.4"); got != nil {
+		t.Fatalf("empty result should give no hint, got %q", got)
+	}
 }

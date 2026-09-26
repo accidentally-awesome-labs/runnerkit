@@ -103,7 +103,15 @@ func (e ServiceNotActiveError) Error() string {
 // for ServiceNotActiveError first (runUp does).
 func (e ServiceNotActiveError) Unwrap() error { return e.Err }
 
-func Plan(opts Options) workflow.Plan { return workflow.BootstrapPlan() }
+// Plan returns the steps Apply runs for opts. On Ubuntu/Debian it includes
+// setup_runner_image, so --dry-run and the confirmation disclose the Docker
+// group grant and third-party apt sources.
+func Plan(opts Options) workflow.Plan {
+	if isUbuntuLike(opts.OSReleaseID) {
+		return workflow.BootstrapPlanWithImageSetup()
+	}
+	return workflow.BootstrapPlan()
+}
 
 // Apply runs the persistent BYO bootstrap sequence. SEED-002 / multi-repo:
 // each call uses an independent InstallPath/RunnerName/WorkDir; steps are

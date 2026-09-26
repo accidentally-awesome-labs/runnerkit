@@ -19,9 +19,9 @@ func printExplainBlock(w io.Writer, step, why, runs, takes string) {
 }
 
 func explainInitDefault() (why, runs, takes string) {
-	return "The runner host needs a one-time install so future runnerkit operations can use scoped sudo without interactive passwords.",
+	return "The runner host needs a one-time install so future runnerkit operations can use passwordless sudo for RunnerKit's bootstrap commands (root-equivalent; see docs/security-posture.md).",
 		"Shows install.sh URL and curl|sudo bash one-liner (or JSON next_actions).",
-		"About one minute on a typical VM, mostly downloading the GitHub Actions runner bundle."
+		"A few seconds; it writes one sudoers file."
 }
 
 func explainBYOSetup() (why, runs, takes string) {

@@ -495,6 +495,24 @@ func TestNoCopyRecommendsEphemeralCloud(t *testing.T) {
 	}
 }
 
+// Cloud `up` is refused without --experimental (experimental_required) and
+// --cloud-region, so copy that tells users to re-run cloud up must carry
+// both. Concatenated fragments starting with " --cloud hetzner" are the
+// tail of such a command. Descriptive strings (e.g. "--cloud hetzner needs
+// an explicit --cloud-region") do not match either pattern.
+func TestNoCopyRecommendsCloudUpWithoutExperimental(t *testing.T) {
+	for path, literals := range nonTestGoStringLiterals(t) {
+		for _, lit := range literals {
+			if !strings.Contains(lit, "--cloud hetzner") || strings.Contains(lit, "--experimental") {
+				continue
+			}
+			if strings.Contains(lit, "runnerkit up") || strings.HasPrefix(lit, " --cloud hetzner") {
+				t.Errorf("%s: string literal recommends cloud up without --experimental --cloud-region: %q", path, lit)
+			}
+		}
+	}
+}
+
 func TestNoMisleadingRecommendationCopy(t *testing.T) {
 	banned := []string{"recommended default", "recommended cloud", "NOT a blanket"}
 	for path, literals := range nonTestGoStringLiterals(t) {

@@ -195,7 +195,7 @@ func Classify(observed ObservedRunner) Health {
 		return health(HealthUnknown, "RunnerKit can't determine runner health because required facts are missing.", reason(ReasonCollectionError, SeverityWarning, "collection", firstCollectionEvidence(observed)), next("runnerkit doctor --repo "+repo, "Collect deeper diagnostics for missing facts."))
 	}
 	if len(observed.GitHub.DuplicateCandidates) > 1 {
-		return health(HealthBroken, "RunnerKit can't determine runner health because duplicate RunnerKit runner candidates were found.", reason(ReasonGitHubDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runners match saved identity"), next("runnerkit down --repo "+repo+" --dry-run", "Review ambiguous GitHub runner records before cleanup."))
+		return health(HealthBroken, "RunnerKit can't determine runner health because duplicate RunnerKit runner candidates were found.", reason(ReasonGitHubDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runners match saved identity"), next(cleanupDryRunFor(*observed.State, repo), "Review ambiguous GitHub runner records before cleanup."))
 	}
 	if observed.SSH.HostKey == "mismatch" {
 		return health(HealthBroken, "RunnerKit stopped because the saved host key fingerprint does not match the current host.", reason(ReasonSSHHostKeyMismatch, SeverityError, "ssh", "saved host key fingerprint differs from observed host"), next("runnerkit doctor --repo "+repo, "Verify the machine identity before recovery."))
@@ -250,6 +250,15 @@ func Classify(observed ObservedRunner) Health {
 	return health(HealthUnknown, "RunnerKit can't determine runner health because required facts are missing.", reason(ReasonCollectionError, SeverityWarning, "status", "insufficient status facts"), next("runnerkit doctor --repo "+repo, "Collect deeper diagnostics."))
 }
 
+// cleanupDryRunFor is CleanupDryRunCommand with an explicit repo name, for
+// callers that resolved the repo from the observation rather than state.
+func cleanupDryRunFor(repoState state.RepositoryState, repo string) string {
+	if IsCloudState(repoState) {
+		return "runnerkit destroy --repo " + repo + " --dry-run"
+	}
+	return "runnerkit down --repo " + repo + " --dry-run"
+}
+
 // classifyEphemeral applies Phase 5 ephemeral lifecycle classification
 // rules that run before persistent recovery conditions. It returns
 // (Health, true) when the observed state matches an ephemeral
@@ -259,7 +268,13 @@ func classifyEphemeral(observed ObservedRunner, repo string) (Health, bool) {
 	repoState := observed.State
 	cleanup := repoState.Ephemeral.CleanupCommand
 	if cleanup == "" {
-		cleanup = "runnerkit down --repo " + repo
+		// RunnerKit-managed cloud servers are cleaned up with destroy;
+		// down would drop the only record of a server that keeps billing.
+		if IsCloudState(*repoState) {
+			cleanup = "runnerkit destroy --repo " + repo
+		} else {
+			cleanup = "runnerkit down --repo " + repo
+		}
 	}
 	// Prefer the observed (live remote sentinel) finalizer status over
 	// the saved one so a freshly-completed or TTL-expired ephemeral

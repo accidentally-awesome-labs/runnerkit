@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunnerKit one-time BYO host install: scoped sudoers for the SSH user so
+# RunnerKit one-time BYO host install: root-equivalent sudoers fragment for the SSH user so
 # `runnerkit register` / `runnerkit up` can run non-interactively over SSH.
 # Run on the runner host: curl -fsSL <url> | sudo bash
 # Or: sudo RUNNERKIT_INSTALL_USER=alice bash install.sh

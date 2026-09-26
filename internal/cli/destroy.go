@@ -71,7 +71,7 @@ func runDestroy(deps Dependencies, jsonOutput bool, noColor bool, opts *destroyO
 	}
 	if !ok {
 		message := "No RunnerKit-managed cloud runner is saved for `" + repo.FullName + "`."
-		_ = renderer.Error("state_not_found", message, []string{"Run runnerkit up --repo " + repo.FullName + " --cloud hetzner to create one, or pass --host user@host for BYO setup."})
+		_ = renderer.Error("state_not_found", message, []string{"Run runnerkit up --repo " + repo.FullName + " --experimental --cloud hetzner --cloud-region <location> to create one (experimental; billed by Hetzner), or pass --host user@host for BYO setup."})
 		return NewExitError(ExitStateIO, errors.New(message))
 	}
 	if !isCloudProvider(repoState.Provider) {

@@ -1,6 +1,9 @@
 package bootstrap
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -115,5 +118,56 @@ func TestIsUbuntuLike(t *testing.T) {
 		if isUbuntuLike(id) {
 			t.Errorf("isUbuntuLike(%q) = true, want false", id)
 		}
+	}
+}
+
+// TestImageSetupGeckodriverLookupFailureIsNotFatal runs the rendered
+// Geckodriver section in real bash with a curl that fails like a
+// rate-limited or blocked api.github.com (exit 22). The section already
+// skips when GD_VER is empty, but under set -euo pipefail the failed
+// $(curl | grep | head) assignment aborted the whole setup_runner_image
+// step first (seen in the v1.3.4 local BYO e2e run: RKFAIL on GD_VER=).
+func TestImageSetupGeckodriverLookupFailureIsNotFatal(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	script := RenderImageSetupScript("runnerkit-runner", "")
+	start := strings.Index(script, "# ── Geckodriver ──")
+	end := strings.Index(script, "# ── GitHub CLI (gh) ──")
+	if start < 0 || end < start {
+		t.Fatalf("Geckodriver section not found in rendered script")
+	}
+	section := script[start:end]
+
+	bin := t.TempDir()
+	for name, body := range map[string]string{
+		"curl": "#!/bin/sh\necho 'curl: (22) The requested URL returned error: 403' >&2\nexit 22\n",
+		"sudo": "#!/bin/sh\necho unexpected sudo \"$@\" >&2\nexit 99\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// bash, grep and head from the system; no geckodriver on PATH.
+	for _, tool := range []string{"grep", "head"} {
+		p, err := exec.LookPath(tool)
+		if err != nil {
+			t.Skipf("%s not available", tool)
+		}
+		if err := os.Symlink(p, filepath.Join(bin, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("bash", "-s")
+	cmd.Env = []string{"PATH=" + bin}
+	cmd.Stdin = strings.NewReader(withFailTrap("set -euo pipefail\n" + section + "echo section-done\n"))
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Geckodriver section aborted on a failed version lookup: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "section-done") || strings.Contains(stderr.String(), FailTrapMarker) {
+		t.Fatalf("section did not complete cleanly: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }

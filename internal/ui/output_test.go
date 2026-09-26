@@ -57,3 +57,32 @@ func TestHumanStepGlyphsAndASCIIFallbacks(t *testing.T) {
 		}
 	}
 }
+
+// TestErrorRemediationKeepsExplicitNewlines guards the v1.3.4 A-19
+// bootstrap_failed excerpt: its "Remote stderr (<step>)" remediation is
+// multi-line (stderr tail, "Failed command (exit N): ...", "Last stdout
+// lines:"). The renderer used to reflow every newline into one paragraph,
+// burying the failing command mid-line (seen in the local BYO e2e run).
+func TestErrorRemediationKeepsExplicitNewlines(t *testing.T) {
+	var errOut bytes.Buffer
+	r := NewRenderer(&bytes.Buffer{}, &errOut, FormatHuman, TerminalCapabilities{StdoutTTY: false, ASCII: true, Width: 80}, redact.New())
+	excerpt := "Remote stderr (setup_runner_image): curl: (22) The requested URL returned error: 403\n\n" +
+		"Failed command (exit 22): GO_VERSION=$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)\n" +
+		"Last stdout lines:\nInstalling Go..."
+	if err := r.Error("bootstrap_failed", "RunnerKit could not apply the BYO runner install plan.", []string{excerpt}); err != nil {
+		t.Fatalf("Error() error = %v", err)
+	}
+	got := errOut.String()
+	for _, want := range []string{
+		"\nNEXT Remote stderr (setup_runner_image): curl: (22) The requested URL returned\n",
+		"\n     Failed command (exit 22): GO_VERSION=$(curl -fsSL\n",
+		"\n     Last stdout lines:\n     Installing Go...\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "\n     \n") {
+		t.Fatalf("blank excerpt line should be dropped:\n%s", got)
+	}
+}

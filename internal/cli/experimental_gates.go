@@ -28,12 +28,12 @@ const (
 	ephemeralCloudDisabledRemedy  = "For untrusted or public code, use GitHub-hosted runners (free and unlimited for public repositories)."
 
 	cloudExperimentalMessage     = "--cloud is experimental in this release: it creates servers billed by Hetzner and is unsupported."
-	ephemeralBYOExperimentalCopy = "--mode ephemeral on a BYO host is experimental: it is not isolation (the host is reused between jobs) and it is broken on hosts prepared by install.sh."
+	ephemeralBYOExperimentalCopy = "--mode ephemeral on a BYO host is experimental: it is not isolation (the host is reused between jobs) and has known defects (the finalizer runs unprivileged and the TTL is ignored); it is untested in this release."
 	cloudRegionRequiredMessage   = "--cloud hetzner needs an explicit --cloud-region; RunnerKit does not pick a default location."
 
 	// modeBYOEphemeralExperimental labels BYO ephemeral as experimental
 	// and not isolation in the mode tradeoff output.
-	modeBYOEphemeralExperimental = "BYO ephemeral mode is experimental and not isolation: the host is reused between jobs, and it is broken on hosts prepared by install.sh."
+	modeBYOEphemeralExperimental = "BYO ephemeral mode is experimental and not isolation: the host is reused between jobs, and it has known defects (the finalizer runs unprivileged and the TTL is ignored); it is untested in this release."
 )
 
 // enforceExperimentalGates refuses experimental or disabled setup paths

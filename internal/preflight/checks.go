@@ -148,7 +148,12 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 	arch, ok := NormalizeArch(probe.Arch)
 	report.Arch = arch
 	if !ok {
-		report.Results = append(report.Results, failure(CheckArch, "Unsupported architecture: "+probe.Arch+".", "Use a host with supported architecture x64 or arm64."))
+		report.Results = append(report.Results, failure(CheckArch, "Unsupported architecture: "+probe.Arch+".", "Use an Ubuntu x86_64 host."))
+	} else if arch == "arm64" {
+		// NormalizeArch still maps arm64 (the runner package exists), but
+		// setup_runner_image installs amd64-only packages, so warn rather
+		// than pass. Warnings do not fail Passed().
+		report.Results = append(report.Results, warning(CheckArch, "arm64 runner hosts are not supported in this release; setup_runner_image installs amd64-only packages and will fail.", "Use an Ubuntu x86_64 host."))
 	} else {
 		report.Results = append(report.Results, pass(CheckArch, "Supported architecture detected: "+arch+"."))
 	}

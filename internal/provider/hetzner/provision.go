@@ -328,21 +328,21 @@ func withDefaults(profile provider.Profile) provider.Profile {
 func lookupProfile(ctx context.Context, client Client, profile provider.Profile) (*hcloud.Location, *hcloud.ServerType, *hcloud.Image, provider.ValidationResult, error) {
 	location, err := client.GetLocation(ctx, profile.Region)
 	if err != nil {
-		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Verify Hetzner location " + profile.Region + " is available, then rerun runnerkit up --cloud hetzner."}}, err
+		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Verify Hetzner location " + profile.Region + " is available, then rerun runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region " + profile.Region + "."}}, err
 	}
 	if location == nil {
 		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Hetzner location " + profile.Region + " is unavailable; choose --cloud-region fsn1 or another supported location."}}, nil
 	}
 	serverType, err := client.GetServerType(ctx, profile.ServerType)
 	if err != nil {
-		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Verify Hetzner server type " + profile.ServerType + " is available, then rerun runnerkit up --cloud hetzner."}}, err
+		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Verify Hetzner server type " + profile.ServerType + " is available, then rerun runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region " + profile.Region + "."}}, err
 	}
 	if serverType == nil {
 		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Hetzner server type " + profile.ServerType + " is unavailable; choose --cloud-profile cpx22 or another supported profile."}}, nil
 	}
 	image, err := client.GetImage(ctx, profile.Image)
 	if err != nil {
-		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Verify Hetzner image " + profile.Image + " is available, then rerun runnerkit up --cloud hetzner."}}, err
+		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Verify Hetzner image " + profile.Image + " is available, then rerun runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region " + profile.Region + "."}}, err
 	}
 	if image == nil {
 		return nil, nil, nil, provider.ValidationResult{OK: false, Remediation: []string{"Hetzner image " + profile.Image + " is unavailable; use ubuntu-24.04 for the recommended profile."}}, nil

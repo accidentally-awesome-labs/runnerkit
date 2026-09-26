@@ -160,7 +160,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		message := fmt.Sprintf("RunnerKit can't create a repository runner registration token for %s.", repo.FullName)
 		remediation := status.Remediation
 		if len(remediation) == 0 {
-			remediation = []string{"Create a fine-grained token scoped only to " + repo.FullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."}
+			remediation = []string{gh.FineGrainedTokenRemediation(repo)}
 		}
 		// Append the stable RKD-AUTH-004 code + See: URL after the
 		// existing remediation copy (D-15). Append (not prepend) so
@@ -188,6 +188,16 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err := refuseIfLiveCloudState(renderer, existing, exists, repo.FullName); err != nil {
 		return err
 	}
+	// Ask about replacing saved state before the slow bootstrap and the
+	// re-registration, not after: --yes/--json/non-TTY runs used to finish
+	// the whole install and then exit input_required without saving.
+	if exists && !opts.replace && !opts.dryRun {
+		confirmedReplace, err := confirmStateReplace(ctx, deps, renderer, opts, repo.FullName, jsonOutput)
+		if err != nil {
+			return err
+		}
+		opts.replace = confirmedReplace
+	}
 	hostKey, acceptedAt, err := verifyTargetHostKey(ctx, deps, renderer, opts, jsonOutput, target, existing, exists)
 	if err != nil {
 		return err
@@ -209,7 +219,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	labelSet := buildModeLabelSet(repo, modeDecision, arch)
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
-		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the Phase 2 BYO persistent runner path."})
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use an Ubuntu x86_64 host."})
 		return NewExitError(ExitSafetyGate, err)
 	}
 	autoDetected := autoDetectExtraPackages(deps, jsonOutput)
@@ -253,7 +263,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		}
 	}
 
-	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target); err != nil {
+	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target, bootstrapPlan); err != nil {
 		return err
 	}
 	if !jsonOutput && !opts.dryRun {
@@ -281,6 +291,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 				return NewExitError(ExitSafetyGate, err)
 			}
 			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
+			remediation = append(remediation, sudoPasswordPromptRemediation(result, deps.Version)...)
 			if cmdID, stderr := lastCommandFailureContext(result, err); stderr != "" {
 				remediation = append(remediation, "Remote stderr ("+cmdID+"): "+renderer.Redactor().String(stderr))
 			}
@@ -299,6 +310,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 				return NewExitError(ExitSafetyGate, err)
 			}
 			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
+			remediation = append(remediation, sudoPasswordPromptRemediation(result, deps.Version)...)
 			if cmdID, stderr := lastCommandFailureContext(result, err); stderr != "" {
 				remediation = append(remediation, "Remote stderr ("+cmdID+"): "+renderer.Redactor().String(stderr))
 			}
@@ -355,14 +367,13 @@ const (
 	cloudUnsupportedCopy             = "Supported Phase 4 cloud value: --cloud hetzner."
 	cloudPrimaryCTA                  = "Provision cloud runner"
 	cloudEmptyStateHeadingExample    = "No RunnerKit-managed cloud runner is saved for `owner/name`."
-	cloudEmptyStateBodyExample       = "Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."
 	cloudFutureCleanupExample        = "Future cleanup: runnerkit destroy --repo owner/name"
 	cloudProvisioningPlanTitle       = "Cloud runner provisioning plan"
 	cloudCostCaveatCopy              = "Estimated cost is approximate. Provider pricing varies by region and time; billing stops only after RunnerKit-created billable resources are deleted or verified non-billable."
 	cloudProvisionConfirmationRemedy = "Pass --yes to create billable Hetzner resources after reviewing the cloud provisioning plan, or pass --dry-run to preview only."
 	cloudProvisionPending            = "cloud_provision_pending"
 	cloudReadinessPending            = "cloud_readiness_pending"
-	cloudReadinessFailedMessage      = "Cloud machine is not ready for runner registration yet. Fix the provider or SSH readiness issue, then rerun runnerkit up --repo owner/name --cloud hetzner."
+	cloudReadinessFailedMessage      = "Cloud machine is not ready for runner registration yet. Run runnerkit destroy --repo owner/name (verifies deletion with Hetzner), then re-run runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location>."
 	cloudProviderSuccessExample      = "Provider: Hetzner fsn1 cpx22 ubuntu-24.04"
 	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
 	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
@@ -734,10 +745,11 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	registerKnownCloudProviderSecrets(renderer)
 	validation, err := cloudProvider.Validate(ctx, input)
 	if err != nil || !validation.OK {
-		message := "Hetzner credentials are missing. Export HCLOUD_TOKEN or HETZNER_CLOUD_TOKEN, then rerun runnerkit up --repo " + repo.FullName + " --cloud hetzner."
+		rerun := "runnerkit up --repo " + repo.FullName + " --experimental --cloud hetzner --cloud-region " + defaultString(opts.cloudRegion, "<location>")
+		message := "Hetzner credentials are missing. Export HCLOUD_TOKEN or HETZNER_CLOUD_TOKEN, then rerun " + rerun + "."
 		remediation := validation.Remediation
 		if len(remediation) == 0 {
-			remediation = []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run runnerkit up --repo " + repo.FullName + " --cloud hetzner"}
+			remediation = []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run " + rerun}
 		}
 		// Append the stable RKD-PROV-004 code + See: URL after the
 		// existing remediation copy (D-15). Append (not prepend) so
@@ -810,7 +822,7 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
-		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the cloud runner path."})
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use an x86_64 (Ubuntu) server type for the cloud runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
 	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs, true)
@@ -955,8 +967,10 @@ func resolveCloudPublicKey(opts *upOptions) string {
 }
 
 func renderCloudReadinessFailure(renderer *ui.Renderer, repo gh.Repo, cause error) error {
-	message := strings.Replace(cloudReadinessFailedMessage, "owner/name", repo.FullName, 1)
-	remediation := []string{"Run runnerkit destroy --repo " + repo.FullName + " if billable Hetzner resources were created and you want to stop billing."}
+	message := strings.ReplaceAll(cloudReadinessFailedMessage, "owner/name", repo.FullName)
+	// The server IDs are already saved; up refuses to run again on live
+	// cloud state (cloud_state_exists), so destroy comes first.
+	remediation := []string{"Run runnerkit destroy --repo " + repo.FullName + " before retrying; the Hetzner server keeps billing until destroy verifies deletion."}
 	if cause != nil {
 		remediation = append([]string{cause.Error()}, remediation...)
 	}
@@ -1630,7 +1644,15 @@ func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source g
 	if err := renderPreflightHuman(renderer, report); err != nil {
 		return err
 	}
-	return renderer.Step(2, 2, "bootstrap-plan", ui.Bullet("Runner name: "+labelSet.RunnerName), ui.Bullet("Target: "+target.Display()), ui.Bullet("Labels: ["+strings.Join(labelSet.Labels, ", ")+"]"), ui.Bullet(labelSet.RunsOnYAML), ui.WarningLine(labelSet.Warning), ui.Bullet("Dry run: no state file was written and no runner was installed."))
+	lines := []ui.Line{ui.Bullet("Runner name: " + labelSet.RunnerName), ui.Bullet("Target: " + target.Display()), ui.Bullet("Labels: [" + strings.Join(labelSet.Labels, ", ") + "]"), ui.Bullet(labelSet.RunsOnYAML), ui.WarningLine(labelSet.Warning)}
+	for _, step := range plan.Steps {
+		lines = append(lines, ui.Bullet("Plan step "+step.ID+": "+step.Name))
+	}
+	if plan.HasStep(workflow.StepSetupRunnerImage) {
+		lines = append(lines, ui.WarningLine(dockerGroupWarning))
+	}
+	lines = append(lines, ui.Bullet("Dry run: no state file was written and no runner was installed."))
+	return renderer.Step(2, 2, "bootstrap-plan", lines...)
 }
 
 // mergeWarnings concatenates safety and mode-selection warnings while
@@ -1703,7 +1725,14 @@ func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap
 	}
 }
 
-func confirmBootstrapPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, target remote.Target) error {
+// dockerGroupWarning is printed before the BYO install confirmation when the
+// plan runs setup_runner_image (SEC-5).
+const dockerGroupWarning = "The runner user will be added to the docker group (root-equivalent for every job); see docs/security-posture.md SEC-5."
+
+func confirmBootstrapPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, target remote.Target, plan workflow.Plan) error {
+	if !jsonOutput && plan.HasStep(workflow.StepSetupRunnerImage) {
+		_ = renderer.Warning(dockerGroupWarning, []string{"Setup also adds third-party apt sources (Docker, NodeSource, Microsoft, Google Chrome, Mozilla PPA, GitHub CLI) as root."}, "")
+	}
 	if opts.yes {
 		return nil
 	}
@@ -2446,6 +2475,32 @@ func lastCommandFailureContext(result bootstrap.Result, err error) (string, stri
 		stderr = "(empty)"
 	}
 	return commandID, stderr + "\n" + strings.Join(details, "\n")
+}
+
+// sudoPasswordPromptRemediation returns extra bootstrap_failed
+// remediation when the failed step hit a sudo password prompt. On a
+// password-sudo BYO host that means the scoped
+// /etc/sudoers.d/runnerkit-installer is missing or was written by an
+// older install.sh: v1.3.3's lacked mkdir, tee, gpg, usermod and other
+// commands setup_runner_image runs, and preflight's `sudo -n install`
+// probe passes there. Seen in the v1.3.4 local BYO e2e run, where the
+// generic "fix the issue" line gave no way forward.
+func sudoPasswordPromptRemediation(result bootstrap.Result, cliVersion string) []string {
+	if len(result.Commands) == 0 {
+		return nil
+	}
+	last := result.Commands[len(result.Commands)-1]
+	output := strings.ToLower(last.Stderr + "\n" + last.Stdout)
+	for _, marker := range []string{"password is required", "a terminal is required", "no tty present"} {
+		if strings.Contains(output, marker) {
+			return []string{
+				"Remote sudo asked for a password: /etc/sudoers.d/runnerkit-installer on this host is missing or was written by an older install.sh (v1.3.3 and earlier lack commands bootstrap now runs, such as mkdir, tee, gpg and usermod).",
+				"SSH to the runner host, re-run the current install.sh once (interactive sudo), then re-run runnerkit up (add --replace if RunnerKit already has saved state for this repository):",
+				HostInstallOneLiner(cliVersion),
+			}
+		}
+	}
+	return nil
 }
 
 const (

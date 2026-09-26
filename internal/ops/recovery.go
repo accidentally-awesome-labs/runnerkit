@@ -56,7 +56,7 @@ func ManualReregisterSteps(repo string, cloud bool) []string {
 	if cloud {
 		return []string{
 			"Re-register by hand: run runnerkit destroy --repo " + repo + " --dry-run to review, then runnerkit destroy --repo " + repo + " (removes the GitHub registration and the Hetzner server).",
-			"Then run runnerkit up --repo " + repo + " again with your original flags to create and register a fresh runner.",
+			"Then run runnerkit up --repo " + repo + " --experimental --cloud hetzner --cloud-region <location> to create and register a fresh runner.",
 		}
 	}
 	return []string{
@@ -108,7 +108,12 @@ func BuildRecoveryPlan(repoState state.RepositoryState, observed ObservedRunner,
 		if !ok {
 			plan.Blocked = true
 			plan.BlockReason = "No recovery action is recommended; run runnerkit doctor --repo " + repoState.Repo.FullName + "."
-			if needsReregistration(observed) {
+			if observed.GitHub.Error != "" {
+				// Without GitHub facts a missing runner or label drift
+				// cannot be told apart from an API failure; never send
+				// users to destroy/down on that basis.
+				plan.BlockReason = "GitHub facts unavailable (" + observed.GitHub.Error + "); run runnerkit doctor --repo " + repoState.Repo.FullName + " once GitHub access works."
+			} else if needsReregistration(observed) {
 				plan.BlockReason = "The runner needs a service reinstall or re-registration, which recover cannot do in this release. " + manual
 			}
 			return plan
@@ -135,6 +140,9 @@ func recommendedRecoveryAction(observed ObservedRunner) (RecoveryAction, bool) {
 }
 
 func needsReregistration(observed ObservedRunner) bool {
+	if observed.GitHub.Error != "" {
+		return false
+	}
 	return serviceMissing(observed.Service) || !observed.GitHub.Found || !observed.Labels.Match
 }
 

@@ -32,7 +32,14 @@ type DeepChecks struct {
 	WorkDirOK        bool
 	InstallPathError string
 	WorkDirError     string
-	Preflight        preflight.Report
+	// InstallPathProbeErr / WorkDirProbeErr are true when the remote path
+	// probe could not run at all (no SSH target, ssh missing, connection
+	// failure). A false *OK with a false *ProbeErr means the probe ran and
+	// the path check itself exited non-zero. Only the latter justifies the
+	// manual re-register advice; the former points at SSH.
+	InstallPathProbeErr bool
+	WorkDirProbeErr     bool
+	Preflight           preflight.Report
 	// BYOHostPrepared is true when /etc/sudoers.d/runnerkit-installer
 	// was observed on the remote host (Plan 06-06 Path C applied).
 	// Surfaces as the informational `byo_host_prepared` finding.
@@ -64,18 +71,23 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	// disabled in this release (A-06), so findings that used to point at
 	// them carry the manual re-register steps instead.
 	manualReregister := strings.Join(ManualReregisterSteps(repo, IsCloudState(repoState)), " ")
-	downDryRun := "runnerkit down --repo " + repo + " --dry-run"
-	// cleanup_pending must never send a RunnerKit-managed cloud server to
+	// cleanup_pending and github_duplicate_candidates must never send a RunnerKit-managed cloud server to
 	// `down`, which drops the only record of a server that keeps billing.
 	cleanupDryRun := CleanupDryRunCommand(repoState)
+	sshRemediation := "Verify SSH access to " + repoState.Machine.HostRef + ", then re-run runnerkit doctor --repo " + repo + "."
 	add("state_present", SeverityPass, "state", "local RunnerKit state is present", statusCmd)
-	if observed.GitHub.Found {
+	if observed.GitHub.Error != "" {
+		// GitHub facts are unavailable (no token, network, API error). Do
+		// not infer a missing runner or label drift from the empty result:
+		// that used to send users to destroy/down a healthy runner.
+		add("github_unavailable", SeverityWarning, "github", observed.GitHub.Error, "Check GitHub access (RUNNERKIT_GITHUB_TOKEN or gh auth login), then re-run runnerkit doctor --repo "+repo+".")
+	} else if observed.GitHub.Found {
 		add("github_runner_found", SeverityPass, "github", fmt.Sprintf("GitHub runner %s id %d is present", observed.GitHub.Name, observed.GitHub.ID), statusCmd)
 		if strings.EqualFold(observed.GitHub.Status, "offline") {
 			addWithCode("github_runner_offline", errcodes.GHRunnerOffline, SeverityWarning, "github", "GitHub reports runner status offline", logsCmd)
 		}
 	} else if len(observed.GitHub.DuplicateCandidates) > 1 {
-		addWithCode("github_duplicate_candidates", errcodes.GHDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runner candidates found", downDryRun)
+		addWithCode("github_duplicate_candidates", errcodes.GHDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runner candidates found", cleanupDryRun)
 	} else {
 		addWithCode("github_runner_offline", errcodes.GHRunnerOffline, SeverityWarning, "github", "GitHub runner is missing or offline", logsCmd)
 	}
@@ -83,7 +95,7 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 		if observed.SSH.HostKey == "mismatch" {
 			addWithCode("ssh_host_key_mismatch", errcodes.SSHHostKeyMismatch, SeverityError, "ssh", "saved host key fingerprint does not match observed host", "Verify the machine identity before running runnerkit recover --repo "+repo+".")
 		} else {
-			addWithCode("ssh_unreachable", errcodes.SSHUnreachable, SeverityError, "ssh", "SSH is unreachable", "Verify SSH access to "+repoState.Machine.HostRef+", then re-run runnerkit doctor --repo "+repo+".")
+			addWithCode("ssh_unreachable", errcodes.SSHUnreachable, SeverityError, "ssh", "SSH is unreachable", sshRemediation)
 		}
 	}
 	if observed.Service.ActiveState == "active" {
@@ -93,7 +105,9 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	} else if observed.Service.LoadState == "not-found" || strings.Contains(strings.ToLower(observed.Service.Error), "missing") {
 		addWithCode("service_missing", errcodes.BootServiceMissing, SeverityError, "systemd", "saved systemd service is missing", manualReregister)
 	}
-	if !observed.Labels.Match {
+	// Label drift is only meaningful when GitHub returned the runner: an
+	// API error or a missing runner leaves the observed labels empty.
+	if observed.GitHub.Error == "" && observed.GitHub.Found && !observed.Labels.Match {
 		addWithCode("label_drift", errcodes.GHLabelDrift, SeverityWarning, "labels", labelEvidence(observed.Labels), manualReregister)
 	}
 	if observed.Provider.Kind != "" && observed.Provider.Kind != "byo" {
@@ -108,13 +122,22 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 			add("provider_found", SeverityPass, "provider", observed.Provider.Kind+" resources are present", "runnerkit status --repo "+repo)
 		}
 	}
+	// A path check that could not run (SSH down, ssh missing) says nothing
+	// about the host; only a probe that ran and exited non-zero earns the
+	// re-register advice.
+	pathRemediation := func(probeErr bool) string {
+		if observed.SSH.Reachable && !probeErr {
+			return manualReregister
+		}
+		return sshRemediation
+	}
 	if !checks.InstallPathOK {
 		evidence := defaultEvidence(checks.InstallPathError, "install path check failed")
-		addWithCode("install_path_missing", errcodes.BootInstallPathMissing, SeverityError, "remote", evidence, manualReregister)
+		addWithCode("install_path_missing", errcodes.BootInstallPathMissing, SeverityError, "remote", evidence, pathRemediation(checks.InstallPathProbeErr))
 	}
 	if !checks.WorkDirOK {
 		evidence := defaultEvidence(checks.WorkDirError, "work dir check failed")
-		addWithCode("work_dir_missing", errcodes.BootWorkDirMissing, SeverityWarning, "remote", evidence, manualReregister)
+		addWithCode("work_dir_missing", errcodes.BootWorkDirMissing, SeverityWarning, "remote", evidence, pathRemediation(checks.WorkDirProbeErr))
 	}
 	for _, result := range checks.Preflight.Results {
 		switch result.ID {
