@@ -211,6 +211,11 @@ func TestServiceStepFailureKeepsServiceNotActiveErrorAndNamesStep(t *testing.T) 
 	if !errors.As(serviceErr.Err, &remoteErr) || remoteErr.CommandID != "verify_service" || remoteErr.ExitCode != 3 {
 		t.Fatalf("ServiceNotActiveError.Err = %#v, want RemoteError{verify_service, 3}", serviceErr.Err)
 	}
+	// Every step failure, service steps included, carries a RemoteError.
+	remoteErr = remote.RemoteError{}
+	if !errors.As(err, &remoteErr) || remoteErr.CommandID != "verify_service" {
+		t.Fatalf("errors.As(err, *RemoteError) through ServiceNotActiveError failed: %#v", err)
+	}
 }
 
 func TestFailedCommandPicksLastMarker(t *testing.T) {
@@ -220,6 +225,41 @@ func TestFailedCommandPicksLastMarker(t *testing.T) {
 	}
 	if got := FailedCommand("no marker here"); got != "" {
 		t.Fatalf("FailedCommand = %q, want empty", got)
+	}
+}
+
+// TestFailTrapFoldsMultiLineCommand: for a failing heredoc command
+// bash prints the whole heredoc after RKFAIL:. The body must not be
+// mistaken for remote stderr, and only the first line names the
+// command.
+func TestFailTrapFoldsMultiLineCommand(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	target := t.TempDir() + "/missing-dir/finalize.sh"
+	script := withFailTrap("set -euo pipefail\necho before-failure >&2\ncat >" + target + " <<'EOSCRIPT'\nheredoc-body-line\nEOSCRIPT\necho unreachable\n")
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(script)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		t.Fatal("script should fail")
+	}
+	if !strings.Contains(stderr.String(), "heredoc-body-line") {
+		t.Fatalf("setup: expected bash to print the heredoc body after RKFAIL, stderr=%q", stderr.String())
+	}
+	before, command := SplitFailTrap(stderr.String())
+	if want := "cat > " + target + " <<'EOSCRIPT' ..."; command != want {
+		t.Fatalf("command = %q, want %q (stderr=%q)", command, want, stderr.String())
+	}
+	if strings.Contains(before, "heredoc-body-line") || strings.Contains(before, FailTrapMarker) {
+		t.Fatalf("before still carries the trap output: %q", before)
+	}
+	if !strings.Contains(before, "before-failure") {
+		t.Fatalf("before lost the script's own stderr: %q", before)
+	}
+	if got, _ := SplitFailTrap("plain stderr\n"); got != "plain stderr\n" {
+		t.Fatalf("SplitFailTrap without marker = %q", got)
 	}
 }
 

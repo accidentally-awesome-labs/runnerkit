@@ -97,6 +97,12 @@ func (e ServiceNotActiveError) Error() string {
 	return "runner_service_not_active"
 }
 
+// Unwrap exposes the remote.RemoteError naming the failed service step,
+// so errors.As(err, &remote.RemoteError{}) holds for every bootstrap
+// step failure. Callers that special-case the service steps must test
+// for ServiceNotActiveError first (runUp does).
+func (e ServiceNotActiveError) Unwrap() error { return e.Err }
+
 func Plan(opts Options) workflow.Plan { return workflow.BootstrapPlan() }
 
 // Apply runs the persistent BYO bootstrap sequence. SEED-002 / multi-repo:
@@ -159,14 +165,32 @@ const FailTrapMarker = "RKFAIL:"
 // FailedCommand returns the command text from the last FailTrapMarker
 // line in stderr, or "" when the trap did not fire.
 func FailedCommand(stderr string) string {
+	_, command := SplitFailTrap(stderr)
+	return command
+}
+
+// SplitFailTrap splits stderr at the last FailTrapMarker line. before
+// is the stderr the script wrote ahead of it; command is the first line
+// of the failing command, or "" (with before == stderr) when the trap
+// did not fire. Bash prints the whole text of a multi-line command
+// (a heredoc such as `sudo tee f <<'EOF'`, or a quoted newline), and
+// `set -e` exits right after the trap, so every line from the marker to
+// the end of stderr belongs to that command; they are folded into a
+// trailing " ..." instead of being mistaken for remote stderr.
+func SplitFailTrap(stderr string) (before, command string) {
 	lines := strings.Split(stderr, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(line, FailTrapMarker) {
-			return strings.TrimSpace(strings.TrimPrefix(line, FailTrapMarker))
+		if !strings.HasPrefix(line, FailTrapMarker) {
+			continue
 		}
+		command = strings.TrimSpace(strings.TrimPrefix(line, FailTrapMarker))
+		if strings.TrimSpace(strings.Join(lines[i+1:], "\n")) != "" {
+			command += " ..."
+		}
+		return strings.Join(lines[:i], "\n"), command
 	}
-	return ""
+	return stderr, ""
 }
 
 // withFailTrap prepends FailTrapLine to script (once).

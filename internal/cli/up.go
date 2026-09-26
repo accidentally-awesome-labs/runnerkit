@@ -2318,9 +2318,11 @@ func runnerServiceName(runnerName string) string {
 //   - "Failed command (exit N): <cmd>" when bootstrap.FailTrapLine
 //     fired;
 //   - the last bootstrapStdoutTailLines lines of stdout, which is where
-//     apt-get and most installers report what went wrong.
+//     apt-get and most installers report what went wrong;
+//   - when a RemoteError step produced no output at all, its exit code
+//     (or the executor error), so the step is still named.
 //
-// The excerpt is empty when there is nothing useful to show.
+// The excerpt is empty only when there is nothing useful to show.
 func lastCommandFailureContext(result bootstrap.Result, err error) (string, string) {
 	var last remote.Result
 	if len(result.Commands) > 0 {
@@ -2329,7 +2331,8 @@ func lastCommandFailureContext(result bootstrap.Result, err error) (string, stri
 	commandID := ""
 	exitCode := 0
 	var remoteErr remote.RemoteError
-	if errors.As(err, &remoteErr) {
+	haveRemoteErr := errors.As(err, &remoteErr)
+	if haveRemoteErr {
 		commandID = remoteErr.CommandID
 		exitCode = remoteErr.ExitCode
 	}
@@ -2351,6 +2354,16 @@ func lastCommandFailureContext(result bootstrap.Result, err error) (string, stri
 		details = append(details, "Last stdout lines:\n"+stdout)
 	}
 	stderr := bootstrapTailLines(cleanBootstrapStderr(last.Stderr), bootstrapStderrTailLines)
+	if len(details) == 0 && stderr == "" && haveRemoteErr {
+		// A step that failed without any output (killed by a timeout,
+		// ssh transport error) must still be named: callers drop the
+		// whole line when the excerpt is empty.
+		if remoteErr.Err != nil && exitCode == -1 {
+			details = append(details, "Executor error: "+remoteErr.Err.Error())
+		} else {
+			details = append(details, fmt.Sprintf("Exit code: %d", exitCode))
+		}
+	}
 	if len(details) == 0 {
 		return commandID, stderr
 	}
@@ -2367,9 +2380,12 @@ const (
 )
 
 // cleanBootstrapStderr drops ssh known-hosts chatter (older hosts or
-// executors without LogLevel=ERROR) and the RKFAIL trap line, which
-// lastCommandFailureContext renders separately.
+// executors without LogLevel=ERROR) and the RKFAIL trap output (the
+// marker line plus, for a multi-line command such as a heredoc, the
+// rest of its text), which lastCommandFailureContext renders
+// separately.
 func cleanBootstrapStderr(stderr string) string {
+	stderr, _ = bootstrap.SplitFailTrap(stderr)
 	var kept []string
 	for _, line := range strings.Split(stderr, "\n") {
 		trimmed := strings.TrimSpace(line)

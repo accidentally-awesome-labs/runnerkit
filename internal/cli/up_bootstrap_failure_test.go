@@ -136,6 +136,18 @@ func TestLastCommandFailureContext(t *testing.T) {
 			t.Fatalf("got (%q, %q)", id, detail)
 		}
 	})
+	t.Run("silent step failure still names the step", func(t *testing.T) {
+		result := bootstrap.Result{Commands: []remote.Result{{}, {ExitCode: 137}}}
+		id, detail := lastCommandFailureContext(result, remote.RemoteError{CommandID: "setup_runner_image", ExitCode: 137})
+		if id != "setup_runner_image" || detail != "(empty)\nExit code: 137" {
+			t.Fatalf("got (%q, %q)", id, detail)
+		}
+		transport := errors.New("exec: \"ssh\": executable file not found in $PATH")
+		_, detail = lastCommandFailureContext(bootstrap.Result{Commands: []remote.Result{{ExitCode: -1}}}, remote.RemoteError{CommandID: "fix_dependencies", ExitCode: -1, Err: transport})
+		if detail != "(empty)\nExecutor error: "+transport.Error() {
+			t.Fatalf("transport detail = %q", detail)
+		}
+	})
 	t.Run("no remote error never renders unknown", func(t *testing.T) {
 		result := bootstrap.Result{Commands: []remote.Result{{}, {ExitCode: -1, Stderr: "ssh: connect to host h port 22: Connection refused"}}}
 		id, _ := lastCommandFailureContext(result, errors.New("exit status 255"))
