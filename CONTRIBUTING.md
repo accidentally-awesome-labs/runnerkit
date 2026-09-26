@@ -59,6 +59,10 @@ right to submit it under the project's license
 git rebase --signoff main
 ```
 
+The `dco` check in `pr-checks` fails a pull request that has a commit
+without the line. Pull requests opened by the repository's owner, members
+or collaborators are not checked.
+
 ## Building and testing
 
 RunnerKit targets **Go 1.26** (see `go.mod`); CI and releases use the latest

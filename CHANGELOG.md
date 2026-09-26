@@ -4,9 +4,9 @@ All notable changes to RunnerKit are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-Older per-release notes (`RELEASE-NOTES-v*.md` in the repository root) are
-summarized below; the files are kept because the release tooling still
-references them.
+Releases before v1.3.4 were described in `RELEASE-NOTES-v*.md` files, which
+are also in each release tag (for example
+`git show v1.3.3:RELEASE-NOTES-v1.3.3.md`); they are summarized below.
 
 ## [Unreleased] — v1.3.4
 
@@ -126,7 +126,11 @@ cloud path and BYO ephemeral mode behind `--experimental`.
   interactive BYO host prompt now work in a real terminal; the production
   prompter had no text input.
 - `config.json` (`doctor --ignore`) and BYO checklist `sessions/` are written
-  to the RunnerKit state directory, not the current working directory.
+  to the RunnerKit state directory, not the current working directory. If
+  you ran `doctor --ignore`, or BYO `up` or `register`, with v1.1.0 to v1.3.3
+  inside a git repository, that directory may hold a `config.json` and a
+  `sessions/` directory (which contains `user@host`): delete them and check
+  that they were not committed.
 - BYO bootstrap failures name the failing step and the failing shell command
   (`Failed command (exit N): …`) and show the tail of remote stdout, instead
   of "(unknown)" (the cloud path does not yet).
@@ -251,7 +255,9 @@ wrong.**
   runner-image setup step (Bug 33). These commands accept any path and are
   root-equivalent. The change did not reach `install.sh`.
 - `doctor --json` error paths always include `schema_version`, `stage`,
-  `next_actions` and `host_incident_hints` (arrays, never `null`).
+  `command`, `next_actions` and `host_incident_hints` (arrays, never
+  `null`). The existing `ok`, `error` and `redactions_applied` fields are
+  unchanged.
 
 ## [1.3.0] – [1.3.2]
 
@@ -276,22 +282,30 @@ reconstructed from the tags later.
   `runnerkit list` (`--json`, `--host`), `runnerkit unregister` (alias of
   `down`), and a shared runner tarball cache under
   `/opt/actions-runner/runnerkit-shared-bin/<version>/`.
+- `register` fails with `lifecycle_foundation_missing` when the host has no
+  `runnerkit-runner` user yet; run `up` (or `install.sh`) there first.
 - `doctor` notes when several RunnerKit install directories share a host.
+- See [docs/troubleshooting/multi-repo.md](docs/troubleshooting/multi-repo.md).
 
 ## [1.1.0] - 2026-05-12
 
 - First-run wizard when no repositories are saved; `--explain` and
   `--unicode` global flags; BYO progress checklists.
 - `status --json` and `doctor --json` include `schema_version`, `stage` and
-  `next_actions`.
+  `next_actions`; human `doctor` output shows a `STAGE:` line, and
+  `runnerkit --json` with no subcommand returns `next_actions`.
+- Copy-paste command panels (ASCII; `--unicode` for UTF-8 borders). See
+  [docs/troubleshooting/doctor-ux.md](docs/troubleshooting/doctor-ux.md).
 - `doctor --ignore` and `doctor --fix` (`--fix` is disabled in v1.3.4; see
   above).
 
 ## [1.0.9] - 2026-05-12
 
 - Preflight and `doctor` warn about low `MemAvailable` or missing swap
-  (RKD-BOOT-016/017) and add heuristic OOM/kill hints from bounded journals
-  (`doctor --deep`, RKD-BOOT-018).
+  (RKD-BOOT-016/017; set the threshold with
+  `RUNNERKIT_PREFLIGHT_MEM_WARN_BYTES`) and add heuristic OOM/kill hints
+  from bounded journals (`doctor --deep`, RKD-BOOT-018). See
+  [docs/troubleshooting/host-resources.md](docs/troubleshooting/host-resources.md).
 - `doctor --json` encodes `host_incident_hints` and `next_actions` as
   arrays, never `null`.
 
@@ -299,15 +313,20 @@ reconstructed from the tags later.
 
 - Removed `runnerkit byo-prepare`; password-sudo hosts are prepared once with
   `install.sh` (`runnerkit init --print-install-command`).
-- Cleanup uninstalls the service before `config.sh remove`.
-- Optional structured JSON logs (`RUNNERKIT_LOG`, `RUNNERKIT_LOG_DEST`).
+- Cleanup uninstalls the service before `config.sh remove`;
+  `remote_cleanup_pending` carries a short, redacted reason.
+- Optional structured JSON logs: `RUNNERKIT_LOG` sets the level
+  (`off`, `info`, `warn`, `error`, `debug`) and `RUNNERKIT_LOG_DEST` the sink
+  (`stderr`, `stdout` or `file:/path/to/log.jsonl`).
 
 ## Releases between 1.0.0 and 1.0.8
 
 Not recorded.
 
-## [1.0.0]
+## [1.0.0] - 2026-05-08
 
 First public release. BYO persistent runners over SSH, Hetzner cloud
 runners, `status`, `logs`, `doctor`, `recover`, `down`, `destroy`, bundled
-runner 2.334.0, cosign-signed release checksums. Release date not recorded.
+runner 2.334.0, built with Go 1.22. The CLI runs on macOS (arm64, amd64) and
+Linux (amd64, arm64); release checksums are signed with cosign keyless
+(GitHub OIDC). The date is the tag's.
