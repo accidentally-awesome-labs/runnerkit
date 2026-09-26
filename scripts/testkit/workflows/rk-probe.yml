@@ -1,0 +1,35 @@
+# RunnerKit validation V-3 (runner auto-update). Runbook:
+# docs/testkit/validations.md.
+#
+# Copy this file to .github/workflows/rk-probe.yml in the THROWAWAY PRIVATE
+# test repository. scripts/testkit/autoupdate-probe.sh dispatches it at the
+# probe runner; GitHub prints "Current runner version" in the job's
+# "Set up job" log, which is how the script sees whether the runner
+# updated itself before it took the job.
+name: rk-probe
+run-name: rk-probe ${{ inputs.nonce }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_on:
+        description: 'Runner labels as a JSON array'
+        required: true
+        type: string
+      nonce:
+        description: 'Marker the kit scripts use to find this run'
+        required: false
+        default: manual
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 30
+    steps:
+      - name: Runner facts
+        run: |
+          echo "RK-PROBE runner_name=${RUNNER_NAME} environment=${RUNNER_ENVIRONMENT:-unset} user=$(id -un)"

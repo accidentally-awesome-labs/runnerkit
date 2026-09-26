@@ -421,6 +421,7 @@ func TestDocsDropStaleAndUnsafeAdvice(t *testing.T) {
 		"Recommended Cloud Runner",
 		"recommended cloud",
 		"recommended Hetzner",
+		"disable --now 'actions.runner.*'", // systemctl disable takes no glob
 	}
 	for path, content := range userFacingMarkdown(t) {
 		if path == "CHANGELOG.md" {
@@ -523,7 +524,11 @@ func TestLicensingAndPolicyDocs(t *testing.T) {
 		"sudo chown root:root /opt/actions-runner/runnerkit-*/\n",
 		"sudo chown root:root /opt/actions-runner/runnerkit-*/svc.sh",
 		"sudo chown -R -H root:root /opt/actions-runner/runnerkit-*/bin",
-		"sudo systemctl disable --now 'actions.runner.*'",
+		// systemctl disable rejects a glob ("globs are not supported
+		// for this"), so the teardown stops by pattern and disables
+		// the unit names list-unit-files returns.
+		"sudo systemctl stop 'actions.runner.*'",
+		"systemctl list-unit-files --plain --no-legend 'actions.runner.*'",
 		"Any later `runnerkit up` or `register` on this host runs",
 		"id -nG runnerkit-runner",
 		"sudo gpasswd -d runnerkit-runner docker",

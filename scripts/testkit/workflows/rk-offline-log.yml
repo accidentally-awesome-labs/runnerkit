@@ -1,0 +1,47 @@
+# RunnerKit validation V-1 (what happens to an offline runner), optional
+# log. Runbook: docs/testkit/validations.md.
+#
+# Copy this file to .github/workflows/rk-offline-log.yml in the THROWAWAY
+# PRIVATE test repository when you start the 15-day offline test, and add a
+# repository secret RK_RUNNERS_READ_TOKEN: a fine-grained PAT for that
+# repository with Administration: Read only. Every 6 hours a GitHub-hosted
+# job records each runner's status and version, which pins down when GitHub
+# removed the offline runner. Delete this file when the test ends.
+name: rk-offline-log
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record runner status
+        env:
+          TOKEN: ${{ secrets.RK_RUNNERS_READ_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOKEN" ]; then
+            echo "::error::add the repository secret RK_RUNNERS_READ_TOKEN (fine-grained PAT, Administration: Read)"
+            exit 1
+          fi
+          curl -fsS -o runners.json \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "${GITHUB_API_URL}/repos/${REPO}/actions/runners?per_page=100"
+          line="$(jq -c --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{at: $at, total: .total_count, runners: [.runners[] | {id, name, status, busy, version}]}' runners.json)"
+          echo "RK-OFFLINE ${line}"
+          {
+            echo '```json'
+            echo "$line"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

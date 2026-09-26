@@ -1,0 +1,148 @@
+# RunnerKit real-job gate (A-20). Runbook: docs/testkit/release-gate.md.
+#
+# Copy this file to .github/workflows/rk-gate.yml in the THROWAWAY PRIVATE
+# test repository, never into a public repository or into runnerkit itself.
+# It runs only when dispatched: a self-hosted runner must never run code
+# from pull requests. scripts/testkit/gate.sh dispatches it and checks the
+# RK-GATE lines it prints.
+name: rk-gate
+run-name: rk-gate ${{ inputs.nonce }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_on:
+        description: 'Runner labels as a JSON array, as printed by runnerkit up'
+        required: true
+        type: string
+      mode:
+        description: 'gate: docker must work. revoked: after the revocation steps, docker and install-directory writes must be refused.'
+        required: false
+        default: gate
+        type: choice
+        options:
+          - gate
+          - revoked
+      nonce:
+        description: 'Marker the kit scripts use to find this run'
+        required: false
+        default: manual
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 30
+    steps:
+      - name: Runner identity
+        run: |
+          set -euo pipefail
+          . /etc/os-release
+          echo "RK-GATE runner_name=${RUNNER_NAME}"
+          echo "RK-GATE runner_environment=${RUNNER_ENVIRONMENT:-unset}"
+          echo "RK-GATE os=${ID}-${VERSION_ID} arch=$(uname -m) kernel=$(uname -r)"
+          echo "RK-GATE user=$(id -un) uid=$(id -u) groups=$(id -nG | tr ' ' ',')"
+          listener="/opt/actions-runner/${RUNNER_NAME}/bin/Runner.Listener"
+          if [ -x "$listener" ] && version="$("$listener" --version 2>/dev/null)"; then
+            echo "RK-GATE runner_version=${version}"
+          fi
+          if sudo -n true 2>/dev/null; then
+            echo "RK-GATE job_sudo=available"
+          else
+            echo "RK-GATE job_sudo=none"
+          fi
+          fail=0
+          if [ "${RUNNER_ENVIRONMENT:-}" != self-hosted ]; then echo "::error::not a self-hosted runner"; fail=1; fi
+          if [ "$(id -u)" -eq 0 ]; then echo "::error::the job runs as root"; fail=1; fi
+          if [ "$(id -un)" != runnerkit-runner ]; then echo "::error::the job does not run as runnerkit-runner"; fail=1; fi
+          exit "$fail"
+
+      - name: gcc builds and runs hello.c
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          cat > hello.c <<'EOF'
+          #include <stdio.h>
+          int main(void) { puts("hello from gcc"); return 0; }
+          EOF
+          gcc --version | head -n1
+          gcc hello.c -o hello
+          ./hello
+          echo "RK-GATE-PASS gcc"
+
+      - name: docker run hello-world
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = gate ]; then
+            docker run --rm hello-world
+            echo "RK-GATE-PASS docker"
+          else
+            if docker run --rm hello-world; then
+              echo "::error::docker still works for the runner user after revocation step 3"
+              exit 1
+            fi
+            echo "RK-GATE-PASS docker-refused"
+          fi
+
+      - name: Install directory (SEC-2)
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          dir="/opt/actions-runner/${RUNNER_NAME}"
+          ls -ld "$dir" "$dir/svc.sh" "$dir/bin"
+          if [ "$MODE" = gate ]; then
+            # Report only: in v1.3.4 the job can rewrite svc.sh (SEC-2).
+            if [ -w "$dir" ]; then echo "RK-GATE install_dir_writable=yes"; else echo "RK-GATE install_dir_writable=no"; fi
+            exit 0
+          fi
+          # After revocation step 2 the job must not be able to replace
+          # svc.sh or bin. If a rename succeeds, undo it and fail.
+          fail=0
+          for f in svc.sh bin; do
+            if mv "$dir/$f" "$dir/$f.rk-gate-probe" 2>/dev/null; then
+              mv "$dir/$f.rk-gate-probe" "$dir/$f"
+              echo "::error::the job could rename $f"
+              fail=1
+            fi
+          done
+          if touch "$dir/rk-gate-probe" 2>/dev/null; then
+            rm -f "$dir/rk-gate-probe"
+            echo "::error::the job can create files in $dir"
+            fail=1
+          fi
+          if [ "$fail" -eq 0 ]; then echo "RK-GATE-PASS install-dir-refused"; fi
+          exit "$fail"
+
+      - name: Image inventory (informational)
+        continue-on-error: true
+        run: |
+          check() {
+            name="$1"; shift
+            if out="$("$@" 2>&1)"; then
+              echo "RK-GATE tool ${name}: $(printf '%s\n' "$out" | head -n1)"
+            else
+              echo "RK-GATE tool ${name}: missing"
+            fi
+          }
+          check node node --version
+          check python3 python3 --version
+          check pip python3 -m pip --version
+          check go go version
+          check java java -version
+          check dotnet dotnet --version
+          check rustc bash -lc 'rustc --version'
+          check cmake cmake --version
+          check ninja ninja --version
+          check zstd zstd --version
+          check gh gh --version
+          check google-chrome google-chrome --version
+          check chromedriver chromedriver --version
+          check firefox firefox --version
+          check geckodriver geckodriver --version
+          echo "RK-GATE disk $(df -h / | tail -n1)"
