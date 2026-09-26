@@ -5,7 +5,13 @@ import "fmt"
 // ImageSetupVersion is the marker version written to
 // /var/lib/runnerkit/image-setup.json after a successful run. Bump
 // this when the script changes materially so upgrade-runner re-runs.
-const ImageSetupVersion = "1"
+//
+// "2" (v1.3.4, P0-2): setup_runner_image now runs after
+// create_runner_user, so `usermod -aG docker` and the rustup install
+// finally reach the runner service user. Hosts carrying a "1" marker
+// were set up before that user existed; the bump makes the next `up`
+// re-run the script so they self-heal.
+const ImageSetupVersion = "2"
 
 // RenderImageSetupScript returns a shell script that installs
 // language runtimes, Docker, browsers, and CLI tools to match the
