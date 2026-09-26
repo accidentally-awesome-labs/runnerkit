@@ -119,8 +119,9 @@ Expect roughly 4.5–5 GB of disk use and about 1.4 GB of downloads
 
 ## Install the CLI
 
-The CLI runs on macOS or Linux (amd64 or arm64). The runner host must be
-Ubuntu x86_64.
+The CLI runs on macOS 12 Monterey or later, or Linux (amd64 or arm64). The
+runner host must be Ubuntu x86_64. Since v1.3.4 the macOS binaries need
+macOS 12 (they are built with Go 1.26); on macOS 11 or older, stay on v1.3.3.
 
 ### Homebrew (macOS, Linux)
 

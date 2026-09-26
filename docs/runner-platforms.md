@@ -14,8 +14,8 @@ This page maps **where RunnerKit runs today** versus common **platform combinati
 | **macOS** | **Not supported.** Preflight rejects non-Linux and non-systemd hosts. |
 | **Windows** | **Not supported.** |
 
-The RunnerKit **CLI** itself runs on macOS and Linux (amd64 and arm64); that
-is separate from the runner host.
+The RunnerKit **CLI** itself runs on macOS 12 Monterey or later and Linux
+(amd64 and arm64); that is separate from the runner host.
 
 RunnerKit’s remote bootstrap assumes bash over SSH and systemd on the host.
 

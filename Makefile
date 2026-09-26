@@ -27,7 +27,7 @@ generate-check: generate ## Fail if go generate changes tracked files or leaves 
 	if [ -n "$$untracked" ]; then echo "go generate left files that are not committed:"; echo "$$untracked"; exit 1; fi
 
 vulncheck: ## Report known vulnerabilities with govulncheck (report-only in CI until Stage 2).
-	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 release-snapshot: ## Local GoReleaser dry-run (validates the build matrix).
 	goreleaser release --snapshot --skip=publish --clean --skip=sign

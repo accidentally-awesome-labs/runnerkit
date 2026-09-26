@@ -23,7 +23,8 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
+          check-latest: true
       - uses: sigstore/cosign-installer@v3
       - uses: goreleaser/goreleaser-action@v7
         with:
@@ -50,7 +51,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
+          check-latest: true
       # release.yml's test job runs go vet; run it here too so vet findings
       # (copylocks, lostcancel, ...) fail the PR, not the tag.
       - name: go vet
@@ -67,7 +69,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
+          check-latest: true
       # `go generate ./... && git diff --exit-code`, plus a check for new
       # untracked files, which git diff does not see. Separate lines so a
       # failing `go generate` stops the step (bash -e ignores failures on
@@ -86,20 +89,22 @@ jobs:
 
   # Report-only until Stage 2 (C-05): findings go to the job summary and a
   # ::warning:: annotation, and the job stays green so it never trains anyone
-  # to ignore a red check. Standard-library findings on the pinned Go 1.22
-  # toolchain are known and accepted for v1.3.4 (A-17b tracks the bump);
-  # before tagging, read this job's summary for the release SHA.
+  # to ignore a red check. On the current Go 1.26.x toolchain the result is
+  # expected to have no reachable findings; any finding is a regression to
+  # triage (stdlib: take the Go patch release; module: bump it). Before
+  # tagging, read this job's summary for the release SHA.
   govulncheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
-      # v1.1.4 is the newest golang.org/x/vuln release whose go.mod still
-      # builds with Go 1.22 (no toolchain auto-download). Bump with A-17b.
+          go-version: '1.26'
+          check-latest: true
+      # Pinned; golang.org/x/vuln v1.8.0 requires Go 1.26. Keep it in step
+      # with the Makefile's vulncheck target.
       - name: install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - name: govulncheck
         run: |
           set -uo pipefail

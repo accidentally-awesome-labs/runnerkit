@@ -103,13 +103,17 @@ Before pushing a tag, the maintainer must:
    `pr-checks` workflow by hand (`workflow_dispatch`) on the release SHA, or
    use the run from the push to `main`, and read the `govulncheck` job
    summary (the job is report-only: it stays green and raises a warning
-   annotation when there are findings). Standard-library findings on the
-   pinned Go 1.22 toolchain (for example in the `net/http` client) are
-   known and accepted for v1.3.4; the toolchain bump is tracked as A-17b.
-   List them under Known issues in the CHANGELOG. A **reachable** finding
-   in a module dependency (`golang.org/x/*` or any other non-stdlib
-   module) means that module bump goes into this release. Link the run in
-   the CHANGELOG section.
+   annotation when there are findings). CI builds with the latest Go 1.26.x
+   patch release, so the result is expected to show **no reachable
+   findings**. A reachable standard-library finding means a newer Go
+   patch release is needed (re-run the job so `setup-go` picks it up, or
+   raise the Go version if the fix is only on a newer line, and raise the
+   `toolchain` line in `go.mod` to that patch so source builds with
+   `GOTOOLCHAIN=auto` get it too); a
+   **reachable** finding in a module dependency (`golang.org/x/*` or any
+   other non-stdlib module) means that module bump goes into this release.
+   Anything knowingly shipped goes under Known issues in the CHANGELOG.
+   Link the run in the CHANGELOG section.
 4. **Real GitHub job on a fresh password-sudo host (BYO gate).** No release
    may claim the BYO path works unless, for that commit, a real job ran on a
    fresh password-sudo Ubuntu 24.04 x86_64 host prepared **only** by that

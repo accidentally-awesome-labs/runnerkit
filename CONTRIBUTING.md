@@ -61,13 +61,17 @@ git rebase --signoff main
 
 ## Building and testing
 
-RunnerKit targets **Go 1.22** (see `go.mod`). If your installed Go is newer,
-pin the toolchain so results match CI:
+RunnerKit targets **Go 1.26** (see `go.mod`); CI and releases use the latest
+Go 1.26.x patch release. `go.mod` also has `toolchain go1.26.8`, so if your
+installed Go is older than that, the `go` command (`GOTOOLCHAIN=auto`, the
+default) downloads at least go1.26.8 rather than an unpatched go1.26.0. To
+build with the exact patch CI used, set it explicitly (replace `go1.26.8`
+with the current 1.26.x patch):
 
 ```bash
-GOTOOLCHAIN=go1.22.12 go build ./...
-GOTOOLCHAIN=go1.22.12 go vet ./...
-GOTOOLCHAIN=go1.22.12 go test ./... -count=1
+GOTOOLCHAIN=go1.26.8 go build ./...
+GOTOOLCHAIN=go1.26.8 go vet ./...
+GOTOOLCHAIN=go1.26.8 go test ./... -count=1
 ```
 
 Or use the Makefile:

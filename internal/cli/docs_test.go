@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"go/version"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -489,7 +490,7 @@ func TestLicensingAndPolicyDocs(t *testing.T) {
 	}
 
 	contributing := mustReadDocFile(t, "../../CONTRIBUTING.md")
-	for _, want := range []string{"Developer Certificate of Origin", "Signed-off-by", "git commit -s", "2 distinct external requests", "W1", "30 build hours", "GOTOOLCHAIN=go1.22.12", "go generate ./...", "make generate-check"} {
+	for _, want := range []string{"Developer Certificate of Origin", "Signed-off-by", "git commit -s", "2 distinct external requests", "W1", "30 build hours", "GOTOOLCHAIN=go1.26", "go generate ./...", "make generate-check"} {
 		if !strings.Contains(contributing, want) {
 			t.Fatalf("CONTRIBUTING.md missing %q", want)
 		}
@@ -573,6 +574,31 @@ func TestLicensingAndPolicyDocs(t *testing.T) {
 	} {
 		if !strings.Contains(claude, want) {
 			t.Fatalf("CLAUDE.md missing %q", want)
+		}
+	}
+}
+
+// TestGoModPinsPatchedToolchain guards against go.mod dropping its toolchain
+// line: with only `go 1.26.0`, GOTOOLCHAIN=auto on an older local Go
+// downloads go1.26.0, which lacks the stdlib security fixes of later 1.26.x
+// patches. It also pins the macOS 12 floor that Go 1.26 imposes.
+func TestGoModPinsPatchedToolchain(t *testing.T) {
+	const minToolchain = "go1.26.8"
+	var toolchain string
+	for _, line := range strings.Split(mustReadDocFile(t, "../../go.mod"), "\n") {
+		if f := strings.Fields(line); len(f) == 2 && f[0] == "toolchain" {
+			toolchain = f[1]
+		}
+	}
+	if toolchain == "" {
+		t.Fatalf("go.mod has no toolchain line; want toolchain %s or newer", minToolchain)
+	}
+	if version.Compare(toolchain, minToolchain) < 0 {
+		t.Fatalf("go.mod toolchain %s is older than %s", toolchain, minToolchain)
+	}
+	for _, doc := range []string{"../../README.md", "../../CHANGELOG.md", "../../docs/runner-platforms.md"} {
+		if !strings.Contains(mustReadDocFile(t, doc), "macOS 12") {
+			t.Fatalf("%s must state the macOS 12 minimum for the CLI (Go 1.26)", doc)
 		}
 	}
 }

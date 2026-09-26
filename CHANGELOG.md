@@ -103,6 +103,19 @@ cloud path and BYO ephemeral mode behind `--experimental`.
   `go test -race` before GoReleaser, and GoReleaser runs only in the upstream
   repository. CI adds a report-only `govulncheck` job (pull requests, pushes
   to `main`, weekly, manual) and a `go generate` drift check.
+- Go toolchain raised from Go 1.22.12 to the Go 1.26 line (`go.mod`:
+  `go 1.26.0`, `toolchain go1.26.8`). CI and the release workflow build with
+  the latest Go 1.26.x patch release, so released binaries are built with
+  Go 1.26. Building from source now needs Go 1.26 or a Go that can download
+  it (`GOTOOLCHAIN=auto`, the default); an older local Go downloads at least
+  go1.26.8, not the unpatched go1.26.0. govulncheck (CI and
+  `make vulncheck`) moves from v1.1.4 to v1.8.0.
+- The released macOS binaries now need **macOS 12 Monterey or later** (Go
+  1.26 requirement; v1.3.3 ran on macOS 10.15 and 11). On macOS 11 Big Sur
+  or older, stay on v1.3.3. The Linux binaries need kernel 3.2 or later.
+- `golang.org/x/*` modules refreshed: `x/net` v0.12.0 → v0.59.0, `x/sys`
+  v0.10.0 → v0.48.0, `x/term` v0.10.0 → v0.46.0, `x/text` v0.11.0 →
+  v0.42.0.
 
 ### Fixed
 
@@ -171,6 +184,17 @@ cloud path and BYO ephemeral mode behind `--experimental`.
   and the manual cleanup steps run as root) and show how to remove the
   runner without running `svc.sh`. A later `runnerkit up` undoes them.
 - Docs no longer advise adding the `workflow` scope to the GitHub token.
+- Built with Go 1.26 instead of Go 1.22.12, which no longer gets security
+  fixes. govulncheck in CI reported 30 reachable standard-library
+  vulnerabilities on Go 1.22.12, all fixed in current Go, including:
+  GO-2025-3563 (CVE-2025-22871, `net/http` request smuggling via invalid
+  chunked data; reachable from the GitHub API client), GO-2025-3751
+  (CVE-2025-4673, `net/http` keeps sensitive headers on cross-origin
+  redirects; reachable from the update check), GO-2025-4008 (`crypto/tls`),
+  GO-2025-4007 (`crypto/x509`), GO-2025-4010 (`net/url`), GO-2025-3956
+  (`os/exec` `LookPath`; reachable from `gh` CLI token lookup) and
+  GO-2025-3750 (`os` on Windows). `golang.org/x/net` v0.59.0 fixes
+  GO-2025-3503.
 
 ### Known issues
 
@@ -194,13 +218,6 @@ Mirrors the README "Known issues" section.
   untested in this release.
 - **Disabled commands:** `upgrade-runner`, `doctor --fix`,
   `recover --reinstall-service`, `recover --reregister`.
-- **Go 1.22 standard library:** RunnerKit is still built with Go 1.22,
-  which no longer gets security fixes. govulncheck is expected to report
-  reachable standard-library findings in the `net/http` client (for
-  example CVE-2025-4673, proxy headers kept on cross-origin redirects, and
-  CVE-2025-22871, chunked-encoding parsing); the exact list is in the
-  govulncheck job summary for the tagged commit. They are accepted for
-  this release; the toolchain bump is tracked as A-17b.
 - **Platforms:** only Ubuntu x86_64 runner hosts are supported. On arm64
   hosts preflight warns and setup then fails; non-Ubuntu distributions pass
   preflight and then fail during setup.
