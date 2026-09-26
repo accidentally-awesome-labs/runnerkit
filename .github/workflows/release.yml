@@ -21,8 +21,21 @@ jobs:
           go-version: '1.22'
       - name: go vet
         run: go vet ./...
+      # `go generate ./... && git diff --exit-code`, plus a check for new
+      # untracked files, which git diff does not see. Separate lines so a
+      # failing `go generate` stops the step (bash -e ignores failures on
+      # the left of `&&`).
       - name: go generate leaves no diff
-        run: go generate ./... && git diff --exit-code
+        run: |
+          set -euo pipefail
+          go generate ./...
+          git diff --exit-code
+          untracked="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$untracked" ]; then
+            echo "go generate left files that are not committed:"
+            echo "$untracked"
+            exit 1
+          fi
       - name: go test
         run: go test ./... -count=1 -race
 

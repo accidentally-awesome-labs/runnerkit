@@ -21,8 +21,10 @@ vet: ## go vet all packages.
 generate: ## Regenerate committed generated files (go generate ./...).
 	go generate ./...
 
-generate-check: generate ## Fail if go generate changes tracked files (same check as CI).
+generate-check: generate ## Fail if go generate changes tracked files or leaves untracked ones (same check as CI).
 	git diff --exit-code
+	@untracked="$$(git status --porcelain --untracked-files=all)"; \
+	if [ -n "$$untracked" ]; then echo "go generate left files that are not committed:"; echo "$$untracked"; exit 1; fi
 
 vulncheck: ## Report known vulnerabilities with govulncheck (report-only in CI until Stage 2).
 	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
