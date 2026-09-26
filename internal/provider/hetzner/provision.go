@@ -38,6 +38,8 @@ type Provider struct {
 	// Bug 30 (Plan 06-12) destroy retry loop so tests can fast-forward
 	// without burning wall-clock time. Defaults to time.Sleep when nil.
 	Sleep func(time.Duration)
+	// Now stamps the fetch time on live prices. Defaults to time.Now.
+	Now func() time.Time
 }
 
 type Option func(*Provider)
@@ -89,9 +91,24 @@ func (p *Provider) Validate(ctx context.Context, input provider.ProvisionInput) 
 	return provider.ValidationResult{OK: true, Source: source.Source}, nil
 }
 
-func (p *Provider) Plan(_ context.Context, input provider.ProvisionInput) (provider.ProvisionPlan, error) {
+// Plan builds the provisioning plan and prices it from the live Hetzner
+// API (server type per-location price plus primary IPv4 price). It returns
+// *provider.UnpricedLocationError when the API has no price for the chosen
+// type and location; it never creates resources.
+func (p *Provider) Plan(ctx context.Context, input provider.ProvisionInput) (provider.ProvisionPlan, error) {
 	input.Profile = withDefaults(input.Profile)
-	return provider.HetznerProvisionPlan(input), nil
+	client, _, err := p.client()
+	if err != nil {
+		return provider.ProvisionPlan{}, err
+	}
+	hourly, monthly, err := p.quote(ctx, client, nil, input.Profile)
+	if err != nil {
+		return provider.ProvisionPlan{}, err
+	}
+	plan := provider.HetznerProvisionPlan(input)
+	plan.EstimatedHourlyCost = hourly
+	plan.EstimatedMonthlyCost = monthly
+	return plan, nil
 }
 
 func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput) (provider.ProvisionResult, error) {
@@ -110,6 +127,12 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 	if strings.TrimSpace(input.PublicKey) == "" {
 		return provider.ProvisionResult{}, fmt.Errorf("public SSH key is required for Hetzner cloud provisioning")
 	}
+	// Refuse before any create call when the API has no price for this
+	// type and location (A-07): nothing billable is created unpriced.
+	hourly, monthly, err := p.quote(ctx, client, serverType, profile)
+	if err != nil {
+		return provider.ProvisionResult{}, err
+	}
 	if p.Log != nil && p.Log.Enabled(ctx, slog.LevelInfo) {
 		p.Log.InfoContext(ctx, "hetzner.provision.begin",
 			slog.String("repo", input.RepoFullName),
@@ -120,6 +143,8 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 	}
 
 	plan := provider.HetznerProvisionPlan(input)
+	plan.EstimatedHourlyCost = hourly
+	plan.EstimatedMonthlyCost = monthly
 	resourceIDs := map[string]string{}
 	labels := hcloudLabels(plan.Tags)
 
@@ -293,12 +318,6 @@ func withDefaults(profile provider.Profile) provider.Profile {
 	}
 	if profile.SSHUser == "" {
 		profile.SSHUser = defaults.SSHUser
-	}
-	if profile.EstimatedHourlyCost == "" {
-		profile.EstimatedHourlyCost = defaults.EstimatedHourlyCost
-	}
-	if profile.EstimatedMonthlyCost == "" {
-		profile.EstimatedMonthlyCost = defaults.EstimatedMonthlyCost
 	}
 	if profile.CostEstimateCaveat == "" {
 		profile.CostEstimateCaveat = defaults.CostEstimateCaveat
@@ -492,8 +511,8 @@ func machineFromServer(input provider.ProvisionInput, plan provider.ProvisionPla
 			Region:               plan.Region,
 			ServerType:           plan.ServerType,
 			Image:                plan.Image,
-			EstimatedHourlyCost:  plan.EstimatedHourlyCost,
-			EstimatedMonthlyCost: plan.EstimatedMonthlyCost,
+			EstimatedHourlyCost:  plan.EstimatedHourlyCost.Summary(),
+			EstimatedMonthlyCost: plan.EstimatedMonthlyCost.Summary(),
 			Caveat:               plan.CostEstimateCaveat,
 		},
 		CloudInitVersion: CloudInitUserDataVersion,

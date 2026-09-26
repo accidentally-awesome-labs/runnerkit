@@ -12,6 +12,10 @@ type Client interface {
 	GetLocation(ctx context.Context, name string) (*hcloud.Location, error)
 	GetServerType(ctx context.Context, name string) (*hcloud.ServerType, error)
 	GetImage(ctx context.Context, name string) (*hcloud.Image, error)
+	// GetPricing returns the account's price list (GET /pricing). RunnerKit
+	// reads primary IPv4 prices and the currency from it; server type
+	// prices come from GetServerType's per-location Pricings.
+	GetPricing(ctx context.Context) (hcloud.Pricing, error)
 	CreateSSHKey(ctx context.Context, opts hcloud.SSHKeyCreateOpts) (*hcloud.SSHKey, error)
 	CreateFirewall(ctx context.Context, opts hcloud.FirewallCreateOpts) (*hcloud.Firewall, error)
 	CreateServer(ctx context.Context, opts hcloud.ServerCreateOpts) (*hcloud.Server, *hcloud.Action, error)
@@ -62,6 +66,11 @@ func (c *APIClient) GetServerType(ctx context.Context, name string) (*hcloud.Ser
 func (c *APIClient) GetImage(ctx context.Context, name string) (*hcloud.Image, error) {
 	image, _, err := c.client.Image.GetByName(ctx, name)
 	return image, err
+}
+
+func (c *APIClient) GetPricing(ctx context.Context) (hcloud.Pricing, error) {
+	pricing, _, err := c.client.Pricing.Get(ctx)
+	return pricing, err
 }
 
 func (c *APIClient) CreateSSHKey(ctx context.Context, opts hcloud.SSHKeyCreateOpts) (*hcloud.SSHKey, error) {

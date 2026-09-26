@@ -37,12 +37,19 @@ type fakeClient struct {
 	sshKeyOpts   hcloud.SSHKeyCreateOpts
 	firewallOpts hcloud.FirewallCreateOpts
 	serverOpts   hcloud.ServerCreateOpts
+
+	pricing    hcloud.Pricing
+	pricingErr error
 }
 
 func newFakeClient() *fakeClient {
+	// Price the location Provision will resolve for provisionInput(), so
+	// the A-07 pricing gate passes in tests that are not about pricing.
+	region := withDefaults(provisionInput().Profile).Region
 	return &fakeClient{
 		location:   &hcloud.Location{Name: "fsn1"},
-		serverType: &hcloud.ServerType{Name: "cpx22"},
+		serverType: fakeServerType("cpx22", fakeServerPrice(region, "0.0100000000", "0.0119000000", "6.2000000000", "7.3780000000")),
+		pricing:    fakePricing("EUR", fakeIPv4Price(region, "0.0010000000", "0.0011900000", "0.5000000000", "0.5950000000")),
 		image:      &hcloud.Image{Name: "ubuntu-24.04"},
 		sshKey:     &hcloud.SSHKey{ID: 101, Name: "key", Fingerprint: "SHA256:sshkey"},
 		firewall:   &hcloud.Firewall{ID: 202, Name: "fw"},
@@ -72,6 +79,10 @@ func (f *fakeClient) GetServerType(context.Context, string) (*hcloud.ServerType,
 		return nil, f.validationErr["server_type"]
 	}
 	return f.serverType, nil
+}
+func (f *fakeClient) GetPricing(context.Context) (hcloud.Pricing, error) {
+	f.calls = append(f.calls, "lookup:pricing")
+	return f.pricing, f.pricingErr
 }
 func (f *fakeClient) GetImage(context.Context, string) (*hcloud.Image, error) {
 	f.calls = append(f.calls, "lookup:image")
@@ -129,7 +140,7 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 	if err != nil {
 		t.Fatalf("Provision returned error: %v", err)
 	}
-	wantOrder := []string{"lookup:location", "lookup:server_type", "lookup:image", "ssh_key", "firewall", "server"}
+	wantOrder := []string{"lookup:location", "lookup:server_type", "lookup:image", "lookup:pricing", "ssh_key", "firewall", "server"}
 	if !reflect.DeepEqual(client.calls, wantOrder) {
 		t.Fatalf("call order = %#v, want %#v", client.calls, wantOrder)
 	}

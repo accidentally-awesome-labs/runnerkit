@@ -709,6 +709,10 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	plan, err := cloudProvider.Plan(ctx, input)
 	if err != nil {
+		var unpriced *provider.UnpricedLocationError
+		if errors.As(err, &unpriced) {
+			return renderCloudLocationUnpriced(renderer, unpriced)
+		}
 		_ = renderer.Error("cloud_plan_failed", "RunnerKit could not build the cloud provisioning plan.", []string{err.Error()})
 		return NewExitError(ExitSafetyGate, err)
 	}
@@ -1104,16 +1108,23 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 		planLabels = ephemeralLabels
 		planSnippet = labels.WorkflowSnippet(ephemeralLabels)
 	}
+	// A-07: every amount shown comes from the provider pricing API. A plan
+	// without a price is refused rather than shown with a guessed figure.
+	if plan.EstimatedHourlyCost == nil || plan.EstimatedMonthlyCost == nil {
+		return renderCloudLocationUnpriced(renderer, &provider.UnpricedLocationError{ServerType: plan.ServerType, Location: plan.Region, Resource: "server"})
+	}
 	if jsonOutput {
 		payload := map[string]any{
-			"ok":               true,
-			"command":          "up",
-			"repo":             repo.FullName,
-			"cloud_plan":       plan,
-			"runner_installed": false,
-			"state_saved":      false,
-			"workflow_snippet": planSnippet,
-			"labels":           planLabels,
+			"ok":                             true,
+			"command":                        "up",
+			"repo":                           repo.FullName,
+			"cloud_plan":                     plan,
+			"runner_installed":               false,
+			"state_saved":                    false,
+			"workflow_snippet":               planSnippet,
+			"labels":                         planLabels,
+			cloudJSONKeyEstimatedHourlyCost:  plan.EstimatedHourlyCost,
+			cloudJSONKeyEstimatedMonthlyCost: plan.EstimatedMonthlyCost,
 		}
 		for k, v := range modeSelectionPayload(modeDecision, ttl) {
 			payload[k] = v
@@ -1127,7 +1138,9 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 		ui.Bullet("Region: " + plan.Region),
 		ui.Bullet("Server type: " + plan.ServerType),
 		ui.Bullet("Image: " + plan.Image),
-		ui.Bullet("Estimated cost: " + plan.EstimatedHourlyCost + ", " + plan.EstimatedMonthlyCost),
+		ui.Bullet("Estimated cost: " + plan.EstimatedHourlyCost.Label() + ", " + plan.EstimatedMonthlyCost.Label()),
+		ui.Bullet("Monthly price breakdown: " + formatCloudCostComponents(plan.EstimatedMonthlyCost)),
+		ui.Bullet(cloudCostSourceLine(plan.EstimatedMonthlyCost)),
 		ui.Bullet("Resources: server, SSH key, firewall, public IPv4/IPv6"),
 		ui.Bullet("Not created: backups, snapshots, volumes, floating IPs"),
 		ui.Bullet("Resource names: " + formatCloudResourceNames(plan.ResourceNames)),
@@ -1144,6 +1157,38 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 	}
 	lines = append(lines, ui.Next("Future cleanup: "+plan.FutureDestroyCommand))
 	return renderer.Step(1, 1, cloudProvisioningPlanTitle, lines...)
+}
+
+// renderCloudLocationUnpriced refuses a cloud plan the provider pricing API
+// cannot price (A-07). It runs before Provision, so nothing is created.
+func renderCloudLocationUnpriced(renderer *ui.Renderer, unpriced *provider.UnpricedLocationError) error {
+	_ = renderer.Error("cloud_location_unpriced", unpriced.Error()+".", []string{
+		"RunnerKit shows only prices reported by the Hetzner API and will not create a server it cannot price.",
+		"Re-run with another --cloud-region (or --cloud-profile) that Hetzner prices for your account.",
+	})
+	return NewExitError(ExitInvalidInput, unpriced)
+}
+
+func formatCloudCostComponents(cost *provider.CostEstimate) string {
+	if cost == nil || len(cost.Components) == 0 {
+		return "not reported"
+	}
+	parts := make([]string, 0, len(cost.Components))
+	for _, component := range cost.Components {
+		parts = append(parts, component.Label())
+	}
+	return strings.Join(parts, "; ")
+}
+
+func cloudCostSourceLine(cost *provider.CostEstimate) string {
+	if cost != nil && cost.Source == provider.CostSourceHetznerAPI {
+		return "Prices " + provider.CostSourceNote(cost.FetchedAt)
+	}
+	source := "unknown"
+	if cost != nil && cost.Source != "" {
+		source = cost.Source
+	}
+	return "Price source: " + source
 }
 
 func formatCloudResourceNames(names map[string]string) string {
@@ -1394,7 +1439,7 @@ func mergeCloudInventory(existing rkstate.CloudInventory, result provider.Provis
 		cloud.Tags = cloneStringMap(plan.Tags)
 	}
 	if cloud.CostProfile.Provider == "" {
-		cloud.CostProfile = rkstate.CostProfileRef{Provider: plan.Provider, Region: plan.Region, ServerType: plan.ServerType, Image: plan.Image, EstimatedHourlyCost: plan.EstimatedHourlyCost, EstimatedMonthlyCost: plan.EstimatedMonthlyCost, Caveat: plan.CostEstimateCaveat}
+		cloud.CostProfile = rkstate.CostProfileRef{Provider: plan.Provider, Region: plan.Region, ServerType: plan.ServerType, Image: plan.Image, EstimatedHourlyCost: plan.EstimatedHourlyCost.Summary(), EstimatedMonthlyCost: plan.EstimatedMonthlyCost.Summary(), Caveat: plan.CostEstimateCaveat}
 	}
 	cloud.CloudInitVersion = defaultString(cloud.CloudInitVersion, hetzner.CloudInitUserDataVersion)
 	return cloud
