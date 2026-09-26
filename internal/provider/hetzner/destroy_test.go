@@ -25,6 +25,9 @@ func (f *destroyFakeClient) GetServerType(context.Context, string) (*hcloud.Serv
 	return nil, nil
 }
 func (f *destroyFakeClient) GetImage(context.Context, string) (*hcloud.Image, error) { return nil, nil }
+func (f *destroyFakeClient) GetPricing(context.Context) (hcloud.Pricing, error) {
+	return hcloud.Pricing{}, nil
+}
 func (f *destroyFakeClient) CreateSSHKey(context.Context, hcloud.SSHKeyCreateOpts) (*hcloud.SSHKey, error) {
 	return nil, nil
 }
@@ -255,6 +258,9 @@ func (f *destroyFakeOrderedClient) GetServerType(context.Context, string) (*hclo
 }
 func (f *destroyFakeOrderedClient) GetImage(context.Context, string) (*hcloud.Image, error) {
 	return nil, nil
+}
+func (f *destroyFakeOrderedClient) GetPricing(context.Context) (hcloud.Pricing, error) {
+	return hcloud.Pricing{}, nil
 }
 func (f *destroyFakeOrderedClient) CreateSSHKey(context.Context, hcloud.SSHKeyCreateOpts) (*hcloud.SSHKey, error) {
 	return nil, nil
