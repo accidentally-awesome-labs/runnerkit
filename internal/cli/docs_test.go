@@ -1,31 +1,33 @@
 package cli
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
+// The docs tests below pin the user-facing copy to what v1.3.4 actually
+// ships: cloud and BYO ephemeral behind --experimental, an explicit
+// --cloud-region, no ephemeral cloud, live Hetzner API pricing, the
+// disabled lifecycle mutators, and the security disclosures (H-08, H-09).
+
 func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
-	readme, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README.md: %v", err)
-	}
-	quickstart, err := os.ReadFile("../../docs/byo-quickstart.md")
-	if err != nil {
-		t.Fatalf("read docs/byo-quickstart.md: %v", err)
-	}
-	combined := string(readme) + "\n" + string(quickstart)
+	readme := mustReadDocFile(t, "../../README.md")
+	quickstart := mustReadDocFile(t, "../../docs/byo-quickstart.md")
+	combined := readme + "\n" + quickstart
 	for _, want := range []string{
 		"BYO Persistent Runner Quickstart",
 		"BYO persistent runner quickstart",
 		"docs/byo-quickstart.md",
+		"runnerkit init --print-install-command",
 		"runnerkit up --repo owner/name --host user@host",
 		"Persistent self-hosted runners are intended for trusted private repositories",
 		"RunnerKit does not edit or commit workflow YAML for you.",
 		"runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]",
 		"runnerkit status --repo owner/name",
-		"runnerkit logs --repo owner/name --lines 50",
 		"runnerkit logs --repo owner/name --since 30m --lines 200",
 		"runnerkit doctor --repo owner/name",
 		"docs/troubleshooting/host-resources.md",
@@ -33,8 +35,6 @@ func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
 		"Review logs before sharing; redaction is best-effort for workflow-produced secrets.",
 		"runnerkit recover --repo owner/name --dry-run",
 		"runnerkit recover --repo owner/name --restart-service --yes",
-		"runnerkit recover --repo owner/name --reinstall-service --yes",
-		"runnerkit recover --repo owner/name --reregister --yes",
 		"Do not blindly rerun runnerkit up for recovery; start with status, logs, doctor, and recover --dry-run.",
 		"RunnerKit fails closed on SSH host-key mismatch and will not recover until you verify the machine identity.",
 		"runnerkit down --repo owner/name --dry-run",
@@ -42,115 +42,171 @@ func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
 		"runnerkit down --repo owner/name --github-runner-id 123 --yes",
 		"RunnerKit down removes only RunnerKit-managed runner-specific BYO artifacts recorded in state.",
 		"RunnerKit down does not delete the BYO machine, shared users, shared /var/lib/runnerkit parents, or unrelated user data.",
-		"Use destroy only for future cloud resources; BYO cleanup uses down.",
+		"Use destroy only for RunnerKit-created Hetzner servers; BYO cleanup uses down.",
 		"remote_cleanup_pending",
 	} {
 		if !strings.Contains(combined, want) {
-			t.Fatalf("docs missing %q", want)
+			t.Fatalf("README.md + docs/byo-quickstart.md missing %q", want)
 		}
 	}
-	forbidden := "doctor" + " --" + "fix"
-	if strings.Contains(combined, forbidden) {
-		t.Fatal("docs must not introduce the forbidden doctor mutation flag")
+
+	// The BYO quickstart must disclose the privilege model, the repaired
+	// install.sh and how the repair was validated.
+	for _, want := range []string{
+		"Ubuntu x86_64",
+		"root-equivalent",
+		"`docker` group",
+		"run the current one again",
+		"fake GitHub API",
+		"a real GitHub job run is still required",
+		"`recover --reinstall-service` and `recover --reregister` are disabled",
+		"`runnerkit upgrade-runner` is disabled",
+		"security-posture.md#if-you-already-installed-runnerkit",
+	} {
+		if !strings.Contains(quickstart, want) {
+			t.Fatalf("docs/byo-quickstart.md missing %q", want)
+		}
+	}
+
+	// Disabled commands must never be offered as a command to run.
+	for _, banned := range []string{
+		"runnerkit recover --repo owner/name --reinstall-service --yes",
+		"runnerkit recover --repo owner/name --reregister --yes",
+		"runnerkit upgrade-runner --repo",
+		"runnerkit doctor --repo owner/name --fix",
+		"runnerkit destroy --repo owner/name",
+		"~75",
+		"scoped passwordless sudo",
+	} {
+		if strings.Contains(quickstart, banned) {
+			t.Fatalf("docs/byo-quickstart.md must not contain %q", banned)
+		}
 	}
 	badRecoveryCopy := "rerun runnerkit up for recovery"
 	allowedWarning := "Do not blindly rerun runnerkit up for recovery"
 	if strings.Contains(combined, badRecoveryCopy) && !strings.Contains(combined, allowedWarning) {
 		t.Fatal("docs must only mention rerunning up for recovery as a warning")
 	}
-	forbiddenDestroy := "runnerkit" + " destroy" + " --repo owner/name"
-	if strings.Contains(string(quickstart), forbiddenDestroy) {
-		// destroy may now appear in BYO quickstart only as a recommended
-		// ephemeral cloud setup command, not as a BYO cleanup step.
-		// Allow only when the surrounding context is the safety
-		// recommendation: `--mode ephemeral --cloud hetzner`.
-		idx := strings.Index(string(quickstart), forbiddenDestroy)
-		_ = idx // BYO quickstart should still not call destroy for BYO cleanup.
-		// Permit references inside the safety recommendation block; we
-		// detect that by ensuring `--mode ephemeral --cloud hetzner` is
-		// present near the destroy reference.
-		if !strings.Contains(string(quickstart), "--mode ephemeral --cloud hetzner") {
-			t.Fatal("BYO quickstart must not use destroy for BYO cleanup")
-		}
-	}
 }
 
 func TestCloudQuickstartDocsContainRequiredCopy(t *testing.T) {
-	readme, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README.md: %v", err)
+	readme := mustReadDocFile(t, "../../README.md")
+	quickstart := mustReadDocFile(t, "../../docs/cloud-quickstart.md")
+	// The README's v1.3.3 warning quotes the old invented estimate; that
+	// is the only place it may appear.
+	oldEstimateWarning := "The \"approx €4.90/month\" cloud estimate is invented"
+	if !strings.Contains(readme, oldEstimateWarning) {
+		t.Fatalf("README.md must warn that the v1.3.3 estimate %q", oldEstimateWarning)
 	}
-	quickstart, err := os.ReadFile("../../docs/cloud-quickstart.md")
-	if err != nil {
-		t.Fatalf("read docs/cloud-quickstart.md: %v", err)
-	}
-	for name, content := range map[string]string{"README.md": string(readme), "docs/cloud-quickstart.md": string(quickstart)} {
+	readmeWithoutWarning := strings.Replace(readme, oldEstimateWarning, "", 1)
+	for name, content := range map[string]string{"README.md": readmeWithoutWarning, "docs/cloud-quickstart.md": quickstart} {
 		for _, want := range []string{
-			"Provision cloud runner",
 			"export HCLOUD_TOKEN=...",
-			"runnerkit up --repo owner/name --cloud hetzner",
-			"runnerkit up --repo owner/name --cloud hetzner --yes",
+			"--experimental --cloud hetzner --cloud-region <location>",
 			"runnerkit status --repo owner/name",
 			"runnerkit logs --repo owner/name --since 30m --lines 200",
 			"runnerkit doctor --repo owner/name",
-			"docs/troubleshooting/host-resources.md",
+			"docs/cloud-quickstart.md",
 			"runnerkit destroy --repo owner/name --dry-run",
 			"runnerkit destroy --repo owner/name",
-			"runnerkit destroy --repo owner/name --yes",
-			"runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]",
-			"RunnerKit prints labels/snippets and does not edit workflow YAML.",
-			"Cost estimates are approximate and billing stops only after relevant provider resources are destroyed or verified non-billable.",
+			"reported by the Hetzner API",
+			"Billing stops only after `runnerkit destroy --repo owner/name` verifies cleanup.",
 		} {
+			if name == "docs/cloud-quickstart.md" && want == "docs/cloud-quickstart.md" {
+				want = "docs/troubleshooting/host-resources.md"
+			}
 			if !strings.Contains(content, want) {
 				t.Fatalf("%s missing %q", name, want)
 			}
 		}
+		// Cloud must never be shown without the opt-in flags, and no
+		// invented price may appear.
+		for _, banned := range []string{
+			"runnerkit up --repo owner/name --cloud hetzner",
+			"4.90",
+			"approx €",
+			"Recommended cloud runner",
+			"recommended cloud",
+		} {
+			if strings.Contains(content, banned) {
+				t.Fatalf("%s must not contain %q", name, banned)
+			}
+		}
 	}
-	if !strings.Contains(string(readme), "docs/cloud-quickstart.md") || !strings.Contains(string(readme), "docs/byo-quickstart.md") {
+	if !strings.Contains(readme, "docs/cloud-quickstart.md") || !strings.Contains(readme, "docs/byo-quickstart.md") {
 		t.Fatal("README must link both cloud and BYO quickstarts")
 	}
-	if !strings.Contains(string(quickstart), "# Recommended Cloud Runner Quickstart") || !strings.Contains(string(quickstart), "HETZNER_CLOUD_TOKEN") || !strings.Contains(string(quickstart), "does not persist provider API tokens") {
-		t.Fatal("cloud quickstart missing heading or provider auth notes")
+	for _, want := range []string{
+		"# Hetzner Cloud Runner Quickstart (experimental)",
+		"## Provision cloud runner",
+		"HETZNER_CLOUD_TOKEN",
+		"does not persist provider API tokens",
+		"`experimental_required`",
+		"`cloud_region_required`",
+		"`ephemeral_cloud_disabled`",
+		"`cloud_location_unpriced`",
+		"`cloud_state_exists`",
+		"`wrong_cleanup_command`",
+		`"source": "hetzner_api"`,
+		`"fetched_at"`,
+		`"components"`,
+		"runnerkit-cloud-init-v3",
+		"not fail fast",
+		"0.0.0.0/0",
+		"root-equivalent",
+		"runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]",
+		"RunnerKit prints labels/snippets and does not edit workflow YAML.",
+		"runnerkit=true",
+	} {
+		if !strings.Contains(quickstart, want) {
+			t.Fatalf("docs/cloud-quickstart.md missing %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"Ruby",
+		"cleaned up automatically",
+		".runnerkit/config.yaml",
+		"~75",
+		"--ephemeral-ttl",
+		"runnerkit upgrade-runner",
+	} {
+		if strings.Contains(quickstart, banned) {
+			t.Fatalf("docs/cloud-quickstart.md must not contain %q", banned)
+		}
 	}
 }
 
-// TestSafetyGuideDocsContainRequiredCopy asserts the docs/safety.md guide,
-// README, BYO quickstart, and cloud quickstart all carry the exact
-// UI-SPEC headings, command examples, required sentences, and v1 non-goal
-// bullets for Phase 5 safety guidance. README must link to the safety
-// guide and no docs file may say ephemeral mode is deferred.
+// TestSafetyGuideDocsContainRequiredCopy asserts docs/safety.md retracts
+// the old "stronger isolation" / ephemeral-cloud advice (H-09, A-08) and
+// routes public or untrusted work to GitHub-hosted runners.
 func TestSafetyGuideDocsContainRequiredCopy(t *testing.T) {
 	readme := mustReadDocFile(t, "../../README.md")
 	safety := mustReadDocFile(t, "../../docs/safety.md")
 	byo := mustReadDocFile(t, "../../docs/byo-quickstart.md")
-	cloud := mustReadDocFile(t, "../../docs/cloud-quickstart.md")
 
-	// Required headings in docs/safety.md.
 	for _, heading := range []string{
 		"# Self-hosted Runner Safety Guide",
 		"## Quick recommendation",
 		"## Persistent vs ephemeral tradeoffs",
 		"## When persistent is appropriate",
-		"## When ephemeral is recommended",
 		"## Public and fork-based workflow risk",
 		"## BYO ephemeral caveats",
 		"## Cloud ephemeral caveats",
 		"## Logs and troubleshooting",
 		"## Cleanup commands",
-		"## What RunnerKit does not do in v1",
+		"## What RunnerKit does not do",
 	} {
 		if !strings.Contains(safety, heading) {
 			t.Fatalf("docs/safety.md missing heading %q", heading)
 		}
 	}
+	if strings.Contains(safety, "## When ephemeral is recommended") {
+		t.Fatal("docs/safety.md must not recommend ephemeral mode")
+	}
 
-	// Required commands across docs/safety.md.
 	for _, cmd := range []string{
 		"runnerkit up --repo owner/name --mode persistent --host user@host",
-		"runnerkit up --repo owner/name --mode ephemeral --host user@host",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner --yes",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner --ephemeral-ttl 24h",
+		"runnerkit up --repo owner/name --mode ephemeral --experimental --host user@host",
 		"runnerkit status --repo owner/name",
 		"runnerkit logs --repo owner/name --since 30m --lines 200",
 		"runnerkit doctor --repo owner/name",
@@ -164,122 +220,91 @@ func TestSafetyGuideDocsContainRequiredCopy(t *testing.T) {
 		}
 	}
 
-	// Required exact sentences in safety.md.
-	requiredSafetySentences := []string{
+	for _, want := range []string{
 		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
-		"Ephemeral mode gives stronger isolation by using one-job GitHub runner registration, but it is not a clean VM by itself.",
+		"use\n  GitHub-hosted runners.",
+		"Ephemeral mode is a one-job GitHub runner registration. It is not isolation\nand not a clean VM.",
 		"Ephemeral mode is not a fleet manager. RunnerKit creates one scoped runner; jobs with matching labels can still queue if no runner is online.",
 		"BYO ephemeral mode is a one-job GitHub registration, not a clean virtual machine.",
-		"Ephemeral cloud runners still create billable Hetzner resources.",
-		"Billing stops only after `runnerkit destroy --repo owner/name` verifies cleanup.",
-		"Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.",
+		"It has known defects (the finalizer runs unprivileged and the TTL is\n  ignored) and is untested in this release.",
+		"Ephemeral cloud runners are disabled in v1.3.4",
+		"`ephemeral_cloud_disabled`",
+		"Billing stops only after\n`runnerkit destroy --repo owner/name` verifies cleanup.",
 		"RunnerKit preserves best-effort runner `_diag` and systemd journal logs before cleanup.",
 		"Heavy workflows can **OOM** small VMs; preflight warns on low **MemAvailable** / missing swap, and `runnerkit doctor --deep` can flag likely kernel or linker kills from bounded journals (**RKD-BOOT-016..018**). See [Host resources and OOM](troubleshooting/host-resources.md).",
-		"Configure external log forwarding for production-grade ephemeral troubleshooting.",
 		"RunnerKit prints labels/snippets and does not edit workflow YAML.",
 		"Do not use `runs-on: self-hosted` alone for RunnerKit-managed runners.",
 		"persistent self-hosted runners",
-	}
-	for _, want := range requiredSafetySentences {
+		"root-equivalent sudoers",
+		"security-posture.md",
+		"`wrong_cleanup_command`",
+	} {
 		if !strings.Contains(safety, want) {
-			t.Fatalf("docs/safety.md missing required sentence %q", want)
+			t.Fatalf("docs/safety.md missing required text %q", want)
 		}
 	}
-
-	// Required v1 non-goal bullets in safety.md.
 	for _, bullet := range []string{
 		"No hosted control plane.",
 		"No webhook listener or autoscaling fleet manager.",
 		"No Actions Runner Controller, Kubernetes, runner scale sets, organization-level runner management, or JIT runner API.",
 		"No automatic workflow YAML edits.",
-		"No guarantee that BYO ephemeral mode is a clean VM.",
+		"No isolation between jobs, in any mode.",
 	} {
 		if !strings.Contains(safety, bullet) {
 			t.Fatalf("docs/safety.md missing non-goal bullet %q", bullet)
 		}
 	}
-
-	// Persistent vs ephemeral tradeoffs table columns and rows.
 	for _, want := range []string{
-		"| Mode", "| Cost", "| Isolation", "| Cleanup", "| Operations", "| Logs",
+		"| Mode", "| Isolation", "| Cleanup", "| Operations", "| Logs",
 		"| persistent", "| ephemeral",
 	} {
 		if !strings.Contains(safety, want) {
 			t.Fatalf("docs/safety.md tradeoffs table missing column/row %q", want)
 		}
 	}
+	// The retracted claims must be gone (the correction note may name
+	// "stronger isolation per job" only inside quotes).
+	for _, banned := range []string{
+		"Use ephemeral cloud runner",
+		"where you want stronger isolation",
+		"if you need stronger isolation",
+		"--ephemeral-ttl",
+		"finalized and cleaned up",
+	} {
+		if strings.Contains(safety, banned) {
+			t.Fatalf("docs/safety.md must not contain %q", banned)
+		}
+	}
 
-	// README must link the safety guide and surface ephemeral cloud setup.
 	for _, want := range []string{
 		"[Self-hosted Runner Safety Guide](docs/safety.md)",
+		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
 		"persistent self-hosted runners",
-		"Use ephemeral cloud runner",
-		"Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner --yes",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner --ephemeral-ttl 24h",
 		"runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, persistent]",
-		"runs-on: [self-hosted, runnerkit, runnerkit-owner-repo, linux, x64, ephemeral]",
+		"For public or untrusted code, use GitHub-hosted runners.",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("README.md missing %q", want)
 		}
 	}
+	for _, banned := range []string{"Use ephemeral cloud runner", "Ephemeral mode gives stronger isolation"} {
+		if strings.Contains(readme, banned) {
+			t.Fatalf("README.md must not contain %q", banned)
+		}
+	}
 
-	// BYO quickstart must call out the persistent risk and recommend
-	// ephemeral cloud instead of saying to wait for ephemeral mode.
 	for _, want := range []string{
 		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
-		"Use runnerkit up --repo owner/name --mode ephemeral --cloud hetzner for stronger isolation, or use GitHub-hosted runners.",
+		"Use GitHub-hosted runners for those; RunnerKit's ephemeral mode is not isolation.",
 	} {
 		if !strings.Contains(byo, want) {
 			t.Fatalf("docs/byo-quickstart.md missing %q", want)
 		}
 	}
-	if strings.Contains(byo, "wait for RunnerKit's future ephemeral mode") {
-		t.Fatal("docs/byo-quickstart.md must not say to wait for ephemeral mode")
-	}
-
-	// Cloud quickstart must include ephemeral commands and remove the
-	// 'deferred to Phase 5' wording. It must also include the exact
-	// approximate-pricing-varies-user-responsible caveat and billable
-	// resource sentences.
-	for _, want := range []string{
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner --yes",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner --ephemeral-ttl 24h",
-		"Ephemeral cloud runners still create billable Hetzner resources.",
-		"Billing stops only after `runnerkit destroy --repo owner/name` verifies cleanup.",
-		"Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.",
-	} {
-		if !strings.Contains(cloud, want) {
-			t.Fatalf("docs/cloud-quickstart.md missing %q", want)
-		}
-	}
-	if strings.Contains(cloud, "Ephemeral mode is deferred to Phase 5.") {
-		t.Fatal("docs/cloud-quickstart.md must not say ephemeral mode is deferred to Phase 5")
-	}
-
-	// No docs file may continue to claim ephemeral mode is deferred or
-	// that BYO users should wait for it.
-	allDocs := readme + "\n" + safety + "\n" + byo + "\n" + cloud
-	for _, banned := range []string{
-		"Ephemeral mode is deferred to Phase 5.",
-		"wait for RunnerKit's future ephemeral mode",
-	} {
-		if strings.Contains(allDocs, banned) {
-			t.Fatalf("docs must not contain forbidden phrase %q", banned)
-		}
-	}
 }
 
-// TestSafetyDocsGrepContract is the docs-grep regression that protects
-// the Phase 5 safety guidance copy. It mirrors the validation strategy
-// commands (grep -R "persistent self-hosted runners" / "Ephemeral mode
-// is not a fleet manager" / the exact Hetzner cost caveat) and also
-// guards against accidentally adding "autoscaling fleet manager" in a
-// promotional context (as opposed to the v1 non-goal sentence
-// `No webhook listener or autoscaling fleet manager.`).
+// TestSafetyDocsGrepContract guards phrases across files and makes sure
+// "autoscaling fleet manager" only ever appears as a non-goal.
 func TestSafetyDocsGrepContract(t *testing.T) {
 	files := map[string]string{
 		"README.md":                mustReadDocFile(t, "../../README.md"),
@@ -287,15 +312,15 @@ func TestSafetyDocsGrepContract(t *testing.T) {
 		"docs/byo-quickstart.md":   mustReadDocFile(t, "../../docs/byo-quickstart.md"),
 		"docs/cloud-quickstart.md": mustReadDocFile(t, "../../docs/cloud-quickstart.md"),
 	}
-	// Required across README + docs/safety.md.
 	mustContainAcrossFiles := []struct {
 		text  string
 		paths []string
 	}{
 		{"persistent self-hosted runners", []string{"README.md", "docs/safety.md"}},
-		{"Ephemeral mode is not a fleet manager", []string{"README.md", "docs/safety.md"}},
-		{"Estimated cost is approximate. Hetzner pricing varies by region and time, and you are responsible for charges until `runnerkit destroy --repo owner/name` verifies cleanup.", []string{"README.md", "docs/safety.md", "docs/cloud-quickstart.md"}},
-		{"Configure external log forwarding for production-grade ephemeral troubleshooting.", []string{"docs/safety.md"}},
+		{"Ephemeral mode is not a fleet manager", []string{"docs/safety.md"}},
+		{"GitHub-hosted runners", []string{"README.md", "docs/safety.md", "docs/byo-quickstart.md", "docs/cloud-quickstart.md"}},
+		{"root-equivalent", []string{"README.md", "docs/byo-quickstart.md", "docs/cloud-quickstart.md"}},
+		{"Configure external log forwarding if you need complete job logs.", []string{"docs/safety.md"}},
 	}
 	for _, expectation := range mustContainAcrossFiles {
 		for _, path := range expectation.paths {
@@ -305,10 +330,6 @@ func TestSafetyDocsGrepContract(t *testing.T) {
 		}
 	}
 
-	// "autoscaling fleet manager" must only appear inside an explicit
-	// non-goal sentence: the preceding text on the same logical line must
-	// contain a negation (`No `, `not a `, or `or `) so the phrase is
-	// always rendered as something RunnerKit does NOT do.
 	for path, content := range files {
 		idx := 0
 		for {
@@ -317,19 +338,241 @@ func TestSafetyDocsGrepContract(t *testing.T) {
 				break
 			}
 			absolute := idx + pos
-			// Find the start of the current line/sentence.
 			lineStart := strings.LastIndex(content[:absolute], "\n")
 			if lineStart < 0 {
 				lineStart = 0
 			} else {
 				lineStart++
 			}
-			prefix := content[lineStart:absolute]
-			lower := strings.ToLower(prefix)
+			lower := strings.ToLower(content[lineStart:absolute])
 			if !strings.Contains(lower, "no ") && !strings.Contains(lower, "not a ") && !strings.Contains(lower, " or ") && !strings.Contains(lower, "without ") {
 				t.Fatalf("%s mentions \"autoscaling fleet manager\" without negation; surrounding context: %q", path, content[lineStart:absolute+len("autoscaling fleet manager")+8])
 			}
 			idx = absolute + len("autoscaling fleet manager")
+		}
+	}
+}
+
+// userFacingMarkdown returns README, the root policy docs and every
+// Markdown file under docs/, keyed by repo-relative path.
+func userFacingMarkdown(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, name := range []string{"README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "CLAUDE.md"} {
+		out[name] = mustReadDocFile(t, "../../"+name)
+	}
+	err := filepath.WalkDir("../../docs", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		rel, relErr := filepath.Rel("../..", path)
+		if relErr != nil {
+			return relErr
+		}
+		out[filepath.ToSlash(rel)] = mustReadDocFile(t, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk docs: %v", err)
+	}
+	if len(out) < 15 {
+		t.Fatalf("expected README, root docs and docs/**/*.md, found only %d files", len(out))
+	}
+	return out
+}
+
+// TestNoDocsRecommendEphemeralCloud is the docs half of A-08's
+// TestNoCopyRecommendsEphemeralCloud: no Markdown may show the
+// ephemeral-cloud command, which is disabled because the VM kept billing.
+func TestNoDocsRecommendEphemeralCloud(t *testing.T) {
+	for path, content := range userFacingMarkdown(t) {
+		if strings.Contains(content, "--mode ephemeral --cloud") {
+			t.Errorf("%s shows the disabled ephemeral cloud command (--mode ephemeral --cloud)", path)
+		}
+	}
+}
+
+// TestDocsDropStaleAndUnsafeAdvice fails on advice that is wrong or harmful
+// for v1.3.4 (H-09 "Docs to fix", A-06, SEC-9).
+func TestDocsDropStaleAndUnsafeAdvice(t *testing.T) {
+	banned := []string{
+		"repo,workflow",                              // SEC-9: workflow scope is not needed
+		"runnerkit upgrade-runner --repo",            // disabled (A-06a)
+		"--reinstall-service --yes",                  // disabled (A-06b)
+		"--reinstall-service --dry-run",              // disabled (A-06b)
+		"--reregister --yes",                         // disabled (A-06b)
+		"--reregister --dry-run",                     // disabled (A-06b)
+		"runnerkit doctor --repo owner/name --fix",   // disabled (A-06a)
+		"idempotent — safe to re-run",                // docs/upgrade.md (P0-3)
+		"rm -rf /opt/actions-runner/runnerkit-*",     // wipes every repo's runner
+		"rm $HOME/.local/state/runnerkit/state.json", // drops every repo's state and cloud IDs
+		"runnerkit-cloud-init-v2",                    // code is v3
+		"scoped to RunnerKit bootstrap commands only",
+		"systemctl status runnerkit-runner", // unit does not exist
+		"~75",                               // there are 70 baseline packages
+		"TAG=v1.0.0",                        // v1.0.0 has no GitHub Release
+		"10-minute",
+		"10 minutes",
+		"cheaper than GitHub",
+		"Recommended Cloud Runner",
+		"recommended cloud",
+		"recommended Hetzner",
+	}
+	for path, content := range userFacingMarkdown(t) {
+		if path == "CHANGELOG.md" {
+			// History may quote old wording; it is checked separately.
+			continue
+		}
+		for _, phrase := range banned {
+			if strings.Contains(content, phrase) {
+				t.Errorf("%s contains stale or unsafe advice %q", path, phrase)
+			}
+		}
+	}
+	platforms := mustReadDocFile(t, "../../docs/runner-platforms.md")
+	if strings.Contains(platforms, "treat as advanced BYO") || !strings.Contains(platforms, "| **Linux arm64** | **Not supported.**") || !strings.Contains(platforms, "| **macOS** | **Not supported.**") {
+		t.Error("docs/runner-platforms.md must withdraw the arm64 and macOS support claims")
+	}
+}
+
+// TestReadmeHonestyBanner pins the H-08 README rewrite.
+func TestReadmeHonestyBanner(t *testing.T) {
+	readme := mustReadDocFile(t, "../../README.md")
+	for _, want := range []string{
+		"**Status:** Experimental. Maintained on a capped-hours basis until a published go/kill decision on 2026-12-21.",
+		"## Known issues",
+		"### If you are on v1.3.3 or older",
+		"## When NOT to use RunnerKit",
+		"## What BYO setup installs on the host",
+		"fake GitHub API",
+		"**root-equivalent**",
+		"`RUNNERKIT_GRANT_CI_SUDO=1`",
+		"requires\n  `--experimental` and an explicit `--cloud-region`",
+		"Ephemeral cloud runners are disabled.",
+		"`upgrade-runner`, `doctor --fix`,\n  `recover --reinstall-service` and `recover --reregister` refuse to run",
+		"Only **Ubuntu x86_64** runner hosts are supported.",
+		"4.5–5 GB",
+		"removed in v1.0.8",
+		"TAG=vX.Y.Z",
+		"(LICENSE)",
+		"docs/maintainers.md",
+		"docs/security-posture.md",
+		"CONTRIBUTING.md",
+		"SECURITY.md",
+		"CHANGELOG.md",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README.md missing %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"(D-0", "D-01", "D-02", "D-05",
+		"## Maintainers: releases",
+		"reliable GitHub Actions self-hosted runners",
+	} {
+		if strings.Contains(readme, banned) {
+			t.Fatalf("README.md must not contain %q", banned)
+		}
+	}
+}
+
+// TestLicensingAndPolicyDocs pins H-01..H-04a and H-09.
+func TestLicensingAndPolicyDocs(t *testing.T) {
+	license := mustReadDocFile(t, "../../LICENSE")
+	for _, want := range []string{"Apache License", "Version 2.0, January 2004", "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION"} {
+		if !strings.Contains(license, want) {
+			t.Fatalf("LICENSE missing %q", want)
+		}
+	}
+
+	contributing := mustReadDocFile(t, "../../CONTRIBUTING.md")
+	for _, want := range []string{"Developer Certificate of Origin", "Signed-off-by", "git commit -s", "2 distinct external requests", "W1", "30 build hours", "GOTOOLCHAIN=go1.22.12", "go generate ./...", "make generate-check"} {
+		if !strings.Contains(contributing, want) {
+			t.Fatalf("CONTRIBUTING.md missing %q", want)
+		}
+	}
+	if strings.Contains(contributing, "Contributor License Agreement") {
+		t.Fatal("CONTRIBUTING.md must not require a CLA")
+	}
+
+	security := mustReadDocFile(t, "../../SECURITY.md")
+	for _, want := range []string{"security/advisories/new", "**14 days**", "**latest minor release**", "docs/security-posture.md", "**known and disclosed**"} {
+		if !strings.Contains(security, want) {
+			t.Fatalf("SECURITY.md missing %q", want)
+		}
+	}
+
+	posture := mustReadDocFile(t, "../../docs/security-posture.md")
+	for i := 1; i <= 13; i++ {
+		id := "| SEC-" + strconv.Itoa(i) + " |"
+		if !strings.Contains(posture, id) {
+			t.Fatalf("docs/security-posture.md missing row %q", id)
+		}
+	}
+	for _, want := range []string{
+		"## If you already installed RunnerKit",
+		"sudo rm -f /etc/sudoers.d/runnerkit-installer /etc/sudoers.d/runnerkit-runner-ci",
+		"sudo visudo -c",
+		// The non-recursive directory chown is what stops a job from
+		// renaming svc.sh/bin and planting its own; -H follows a bin
+		// symlink left by runner self-update.
+		"sudo chown root:root /opt/actions-runner/runnerkit-*/\n",
+		"sudo chown root:root /opt/actions-runner/runnerkit-*/svc.sh",
+		"sudo chown -R -H root:root /opt/actions-runner/runnerkit-*/bin",
+		"sudo systemctl disable --now 'actions.runner.*'",
+		"Any later `runnerkit up` or `register` on this host runs",
+		"id -nG runnerkit-runner",
+		"sudo gpasswd -d runnerkit-runner docker",
+		"runnerkit destroy --repo owner/name",
+		"runnerkit=true",
+		"## Ephemeral mode is not isolation",
+		"GitHub-hosted runners",
+		"root-equivalent",
+	} {
+		if !strings.Contains(posture, want) {
+			t.Fatalf("docs/security-posture.md missing %q", want)
+		}
+	}
+
+	changelog := mustReadDocFile(t, "../../CHANGELOG.md")
+	for _, want := range []string{
+		"keepachangelog.com",
+		"## [Unreleased] — v1.3.4",
+		"### Added", "### Changed", "### Fixed", "### Security", "### Known issues",
+		"fake GitHub API",
+		"(A-20)",
+		"### Erratum for v1.3.3",
+		"it was removed in v1.0.8",
+		`source:
+  "hetzner_api"`,
+		"## [1.3.3] - 2026-05-18",
+		"## [1.0.8] - 2026-05-11",
+		"## [1.0.0]",
+	} {
+		if !strings.Contains(changelog, want) {
+			t.Fatalf("CHANGELOG.md missing %q", want)
+		}
+	}
+	if strings.Contains(changelog, "--mode ephemeral --cloud") {
+		t.Fatal("CHANGELOG.md must not show the disabled ephemeral cloud command")
+	}
+
+	claude := mustReadDocFile(t, "../../CLAUDE.md")
+	for _, want := range []string{
+		"No feature without 2 distinct external requests",
+		"`RenderSudoersEntry` gains no entries",
+		"root-equivalent",
+		"Never tag a release that claims BYO works",
+		"Never pass `--disableupdate`",
+		"70 apt packages",
+		"**never populated**",
+		"not fail-fast",
+	} {
+		if !strings.Contains(claude, want) {
+			t.Fatalf("CLAUDE.md missing %q", want)
 		}
 	}
 }

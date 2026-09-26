@@ -1,8 +1,7 @@
 # Troubleshooting
 
 Stuck? Find your `RKD-<COMPONENT>-NNN` code in the table below and follow the
-component link. Every entry follows a `Symptom → Diagnosis → Fix` structure
-(D-17).
+component link. Every entry follows a `Symptom → Diagnosis → Fix` structure.
 
 If a `runnerkit` command printed a `See: <URL>` line, the URL points at the
 exact entry below.
@@ -13,7 +12,7 @@ If `cosign verify-blob` fails or `sha256sum -c` reports a mismatch, the
 downloaded archive is NOT the upstream release. Do NOT install it.
 
 ```bash
-TAG=v1.0.0
+TAG=vX.Y.Z   # the tag you downloaded
 cosign verify-blob \
   --bundle  runnerkit_${TAG#v}_checksums.txt.sigstore.json \
   --certificate-identity   "https://github.com/accidentally-awesome-labs/runnerkit/.github/workflows/release.yml@refs/tags/${TAG}" \
@@ -39,11 +38,12 @@ xattr -d com.apple.quarantine /usr/local/bin/runnerkit     # Intel
 | [ssh.md](ssh.md)             | RKD-SSH-NNN                                 | host-key mismatch, host unreachable, key-path-not-found, port unreachable                                                 |
 | [bootstrap.md](bootstrap.md) | RKD-BOOT-NNN                                | systemd service, install/work paths, preflight (disk, **RAM/swap**, tools, time, network), runner user/package install, online-verification timeout, runner version stale, journal OOM hints (018) |
 | [github.md](github.md)       | RKD-GH-NNN                                  | runner offline, duplicate candidates, label drift, registration/deregister/recover failures, self-hosted CI sudo vs hosted |
-| [provider.md](provider.md)   | RKD-PROV-NNN                                | Hetzner token/quota/region, partial destroy, billable lingering                                                           |
+| [provider.md](provider.md)   | RKD-PROV-NNN                                | Hetzner (experimental) token/quota/region, partial destroy, billable lingering                                            |
 | [cleanup.md](cleanup.md)     | RKD-CLEAN-NNN, RKD-STATE-NNN, RKD-CORE-NNN  | down/destroy partial, ephemeral log preservation, state JSON read, schema-too-new, migration failure, CLI input          |
+| [../security-posture.md](../security-posture.md) | (known issues) | Known security weaknesses, fix stages, and how to revoke what RunnerKit installed |
 | [host-resources.md](host-resources.md) | (narrative; codes RKD-BOOT-016..018 live in [bootstrap.md](bootstrap.md)) | RAM/swap preflight, OOM-heavy CI, journal hints, sizing and parallelism |
 | [multi-repo.md](multi-repo.md) | (narrative) | Several repos on one BYO host, `register` / `list`, PAT scope, shared-host caveats |
-| [doctor-ux.md](doctor-ux.md) | (CLI UX) | First-run wizard, `--explain`, BYO progress checklists, doctor ignore config and fix mode |
+| [doctor-ux.md](doctor-ux.md) | (CLI UX) | First-run wizard, `--explain`, BYO progress checklists, doctor ignore config (`doctor --fix` is disabled) |
 
 > Note on numbering: codes are stable across renames; numbering grows
 > monotonically per component. Some numbers may be reserved (e.g.,

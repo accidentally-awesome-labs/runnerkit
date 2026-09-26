@@ -26,37 +26,37 @@ You can suppress the lazy update notice by setting
 `RUNNERKIT_NO_UPDATE_NOTIFIER=1` in your shell environment. The notice is
 also silent when `$CI` is set or when running with `--json`.
 
-## 2. Upgrade the bundled GitHub Actions runner pin
+## 2. Keep the GitHub Actions runner up to date
 
-RunnerKit bundles a known-good GitHub Actions runner version (currently
-`2.334.0`). When that version drifts behind GitHub's deprecation horizon,
-`runnerkit doctor` warns:
+RunnerKit installs a pinned GitHub Actions runner version (currently
+`2.337.0`, `bootstrap.RunnerVersion`) when it registers a runner. After that
+the runner **updates itself**: RunnerKit never passes `--disableupdate` to
+`config.sh`, so GitHub's runner downloads and installs newer versions when
+GitHub requires them. You do not need a RunnerKit command for this.
+
+`runnerkit doctor` may report `runner_version_stale` when the version saved
+in RunnerKit state is older than the bundled pin. That finding compares
+local state, not the host, so it usually needs no action.
+
+**`runnerkit upgrade-runner` is disabled in v1.3.4** (`command_disabled`,
+exit 2), and so is `runnerkit doctor --fix`, which called it. In v1.3.3 and
+earlier, `upgrade-runner` deleted the runner's `.runner` and `.credentials`
+files and ran `config.sh` with an empty registration token, which unregisters
+a healthy runner, and it never replaced the runner binaries. It was not safe
+to re-run. Do not use it with an older RunnerKit binary either.
+
+To reinstall a runner with the bundled pin anyway, re-register it by hand:
 
 ```
-- runner_version_stale (warning)
-  Evidence:    installed runner version 2.330.0 is older than bundled pin 2.334.0
-  Remediation: runnerkit upgrade-runner --repo owner/name
+runnerkit down --repo owner/name --dry-run
+runnerkit down --repo owner/name
+runnerkit up --repo owner/name --host user@host
 ```
 
-Roll the host runner forward:
-
-```
-runnerkit upgrade-runner --repo owner/name --yes
-```
-
-This re-applies the runner bootstrap on the saved host using the bundled
-pin. It is idempotent — safe to re-run if it fails partway through.
-Any extra packages saved in state (from `--extra-packages` or auto-detected
-from workflow files) are re-installed during the upgrade.
-
-For ephemeral runners (`--mode ephemeral`):
-
-- If the runner is **terminated** (one-shot already completed or TTL
-  expired): the upgrade is a no-op. The next
-  `runnerkit up --mode ephemeral` will use the bundled pin.
-- If the runner is **waiting** or **busy**: the upgrade is refused without
-  `--force`. Adding `--force` will drop the registration / kill the
-  running job. Use this only when you understand the consequence.
+For a RunnerKit-created Hetzner server, use `runnerkit destroy --repo
+owner/name` instead of `down`, then `runnerkit up` again with your original
+flags. Saved extra packages are not carried over automatically; pass
+`--extra-packages` again if you need them.
 
 ## 3. State migrations
 
@@ -92,8 +92,8 @@ you need to stay on the older format, downgrade RunnerKit too.
 Before installing a downloaded release binary, verify integrity:
 
 ```
-# Replace v1.0.0 with the desired release tag.
-TAG=v1.0.0
+# Replace vX.Y.Z with the release tag you chose from the Releases page.
+TAG=vX.Y.Z
 OS=linux
 ARCH=amd64
 

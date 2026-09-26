@@ -6,16 +6,23 @@ This page maps **where RunnerKit runs today** versus common **platform combinati
 
 ## What RunnerKit supports today
 
-| Host OS (SSH target for `runnerkit up`) | Architectures | Notes |
-| --- | --- | --- |
-| **Linux** (systemd) | **x86_64**, **arm64** | Primary BYO + [Hetzner](troubleshooting/provider.md) cloud path. Bootstrap uses bash over SSH. Preflight warns when **MemAvailable** is low or swap is absent on small hosts — see [Host resources](troubleshooting/host-resources.md). |
-| **macOS** | **Apple Silicon (arm64)**, **Intel (amd64)** | Supported where SSH + tools align with preflight; treat as advanced BYO. |
+| Runner host (SSH target for `runnerkit up`) | Status |
+| --- | --- |
+| **Ubuntu x86_64** (systemd; 24.04 is the tested release) | Supported. BYO path and the experimental Hetzner cloud path. Preflight warns when **MemAvailable** is low or swap is absent on small hosts — see [Host resources](troubleshooting/host-resources.md). |
+| **Linux arm64** | **Not supported.** Preflight accepts it, but the runner-image setup downloads x86_64-only packages and fails. |
+| **Other Linux distributions** (Debian, Fedora, RHEL, Arch, openSUSE, …) | **Not supported.** Preflight can pass, then setup fails or is untested: setup uses Ubuntu package names and Ubuntu-specific package sources. |
+| **macOS** | **Not supported.** Preflight rejects non-Linux and non-systemd hosts. |
+| **Windows** | **Not supported.** |
 
-RunnerKit’s remote bootstrap assumes a **Unix** shell environment over SSH.
+The RunnerKit **CLI** itself runs on macOS and Linux (amd64 and arm64); that
+is separate from the runner host.
 
-## Windows runners
+RunnerKit’s remote bootstrap assumes bash over SSH and systemd on the host.
 
-GitHub supports Windows self-hosted runners, but RunnerKit’s **current** install/bootstrap path is built around **Linux/macOS** SSH + systemd-style lifecycle. Running Actions on **Windows x64 / Windows ARM64** with RunnerKit is **not** a supported golden path in this release — use an official Windows runner install from GitHub or another provisioning tool, or contribute a Windows bootstrap backend.
+## Windows and macOS runners
+
+GitHub supports Windows and macOS self-hosted runners, but RunnerKit does not
+install them. Use GitHub's own runner install instructions or another tool.
 
 ## Choosing labels for multi-platform CI
 
@@ -48,4 +55,6 @@ Use **matrix** only across runners that actually exist in your org/repo settings
 | OS images | Curated, uniform | Your machine / VM |
 | `sudo` in workflows | Passwordless for job user | Often **not** — on **Linux**, run [`install.sh` with `RUNNERKIT_GRANT_CI_SUDO=1`](byo-quickstart.md#sudo-setup-one-time-on-the-host) so workflow `sudo apt-get` works without a TTY ([RKD-GH-008](troubleshooting/github.md#rkd-gh-008)) |
 
-For isolation-sensitive workloads, prefer **ephemeral** runners ([safety](safety.md)) or hosted runners — don’t mix untrusted PR code with persistent machines.
+For public or untrusted code, use GitHub-hosted runners. RunnerKit's
+ephemeral mode is not isolation ([safety](safety.md)). The CI sudo grant
+above is root-equivalent ([security posture](security-posture.md)).

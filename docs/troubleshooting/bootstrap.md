@@ -2,7 +2,17 @@
 
 Stable codes for this component: `RKD-BOOT-002`..`RKD-BOOT-018`.
 `RKD-BOOT-001` is reserved for future use; numbering is stable across
-renames (D-15).
+renames.
+
+From v1.3.4, when a bootstrap step fails, BYO `runnerkit up` names the step
+(for example `setup_runner_image`), prints `Failed command (exit N): …` with
+the shell command that failed, and shows the last lines of the remote stdout
+(where `apt-get` reports its errors). Start from that command. The cloud
+path does not name the step yet.
+
+On Ubuntu/Debian the steps run in this order: `fix_dependencies`,
+`create_runner_user`, `setup_runner_image`, `download_runner`,
+`configure_runner`, `install_service`, `verify_service`.
 
 ***
 
@@ -21,26 +31,31 @@ RKD-BOOT-002: Bundled runner pin is newer than installed runner
 See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troubleshooting/bootstrap.md#rkd-boot-002
 ```
 
-with evidence like `installed runner version 2.330.0 is older than bundled pin 2.334.0`.
+with evidence like `installed runner version 2.334.0 is older than bundled pin 2.337.0`.
 
 ### Diagnosis
 
-This RunnerKit release pins a known-good GitHub Actions runner version
-(`bootstrap.RunnerVersion`). The runner installed on your host is older than
-that pin. GitHub eventually deprecates older runner versions; running stale
-risks jobs failing with "the runner version is no longer supported".
+This RunnerKit release pins a GitHub Actions runner version
+(`bootstrap.RunnerVersion`, 2.337.0 in v1.3.4) for new installs. The version
+recorded in RunnerKit's local state for this runner is older. The finding
+compares local state, not the host.
 
 ### Fix
 
-Roll the runner forward to the bundled pin without re-running full setup:
+Usually nothing: the GitHub runner updates itself, because RunnerKit never
+passes `--disableupdate`. `runnerkit upgrade-runner` is disabled in v1.3.4
+(it destroyed the runner's registration in v1.3.3; see
+[upgrade.md](../upgrade.md)). To reinstall with the bundled pin anyway,
+re-register by hand:
 
 ```bash
-runnerkit upgrade-runner --repo owner/repo --yes
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
 ```
 
-For ephemeral runners that are currently `waiting` or `busy`, see
-[upgrade.md](../upgrade.md#waiting) — `upgrade-runner` refuses without
-`--force` to avoid interrupting an in-flight job.
+For a RunnerKit-created Hetzner server, use `runnerkit destroy` instead of
+`down`.
 
 ***
 
@@ -63,10 +78,21 @@ underlying host issues (disk full, network failure).
 ### Fix
 
 ```bash
-ssh user@host 'systemctl status runnerkit-runner'
+ssh user@host "systemctl list-units 'actions.runner.*' --all --no-pager"
 runnerkit logs --repo owner/repo --since 30m
-runnerkit recover --repo owner/repo --reinstall-service --dry-run
-runnerkit recover --repo owner/repo --reinstall-service --yes
+runnerkit recover --repo owner/repo --dry-run
+runnerkit recover --repo owner/repo --restart-service --yes
+```
+
+If a restart does not help, fix the underlying cause (disk, network, clock)
+first. `recover --reinstall-service` and `recover --reregister` are disabled in
+v1.3.4 (`command_disabled`). Re-register by hand (use `runnerkit destroy`
+instead of `down` for a RunnerKit-created Hetzner server):
+
+```bash
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
 ```
 
 ***
@@ -89,9 +115,14 @@ path was deleted out from under RunnerKit.
 
 ### Fix
 
+`recover --reinstall-service` and `recover --reregister` are disabled in
+v1.3.4 (`command_disabled`). Re-register by hand (use `runnerkit destroy`
+instead of `down` for a RunnerKit-created Hetzner server):
+
 ```bash
-runnerkit recover --repo owner/repo --reinstall-service --dry-run
-runnerkit recover --repo owner/repo --reinstall-service --yes
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
 ```
 
 ***
@@ -114,12 +145,15 @@ disk was wiped. RunnerKit cannot reuse the saved install state.
 
 ### Fix
 
-```bash
-runnerkit recover --repo owner/repo --reregister --dry-run
-runnerkit recover --repo owner/repo --reregister --yes
-```
+`recover --reinstall-service` and `recover --reregister` are disabled in
+v1.3.4 (`command_disabled`). Re-register by hand (use `runnerkit destroy`
+instead of `down` for a RunnerKit-created Hetzner server):
 
-This re-runs registration and reinstalls into the saved path.
+```bash
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
+```
 
 ***
 
@@ -141,11 +175,15 @@ runner can still register, but jobs that need the work dir will fail.
 
 ### Fix
 
-```bash
-runnerkit recover --repo owner/repo --reinstall-service --yes
-```
+`recover --reinstall-service` and `recover --reregister` are disabled in
+v1.3.4 (`command_disabled`). Re-register by hand (use `runnerkit destroy`
+instead of `down` for a RunnerKit-created Hetzner server):
 
-This recreates the work dir with the right ownership and permissions.
+```bash
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
+```
 
 ***
 
@@ -316,15 +354,12 @@ a conflicting user already exists with a different shell/home.
 Pre-create the user with the matching shape and re-run:
 
 ```bash
-ssh user@host '
-  sudo useradd --system --create-home --home-dir /var/lib/runnerkit-runner \
-    --shell /bin/bash runnerkit-runner
-'
+ssh user@host 'sudo useradd --system --create-home --shell /usr/sbin/nologin runnerkit-runner'
 runnerkit up --repo owner/repo --host user@host --yes
 ```
 
-Or arrange passwordless sudo for the SSH user; see your distro's
-`/etc/sudoers.d/` documentation.
+If the failure is `sudo: a password is required`, the host has not been
+prepared; see [RKD-BOOT-015](#rkd-boot-015).
 
 ***
 
@@ -383,7 +418,7 @@ disk preventing service startup.
 
 ```bash
 runnerkit logs --repo owner/repo --since 30m --lines 200
-ssh user@host 'systemctl status runnerkit-runner'
+ssh user@host "systemctl list-units 'actions.runner.*' --all --no-pager"
 runnerkit doctor --repo owner/repo
 ```
 
@@ -394,11 +429,11 @@ For slower cloud regions/images where cloud-init convergence is delayed, you
 can increase the readiness budget:
 
 ```bash
-export RUNNERKIT_CLOUD_INIT_TIMEOUT=15m
-runnerkit up --repo owner/repo --cloud hetzner
+export RUNNERKIT_CLOUD_INIT_TIMEOUT=20m
+runnerkit up --repo owner/repo --experimental --cloud hetzner --cloud-region <location>
 ```
 
-If cloud-init finishes with **errors** (for example `runcmd` failed while installing `/etc/sudoers.d/runnerkit-installer`), RunnerKit treats readiness as failed and surfaces `cloud_readiness_failed` with `cloud-init status --long` on stderr — fix cloud-init on the instance or choose the default **ubuntu-24.04** image before retrying.
+If cloud-init finishes with **errors** (for example `runcmd` failed while installing `/etc/sudoers.d/runnerkit-installer`), RunnerKit does not accept it as ready, but it keeps retrying until the timeout (15 minutes by default) instead of failing fast, and the server bills meanwhile. It then surfaces `cloud_readiness_failed` with `cloud-init status --long` on stderr. Run `runnerkit destroy --repo owner/repo` and start again with the default **ubuntu-24.04** image.
 
 ***
 
@@ -427,11 +462,11 @@ RunnerKit's bootstrap commands run over a non-interactive SSH channel
 and cannot answer a sudo prompt, so the very first sudo-prefixed
 command fails.
 
-**Hetzner note:** `runnerkit up --repo … --cloud hetzner` provisions VMs whose **cloud-init** installs the scoped `/etc/sudoers.d/runnerkit-installer` automatically (user-data version **`runnerkit-cloud-init-v2`**). Readiness requires **`cloud-init status` `done`** (not **`error`**); if cloud-init’s **`runcmd`** fails (for example **`visudo`**), you should see **`cloud_readiness_failed`** with logs instead of a late **`sudo: a password is required`** at the apt step. Preflight on cloud uses **`host.privilege.cloud_bootstrap`** when passwordless sudo is still missing. Check **`cloud-init status --long`**, **`/var/lib/runnerkit/cloud-init.json`**, and increase **`RUNNERKIT_CLOUD_INIT_TIMEOUT`** if convergence is slow. Password-sudo on **`--host`** targets is expected until you run the host install below.
+**Hetzner note:** `runnerkit up --repo … --experimental --cloud hetzner --cloud-region <location>` provisions VMs whose **cloud-init** installs `/etc/sudoers.d/runnerkit-installer` automatically (user-data version **`runnerkit-cloud-init-v3`**). Readiness requires **`cloud-init status` `done`** (not **`error`**), but it retries every failure until the timeout rather than failing fast; if cloud-init’s **`runcmd`** fails (for example **`visudo`**), you should eventually see **`cloud_readiness_failed`** with logs instead of a late **`sudo: a password is required`** at the apt step. Preflight on cloud uses **`host.privilege.cloud_bootstrap`** when passwordless sudo is still missing. Check **`cloud-init status --long`**, **`/var/lib/runnerkit/cloud-init.json`**, and increase **`RUNNERKIT_CLOUD_INIT_TIMEOUT`** if convergence is slow. Password-sudo on **`--host`** targets is expected until you run the host install below.
 
 ### Fix
 
-**Recommended — one-time `install.sh` on the runner host**
+**One-time `install.sh` on the runner host**
 
 From your workstation, print the copy-paste line:
 
@@ -439,7 +474,9 @@ From your workstation, print the copy-paste line:
 runnerkit init --print-install-command
 ```
 
-SSH to the host and run that `curl … install.sh | sudo bash` command (or download `install.sh` from the release linked in your RunnerKit version and verify checksums). This writes `/etc/sudoers.d/runnerkit-installer` with NOPASSWD scoped to RunnerKit bootstrap commands only; `visudo -c` gates the write.
+SSH to the host and run that `curl … install.sh | sudo bash` command (or download `install.sh` from the release linked in your RunnerKit version and verify checksums). This writes `/etc/sudoers.d/runnerkit-installer` with NOPASSWD for the command list RunnerKit's bootstrap uses (generated from `bootstrap.RenderSudoersEntry`); `visudo -c` gates the write. The list is **root-equivalent** (`su`, `tee`, `cp`, `apt-get`, `systemctl` with any arguments each give a root shell), so treat it as giving your SSH user passwordless root; see [security posture](../security-posture.md).
+
+Hosts prepared by an `install.sh` from v1.3.3 or earlier are missing 16 of the paths bootstrap needs and fail at `setup_runner_image`; re-run the current `install.sh`. `runnerkit byo-prepare` no longer exists (removed in v1.0.8).
 
 Then re-run `runnerkit up` / `runnerkit register` / `runnerkit down` from the workstation — no sudo password over SSH.
 
@@ -447,9 +484,10 @@ To revert on the host:
 
 ```bash
 sudo rm -f /etc/sudoers.d/runnerkit-installer
+sudo visudo -c
 ```
 
-See [BYO quickstart — Sudo setup](../byo-quickstart.md#sudo-setup-one-time-on-the-host).
+See [If you already installed RunnerKit](../security-posture.md#if-you-already-installed-runnerkit) and [BYO quickstart — Sudo setup](../byo-quickstart.md#sudo-setup-one-time-on-the-host).
 
 ***
 
