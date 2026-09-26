@@ -6,6 +6,7 @@ import (
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/runmode"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -43,10 +44,16 @@ func newRegisterCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cob
 
 func runRegister(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) error {
 	if strings.TrimSpace(opts.cloud) != "" {
-		renderer := newRenderer(deps, jsonOutput, noColor)
-		_ = renderer.Error("invalid_register_cloud", "runnerkit register is BYO-only; omit --cloud or use runnerkit up for cloud provisioning.", []string{"Run `runnerkit up --repo ... --experimental --cloud hetzner --cloud-region <location>` to provision an experimental Hetzner runner (billed by Hetzner)."})
-		return NewExitError(ExitInvalidInput, errors.New("register does not support --cloud"))
+		return refuseRegisterCloud(newRenderer(deps, jsonOutput, noColor))
 	}
 	opts.registerLifecycleOnly = true
 	return runUp(deps, jsonOutput, noColor, opts)
+}
+
+// refuseRegisterCloud renders the invalid_register_cloud refusal. runUp
+// also calls it when the interactive setup prompt picks Cloud during
+// `runnerkit register`, which has no --cloud or --cloud-region flags.
+func refuseRegisterCloud(renderer *ui.Renderer) error {
+	_ = renderer.Error("invalid_register_cloud", "runnerkit register is BYO-only; omit --cloud or use runnerkit up for cloud provisioning.", []string{"Run `runnerkit up --repo ... --experimental --cloud hetzner --cloud-region <location>` to provision an experimental Hetzner runner (billed by Hetzner)."})
+	return NewExitError(ExitInvalidInput, errors.New("register does not support --cloud"))
 }

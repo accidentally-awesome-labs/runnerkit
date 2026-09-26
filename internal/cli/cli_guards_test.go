@@ -236,6 +236,7 @@ func TestRefuseIfLiveCloudState_AllowsBYOAndEmptyCloudState(t *testing.T) {
 	empty.Provider.IDs = nil
 	empty.Provider.ResourceIDs = nil
 	empty.Provider.Cloud = state.CloudInventory{Provider: "hetzner"}
+	empty.Cleanup.ProviderResourceIDs = []string{}
 	if err := refuseIfLiveCloudState(renderer, empty, true, "owner/repo"); err != nil {
 		t.Fatalf("cloud state without resource IDs must not be refused: %v", err)
 	}
@@ -245,8 +246,27 @@ func TestRefuseIfLiveCloudState_AllowsBYOAndEmptyCloudState(t *testing.T) {
 	onlyInventory := testsupport.CloudRepositoryState()
 	onlyInventory.Provider.IDs = nil
 	onlyInventory.Provider.ResourceIDs = nil
+	onlyInventory.Cleanup.ProviderResourceIDs = []string{}
 	if err := refuseIfLiveCloudState(renderer, onlyInventory, true, "owner/repo"); err == nil {
 		t.Fatal("cloud inventory server/firewall/ssh-key IDs must be refused")
+	}
+	onlyCleanup := testsupport.CloudRepositoryState()
+	onlyCleanup.Provider.IDs = nil
+	onlyCleanup.Provider.ResourceIDs = nil
+	onlyCleanup.Provider.Cloud = state.CloudInventory{Provider: "hetzner"}
+	if got := liveCloudResourceIDs(onlyCleanup); len(got) == 0 || got[0] != "server:srv-123" {
+		t.Fatalf("Cleanup.ProviderResourceIDs must count as live cloud IDs, got %v", got)
+	}
+	if err := refuseIfLiveCloudState(renderer, onlyCleanup, true, "owner/repo"); err == nil {
+		t.Fatal("cleanup provider_resource_ids must be refused")
+	}
+	nonBillable := testsupport.CloudRepositoryState()
+	nonBillable.Provider.IDs = map[string]string{"create_action": "act-1"}
+	nonBillable.Provider.ResourceIDs = nil
+	nonBillable.Provider.Cloud = state.CloudInventory{Provider: "hetzner"}
+	nonBillable.Cleanup.ProviderResourceIDs = []string{"create_action:act-1"}
+	if err := refuseIfLiveCloudState(renderer, nonBillable, true, "owner/repo"); err != nil {
+		t.Fatalf("non-billable action IDs must not be refused: %v", err)
 	}
 }
 
@@ -311,6 +331,27 @@ func TestUp_InteractiveChoicesStillGated(t *testing.T) {
 			assertExitInvalidInput(t, h, err, tc.code)
 			h.assertNoProviderOrSSH(t)
 		})
+	}
+}
+
+func TestRegister_InteractiveCloudChoiceRefused(t *testing.T) {
+	// register has no --cloud / --cloud-region flags, so an interactive
+	// Cloud pick must not end in an experimental/region refusal whose
+	// advice register cannot follow.
+	for _, extra := range [][]string{nil, {"--experimental"}} {
+		h := newGuardHarness(t)
+		args := append([]string{"register", "--repo", "owner/repo", "--dry-run", "--no-color"}, extra...)
+		err := h.run(t, &interactiveChoicePrompter{answers: []string{"cloud", "persistent"}}, true, args...)
+		if err == nil || ExitCode(err) != ExitInvalidInput {
+			t.Fatalf("expected invalid_register_cloud exit %d, got %v\n%s", ExitInvalidInput, err, h.combined())
+		}
+		if !strings.Contains(h.combined(), "runnerkit register is BYO-only") || strings.Contains(h.combined(), "experimental_required") || strings.Contains(h.combined(), "cloud_region_required") {
+			t.Fatalf("expected the invalid_register_cloud refusal:\n%s", h.combined())
+		}
+		if !strings.Contains(h.combined(), "runnerkit up --repo ... --experimental --cloud hetzner --cloud-region <location>") {
+			t.Fatalf("refusal must point at up --experimental --cloud:\n%s", h.combined())
+		}
+		h.assertNoProviderOrSSH(t)
 	}
 }
 

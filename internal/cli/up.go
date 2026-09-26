@@ -124,6 +124,11 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err != nil {
 		return err
 	}
+	// `register` is BYO-only, but the interactive setup prompt in
+	// resolveModeDecision can still pick Cloud.
+	if opts.registerLifecycleOnly && strings.TrimSpace(opts.cloud) != "" {
+		return refuseRegisterCloud(renderer)
+	}
 	// Re-check the --experimental gates: the interactive prompts in
 	// resolveModeDecision may have chosen cloud or ephemeral mode.
 	if err := enforceExperimentalGates(renderer, opts); err != nil {
@@ -517,8 +522,7 @@ func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, d
 		lines = append(lines, ui.Bullet(modeEphemeralModeNote))
 	}
 	// Surface any decision-level warnings appended by the safety
-	// enforcement step (e.g. public/fork ephemeral cloud recommends the
-	// safer ephemeral cloud command). De-duplicate against the canonical
+	// enforcement step. De-duplicate against the canonical
 	// per-profile copy already rendered above so the same sentence does
 	// not appear twice.
 	rendered := map[string]bool{}

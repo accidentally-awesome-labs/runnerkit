@@ -94,26 +94,31 @@ func refuseEphemeralCloud(renderer *ui.Renderer) error {
 
 // liveCloudResourceIDs lists the RunnerKit-created Hetzner resource IDs a
 // saved cloud state still records (server, SSH key, firewall, primary
-// IPs), formatted as kind:id. An empty list means nothing billable is
-// known to exist.
-func liveCloudResourceIDs(ref rkstate.ProviderRef) []string {
+// IPs), formatted as kind:id. It reads every place a cloud state records
+// them: ProviderRef.IDs / ResourceIDs, the CloudInventory, and the
+// Cleanup.ProviderResourceIDs "kind:id" list. An empty list means nothing
+// billable is known to exist.
+func liveCloudResourceIDs(repoState rkstate.RepositoryState) []string {
+	ref := repoState.Provider
 	ids := map[string]string{}
-	for _, source := range []map[string]string{ref.IDs, ref.ResourceIDs} {
-		for k, v := range source {
-			if strings.TrimSpace(v) != "" {
-				ids[k] = v
-			}
+	add := func(key, value string) {
+		if strings.TrimSpace(ids[key]) == "" && strings.TrimSpace(value) != "" {
+			ids[key] = strings.TrimSpace(value)
 		}
 	}
-	for key, value := range map[string]string{
-		"server":       ref.Cloud.ServerID,
-		"ssh_key":      ref.Cloud.SSHKeyID,
-		"firewall":     ref.Cloud.FirewallID,
-		"primary_ipv4": ref.Cloud.PrimaryIPv4ID,
-		"primary_ipv6": ref.Cloud.PrimaryIPv6ID,
-	} {
-		if strings.TrimSpace(ids[key]) == "" && strings.TrimSpace(value) != "" {
-			ids[key] = value
+	for _, source := range []map[string]string{ref.IDs, ref.ResourceIDs} {
+		for k, v := range source {
+			add(k, v)
+		}
+	}
+	add("server", ref.Cloud.ServerID)
+	add("ssh_key", ref.Cloud.SSHKeyID)
+	add("firewall", ref.Cloud.FirewallID)
+	add("primary_ipv4", ref.Cloud.PrimaryIPv4ID)
+	add("primary_ipv6", ref.Cloud.PrimaryIPv6ID)
+	for _, entry := range repoState.Cleanup.ProviderResourceIDs {
+		if key, value, ok := strings.Cut(entry, ":"); ok {
+			add(strings.TrimSpace(key), value)
 		}
 	}
 	return cloudProviderResourceIDList(ids)
@@ -130,7 +135,7 @@ func refuseIfLiveCloudState(renderer *ui.Renderer, existing rkstate.RepositorySt
 	if !exists || !isCloudProvider(existing.Provider) {
 		return nil
 	}
-	ids := liveCloudResourceIDs(existing.Provider)
+	ids := liveCloudResourceIDs(existing)
 	if len(ids) == 0 {
 		return nil
 	}

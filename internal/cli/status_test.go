@@ -111,7 +111,7 @@ func TestStatusMissingStateEmptyCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing state should render empty status, got %v", err)
 	}
-	for _, want := range []string{"No RunnerKit-managed runner found", "Run runnerkit up --repo owner/name --host user@host", "pass --all to list saved runners", "No RunnerKit-managed cloud runner is saved for `owner/name`.", "Run `runnerkit up --repo owner/name --cloud hetzner` to create one", "`--host user@host` to use an existing machine."} {
+	for _, want := range []string{"No RunnerKit-managed runner found", "Run runnerkit up --repo owner/name --host user@host", "pass --all to list saved runners", "No RunnerKit-managed cloud runner is saved for `owner/name`.", "Run `runnerkit up --repo owner/name --experimental --cloud hetzner", "to create one (experimental; billed by Hetzner)", "`--host user@host` to use an existing machine."} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing state copy missing %q:\n%s", want, out)
 		}
