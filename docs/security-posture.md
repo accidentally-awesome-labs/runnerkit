@@ -110,7 +110,9 @@ step 4.
    first, or tear the runner down without running `svc.sh`:
 
    ```bash
-   sudo systemctl disable --now 'actions.runner.*'
+   sudo systemctl stop 'actions.runner.*'
+   # systemctl disable takes no pattern, so name the unit files:
+   sudo systemctl disable $(systemctl list-unit-files --plain --no-legend 'actions.runner.*' | awk '{print $1}')
    sudo rm /etc/systemd/system/actions.runner.*.service
    sudo systemctl daemon-reload
    # Remove the runner in the repository's Settings -> Actions -> Runners,

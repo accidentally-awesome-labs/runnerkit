@@ -141,7 +141,8 @@ If the GitHub registration is still listed, remove it in the repository's
 > directory as root. On a host that ran untrusted workflows, a job may have
 > replaced it. Compare `svc.sh` and `bin/actions.runner.service.template`
 > against the release tarball first, or remove the unit without `svc.sh`
-> (`sudo systemctl disable --now 'actions.runner.*'`, then
+> (`sudo systemctl stop 'actions.runner.*'`, `sudo systemctl disable` with
+> the unit names from `systemctl list-unit-files 'actions.runner.*'`, then
 > `sudo rm /etc/systemd/system/actions.runner.*.service` and
 > `sudo systemctl daemon-reload`). See
 > [security-posture.md](../security-posture.md#if-you-already-installed-runnerkit).

@@ -1,0 +1,64 @@
+# RunnerKit validation V-2 (smallest token that can read runner health).
+# Runbook: docs/testkit/validations.md.
+#
+# Copy this file to .github/workflows/rk-token-probe.yml in the THROWAWAY
+# PRIVATE test repository. It runs on a GitHub-hosted runner and asks the
+# runner endpoints with the workflow's own GITHUB_TOKEN and, if the
+# repository secret RK_PROBE_PAT is set, with that token. Tokens are never
+# printed; only HTTP statuses, the X-Accepted-GitHub-Permissions header and
+# runner name/status/busy/version.
+name: rk-token-probe
+run-name: rk-token-probe ${{ inputs.nonce }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      nonce:
+        description: 'Marker the kit scripts use to find this run'
+        required: false
+        default: manual
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe runner endpoints
+        env:
+          GITHUB_TOKEN_UNDER_TEST: ${{ github.token }}
+          PAT_UNDER_TEST: ${{ secrets.RK_PROBE_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          probe() {
+            label="$1" token="$2" path="$3"
+            status="$(curl -sS -o body.json -D headers.txt -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "${GITHUB_API_URL}${path}")" || status=000
+            accepted="$(grep -i '^x-accepted-github-permissions:' headers.txt | cut -d: -f2- | tr -d '\r' | sed 's/^ *//')"
+            echo "RK-PROBE token=${label} path=${path} http=${status} accepted=${accepted:--}"
+            if [ "$status" = 200 ]; then
+              case "$path" in
+                */actions/runners) jq -c '.runners[] | {name, status, busy, version}' body.json | sed 's/^/RK-PROBE runner /' ;;
+                */deprecations/*) jq -c '.' body.json | sed 's/^/RK-PROBE deprecation /' ;;
+              esac
+            fi
+          }
+          run_all() {
+            probe "$1" "$2" "/repos/${REPO}/actions/runners"
+            probe "$1" "$2" "/repos/${REPO}/actions/runners/deprecations/2.334.0"
+            probe "$1" "$2" "/repos/${REPO}/actions/runs?per_page=1"
+          }
+          run_all GITHUB_TOKEN "$GITHUB_TOKEN_UNDER_TEST"
+          if [ -n "$PAT_UNDER_TEST" ]; then
+            run_all RK_PROBE_PAT "$PAT_UNDER_TEST"
+          else
+            echo "RK-PROBE token=RK_PROBE_PAT skipped=secret-not-set"
+          fi

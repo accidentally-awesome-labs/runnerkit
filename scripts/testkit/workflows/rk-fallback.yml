@@ -1,0 +1,33 @@
+# RunnerKit validation V-4 (fall back to GitHub-hosted runners with a
+# repository variable). Runbook: docs/testkit/validations.md.
+#
+# Copy this file to .github/workflows/rk-fallback.yml in the THROWAWAY
+# PRIVATE test repository. scripts/testkit/fallback-probe.sh sets the
+# repository variable RUNS_ON, dispatches this workflow and reads which
+# runner took the job. This is the pattern the "fall back to GitHub-hosted"
+# recipe recommends for build and test jobs only.
+name: rk-fallback
+run-name: rk-fallback ${{ inputs.nonce }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      nonce:
+        description: 'Marker the kit scripts use to find this run'
+        required: false
+        default: manual
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # RUNS_ON holds JSON: an array of self-hosted labels, or ["ubuntu-latest"].
+    # Without the variable the job runs on a GitHub-hosted runner.
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 10
+    steps:
+      - name: Which runner took the job
+        run: |
+          echo "RK-FALLBACK runner_name=${RUNNER_NAME} environment=${RUNNER_ENVIRONMENT:-unset} os=${RUNNER_OS}"

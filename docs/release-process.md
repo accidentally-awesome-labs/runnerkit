@@ -126,7 +126,11 @@ Before pushing a tag, the maintainer must:
 
    Pass: the runner is online, the job is green, and
    `id -nG runnerkit-runner` contains `docker`. Record the run URL in the
-   CHANGELOG. **If it does not pass** (and cannot be fixed within the time
+   CHANGELOG. The runbook is [testkit/release-gate.md](testkit/release-gate.md):
+   `scripts/testkit/gate.sh` dispatches the job, checks each criterion
+   (including that the host's passwordless sudo is exactly what the
+   candidate `install.sh` writes) and writes the evidence with the
+   CHANGELOG line. **If it does not pass** (and cannot be fixed within the time
    box), do not tag with a BYO claim: ship the fallback that makes BYO
    `up`/`register` refuse without `--accept-known-issues`, and change the
    README and CHANGELOG Known-issues text to "BYO is not supported in this
@@ -139,6 +143,9 @@ Before pushing a tag, the maintainer must:
    `sudo -u runnerkit-runner mv <install>/svc.sh <install>/svc.sh.orig` and
    the same for `bin` must fail with "Permission denied". Until that has
    been checked on a runner host, the revocation gate is not met.
+   `scripts/testkit/gate.sh --after-revocation` then checks from a real job
+   that Docker and the install directory are refused and the SSH user has
+   no passwordless sudo ([part 3 of the runbook](testkit/release-gate.md#part-3-revocation-drill)).
 5. **Verify the Homebrew tap token.** `HOMEBREW_TAP_GITHUB_TOKEN` must be a
    fine-grained PAT with `Contents: Read and write` on
    `accidentally-awesome-labs/homebrew-tap` only, not expired (check the
