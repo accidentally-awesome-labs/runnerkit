@@ -59,9 +59,9 @@ right to submit it under the project's license
 git rebase --signoff main
 ```
 
-The `dco` check in `pr-checks` fails a pull request that has a commit
-without the line. Pull requests opened by the repository's owner, members
-or collaborators are not checked.
+The `dco` check in `pr-checks` fails a pull request from a fork that has
+a commit without the line. Pull requests from branches of this repository,
+which need write access, are not checked.
 
 ## Building and testing
 

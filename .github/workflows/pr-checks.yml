@@ -85,13 +85,15 @@ jobs:
           fi
 
   # CONTRIBUTING.md: every commit carries a DCO Signed-off-by line (H-02).
-  # Pull requests opened by the repository's owner, members or collaborators
-  # are not checked, as with the DCO app's `require.members: false`; a
-  # skipped job counts as passing when this check is required on main.
+  # Only pull requests from forks are checked. A branch in this repository
+  # needs write access, so its author is a maintainer (like the DCO app's
+  # `require.members: false`). author_association cannot tell: GitHub
+  # reports org members with private membership as CONTRIBUTOR. A skipped
+  # job counts as passing when this check is required on main.
   dco:
     if: >-
       github.event_name == 'pull_request' &&
-      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
