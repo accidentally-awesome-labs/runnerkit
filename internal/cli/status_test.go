@@ -162,7 +162,7 @@ func TestStatusMissingStateRendersUISpecEmptyCopy(t *testing.T) {
 	flat := strings.Join(strings.Fields(out), " ")
 	for _, want := range []string{
 		"No RunnerKit-managed runner is saved for `owner/repo`.",
-		"Run `runnerkit up --repo owner/repo --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine.",
+		"Run `runnerkit up --repo owner/repo --host user@host` to use an existing machine; for public or untrusted code, use GitHub-hosted runners.",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Fatalf("ui-spec empty state missing %q (flattened):\n%s", want, out)
@@ -221,7 +221,7 @@ func TestMissingStateRendersRunnerKitEmptyState(t *testing.T) {
 	flat := strings.Join(strings.Fields(out), " ")
 	for _, want := range []string{
 		"No RunnerKit-managed runner is saved for `owner/name`.",
-		"Run `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine.",
+		"Run `runnerkit up --repo owner/name --host user@host` to use an existing machine; for public or untrusted code, use GitHub-hosted runners.",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Fatalf("ui-spec empty state missing %q (flattened):\n%s", want, out)

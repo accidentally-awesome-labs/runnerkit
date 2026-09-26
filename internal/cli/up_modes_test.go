@@ -116,7 +116,7 @@ func TestUpEphemeralBYODryRunRendersUISpecCopyAndSnippet(t *testing.T) {
 		RemoteExecutor: newFakeRemoteExecutor(),
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral BYO dry-run returned error: %v\nstderr=%s", err, errOut.String())
 	}
@@ -143,6 +143,7 @@ func TestUpEphemeralBYODryRunRendersUISpecCopyAndSnippet(t *testing.T) {
 }
 
 func TestUpEphemeralCloudDryRunRendersTradeoffsAndCostCaveat(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
 		Version:        "test-version",
@@ -154,7 +155,7 @@ func TestUpEphemeralCloudDryRunRendersTradeoffsAndCostCaveat(t *testing.T) {
 		Providers:      provider.NewRegistry(&provider.FakeProvider{}),
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--dry-run", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--dry-run", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -195,6 +196,7 @@ func TestUpInvalidModeReturnsExitInvalidInput(t *testing.T) {
 }
 
 func TestUpEphemeralCloudDryRunJSONIncludesModeFields(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{
 		Version:   "test-version",
@@ -204,7 +206,7 @@ func TestUpEphemeralCloudDryRunJSONIncludesModeFields(t *testing.T) {
 		Providers: provider.NewRegistry(&provider.FakeProvider{}),
 		Sleep:     noSleep,
 	})
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--dry-run", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--dry-run", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral cloud json dry-run returned error: %v\nstderr=%s", err, errOut.String())
 	}
@@ -246,7 +248,7 @@ func TestUpEphemeralCloudDryRunJSONIncludesModeFields(t *testing.T) {
 }
 
 func TestUpEphemeralBYODryRunJSONIncludesSafetyProfileAndSnippet(t *testing.T) {
-	out, errOut, err := executeForTest(t, "--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color")
+	out, errOut, err := executeForTest(t, "--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color")
 	if err != nil {
 		t.Fatalf("ephemeral BYO json dry-run returned error: %v\nstderr=%s", err, errOut)
 	}
@@ -271,7 +273,7 @@ func TestUpEphemeralModeUsesEphemeralRunnerNameForListAndDryRunBeforeToken(t *te
 	remoteExec := newFakeRemoteExecutor()
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: service, RemoteExecutor: remoteExec, Sleep: noSleep})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--dry-run", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral BYO dry-run returned error: %v\nstderr=%s", err, errOut.String())
 	}
@@ -350,7 +352,7 @@ func TestUpPublicRepoPersistentBlocksWithEphemeralCloudRecommendation(t *testing
 	flat := strings.Join(strings.Fields(combined), " ")
 	for _, want := range []string{
 		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
+		"Use GitHub-hosted runners for public, fork-based, or untrusted code",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Fatalf("public persistent block missing %q (flattened):\n%s", want, flat)
@@ -362,6 +364,7 @@ func TestUpPublicRepoPersistentBlocksWithEphemeralCloudRecommendation(t *testing
 }
 
 func TestUpPublicRepoEphemeralCloudDryRunSurfacesEphemeralCloudRecommendation(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	// Public ephemeral cloud is not blocked, but the tradeoffs and
 	// warnings must mention ephemeral cloud as the safer choice and the
 	// dry-run path must not mint a registration token.
@@ -378,7 +381,7 @@ func TestUpPublicRepoEphemeralCloudDryRunSurfacesEphemeralCloudRecommendation(t 
 		StateBaseDir: stateDir,
 		Sleep:        noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--dry-run", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral cloud public dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -417,7 +420,7 @@ func TestUpPublicRepoEphemeralBYOWithoutAcknowledgementBlocks(t *testing.T) {
 		RemoteExecutor: remoteExec,
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("expected ephemeral BYO public gate, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
@@ -435,7 +438,7 @@ func TestUpPublicRepoEphemeralBYOWithoutAcknowledgementBlocks(t *testing.T) {
 func TestUpPublicRepoEphemeralBYOWithAllowFlagDryRunRendersBYOCaveat(t *testing.T) {
 	// --allow-ephemeral-byo-risk --yes for a public repo permits dry-run
 	// and still surfaces the BYO clean-VM caveat.
-	out, errOut, err := executeForTest(t, "up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--allow-ephemeral-byo-risk", "--yes", "--dry-run", "--no-color")
+	out, errOut, err := executeForTest(t, "up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--allow-ephemeral-byo-risk", "--yes", "--dry-run", "--no-color")
 	if err != nil {
 		// public repo via newFakePermittedGitHubService is private; we need
 		// the public-repo service here. Use the dependency-injection form.
@@ -451,7 +454,7 @@ func TestUpPublicRepoEphemeralBYOWithAllowFlagDryRunRendersBYOCaveat(t *testing.
 		RemoteExecutor: newFakeRemoteExecutor(),
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--allow-ephemeral-byo-risk", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--allow-ephemeral-byo-risk", "--yes", "--dry-run", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral BYO acknowledged dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out2.String(), errOut2.String())
 	}

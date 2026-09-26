@@ -64,13 +64,13 @@ func runFirstRunWizard(ctx context.Context, cmd *cobra.Command, deps Dependencie
 	br := bufio.NewReader(deps.In)
 	choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: "Where do you want to run GitHub Actions jobs?"}, []ui.Option{
 		{Value: "byo", Label: "BYO Linux machine (SSH)", Description: "Use your own server or desktop"},
-		{Value: "cloud", Label: "Hetzner cloud (recommended default)", Description: "Provision a small VM via runnerkit up"},
+		{Value: "cloud", Label: "Hetzner cloud (experimental; billed by Hetzner)", Description: "Provision a small VM via runnerkit up --experimental"},
 	})
 	if err != nil {
 		return NewExitError(ExitInvalidInput, err)
 	}
 	if choice == "cloud" {
-		_ = renderer.Step(1, 1, "Cloud setup", ui.Bullet("Run the guided cloud path (tokens via env / gh):"), ui.Next("runnerkit up --repo owner/name"), ui.Bullet("The command will ask whether you want BYO or Cloud and Persistent or Ephemeral."), ui.Bullet("See docs/cloud-quickstart.md for credentials and sizing."))
+		_ = renderer.Step(1, 1, "Cloud setup", ui.Bullet("Run the guided cloud path (tokens via env / gh):"), ui.Next("runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <choose>"), ui.Bullet("Cloud is experimental and unsupported: servers are billed by Hetzner until runnerkit destroy verifies cleanup."), ui.Bullet("Choose a --cloud-region where your server type is offered (check the Hetzner Cloud Console)."), ui.Bullet("See docs/cloud-quickstart.md for credentials and sizing."))
 		return nil
 	}
 

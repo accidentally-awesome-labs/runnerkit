@@ -16,10 +16,11 @@ const PublicRepoRiskTitle = "WARNING: Public repository risk"
 // repositories" — they are *unsafe* for any other workload.
 const PublicRepoRiskBody = "Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows."
 
-// PublicRepoRiskNextAction recommends the safer ephemeral cloud command
-// instead of waiting for ephemeral mode (which is now available) or
-// silently telling users to pass --allow-public-repo-risk.
-const PublicRepoRiskNextAction = "Use `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner` for stronger isolation, or use GitHub-hosted runners."
+// PublicRepoRiskNextAction recommends GitHub-hosted runners for public,
+// fork-based, or untrusted code instead of silently telling users to pass
+// --allow-public-repo-risk. v1.3.4 no longer recommends ephemeral cloud:
+// that VM is never destroyed after its job and keeps billing.
+const PublicRepoRiskNextAction = "Use GitHub-hosted runners for public, fork-based, or untrusted code (free and unlimited for public repositories)."
 
 // DangerousPersistentOverrideCopy is the explicit danger remediation
 // shown alongside `--allow-public-repo-risk` so users cannot opt in to

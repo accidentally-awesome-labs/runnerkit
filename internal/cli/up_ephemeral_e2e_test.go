@@ -134,7 +134,7 @@ func TestPublicPersistentBlocksAndRecommendsEphemeralCloud(t *testing.T) {
 	flat := strings.Join(strings.Fields(combined), " ")
 	for _, want := range []string{
 		"Persistent self-hosted runners are unsafe for public, fork-based, or otherwise untrusted workflows.",
-		"runnerkit up --repo owner/name --mode ephemeral --cloud hetzner",
+		"Use GitHub-hosted runners for public, fork-based, or untrusted code",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Fatalf("public persistent block missing %q (flattened):\n%s", want, flat)
@@ -158,6 +158,7 @@ func TestPublicPersistentBlocksAndRecommendsEphemeralCloud(t *testing.T) {
 }
 
 func TestEphemeralCloudRecommendedForPublicRepo(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	deps, github, _, cloud, stateDir := ephemeralE2EDeps(t, publicRepoForE2E())
 	// Wire the second-pass ListRunners response to the deterministic
 	// ephemeral runner so waitForRunnerOnline succeeds without a live
@@ -174,7 +175,7 @@ func TestEphemeralCloudRecommendedForPublicRepo(t *testing.T) {
 	deps.Out = &out
 	deps.Err = &errOut
 	cmd := NewRootCommand(deps)
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral cloud public end-to-end returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -226,7 +227,7 @@ func TestEphemeralBYOPublicRequiresAcknowledgement(t *testing.T) {
 	deps.Err = &errOut
 	cmd := NewRootCommand(deps)
 	// No --allow-ephemeral-byo-risk: the safety gate must block.
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "user@host", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "user@host", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("expected ExitSafetyGate for ephemeral BYO public, got err=%v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
@@ -254,7 +255,7 @@ func TestEphemeralBYOTrustedPrivateUsesDownCleanup(t *testing.T) {
 	deps.Out = &out
 	deps.Err = &errOut
 	cmd := NewRootCommand(deps)
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "user@host", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "user@host", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral BYO trusted private returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}

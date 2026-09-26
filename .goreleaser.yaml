@@ -60,7 +60,7 @@ homebrew_casks:
       token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
     directory: Casks
     homepage: https://github.com/accidentally-awesome-labs/runnerkit
-    description: Reliable GitHub Actions self-hosted runners for solo developers
+    description: CLI to set up and check GitHub Actions self-hosted runners (experimental)
     commit_author:
       name: runnerkit-release-bot
       email: noreply@github.com
