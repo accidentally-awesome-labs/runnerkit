@@ -1,7 +1,7 @@
 # RunnerKit Makefile — solo developer + Claude execution.
 # Live smoke targets are MAINTAINER-ONLY and must NOT be invoked from CI (D-11).
 
-.PHONY: help test test-race test-integration vet lint smoke-live smoke-live-byo smoke-live-cloud smoke-stopwatch release-snapshot
+.PHONY: help test test-race test-integration vet lint generate generate-check vulncheck smoke-live smoke-live-byo smoke-live-cloud smoke-stopwatch release-snapshot
 
 help: ## Show this help.
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -17,6 +17,17 @@ test-integration: ## Run real-shell integration tests (requires NOPASSWD sudo on
 
 vet: ## go vet all packages.
 	go vet ./...
+
+generate: ## Regenerate committed generated files (go generate ./...).
+	go generate ./...
+
+generate-check: generate ## Fail if go generate changes tracked files or leaves untracked ones (same check as CI).
+	git diff --exit-code
+	@untracked="$$(git status --porcelain --untracked-files=all)"; \
+	if [ -n "$$untracked" ]; then echo "go generate left files that are not committed:"; echo "$$untracked"; exit 1; fi
+
+vulncheck: ## Report known vulnerabilities with govulncheck (report-only in CI until Stage 2).
+	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
 release-snapshot: ## Local GoReleaser dry-run (validates the build matrix).
 	goreleaser release --snapshot --skip=publish --clean --skip=sign

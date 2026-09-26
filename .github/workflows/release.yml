@@ -3,13 +3,51 @@ on:
   push:
     tags: ['v*']
 
+# Least privilege by default; the goreleaser job widens its own scope below.
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  goreleaser:
+  # Test gate (A-10 / C-01): a tag on a commit with failing tests, vet
+  # findings or stale generated files must never produce a release.
+  test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: go vet
+        run: go vet ./...
+      # `go generate ./... && git diff --exit-code`, plus a check for new
+      # untracked files, which git diff does not see. Separate lines so a
+      # failing `go generate` stops the step (bash -e ignores failures on
+      # the left of `&&`).
+      - name: go generate leaves no diff
+        run: |
+          set -euo pipefail
+          go generate ./...
+          git diff --exit-code
+          untracked="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$untracked" ]; then
+            echo "go generate left files that are not committed:"
+            echo "$untracked"
+            exit 1
+          fi
+      - name: go test
+        run: go test ./... -count=1 -race
+
+  goreleaser:
+    needs: [test]
+    # Releases (Homebrew cask bump, OIDC signing) only ever run from the
+    # upstream repository; tag pushes on forks stop after the test job.
+    if: github.repository == 'accidentally-awesome-labs/runnerkit'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:

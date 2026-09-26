@@ -4,12 +4,18 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Weekly report-only govulncheck run against main (A-17a / C-05).
+  schedule:
+    - cron: '17 6 * * 1'
+  # Manual run, e.g. to read the govulncheck result for a release-candidate SHA.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   goreleaser-validate:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +44,7 @@ jobs:
           ls dist/runnerkit_*_checksums.txt >/dev/null
 
   go-test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,3 +53,61 @@ jobs:
           go-version: '1.22'
       - name: go test
         run: go test ./... -count=1 -race
+
+  # Generated files (e.g. install.sh's sudoers block) must be committed in sync
+  # with their Go source of truth.
+  go-generate:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      # `go generate ./... && git diff --exit-code`, plus a check for new
+      # untracked files, which git diff does not see. Separate lines so a
+      # failing `go generate` stops the step (bash -e ignores failures on
+      # the left of `&&`).
+      - name: go generate leaves no diff
+        run: |
+          set -euo pipefail
+          go generate ./...
+          git diff --exit-code
+          untracked="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$untracked" ]; then
+            echo "go generate left files that are not committed:"
+            echo "$untracked"
+            exit 1
+          fi
+
+  # Report-only until Stage 2 (C-05): findings go to the job summary and never
+  # block a merge. Before tagging, read this job's result for the release SHA;
+  # a finding reachable from shipped code pulls the toolchain bump forward.
+  govulncheck:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      # v1.1.4 is the newest golang.org/x/vuln release whose go.mod still
+      # builds with Go 1.22 (no toolchain auto-download). Bump with A-17b.
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: govulncheck
+        run: |
+          set -uo pipefail
+          rc=0
+          govulncheck ./... > govulncheck.txt 2>&1 || rc=$?
+          cat govulncheck.txt
+          {
+            echo "## govulncheck (report-only)"
+            echo
+            echo "Commit: \`${GITHUB_SHA}\` (event: ${GITHUB_EVENT_NAME}), exit code: ${rc}"
+            echo
+            echo '```'
+            cat govulncheck.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
