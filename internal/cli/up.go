@@ -52,6 +52,7 @@ type upOptions struct {
 	mode                  string
 	ephemeralTTL          time.Duration
 	extraPackages         string
+	experimental          bool // --experimental: required for --cloud and BYO --mode ephemeral (v1.3.4)
 	registerLifecycleOnly bool // true for `runnerkit register` (SEED-002 foundation gate)
 }
 
@@ -66,10 +67,16 @@ type GitHubService interface {
 }
 
 func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
-	opts := &upOptions{sshPort: 22, cloudRegion: provider.HetznerDefaultRegion, cloudProfile: provider.HetznerDefaultServerType, sshAllowedCIDR: provider.HetznerDefaultSSHAllowedCIDR}
+	opts := &upOptions{sshPort: 22, cloudProfile: provider.HetznerDefaultServerType, sshAllowedCIDR: provider.HetznerDefaultSSHAllowedCIDR}
 	cmd := &cobra.Command{Use: "up"}
 	cmd.Short = "Set up a BYO GitHub Actions runner"
 	cmd.Long = "Connect a BYO Linux host, preflight it over SSH, bootstrap a non-root persistent runner service, and print RunnerKit label guidance."
+	// The --experimental gates run offline in PreRunE, before repository
+	// resolution or the first GitHub call, so a refused cloud/ephemeral
+	// request never touches GitHub, SSH, or the provider.
+	cmd.PreRunE = func(_ *cobra.Command, _ []string) error {
+		return enforceExperimentalGates(newRenderer(deps, *jsonOutput, *noColor), opts)
+	}
 	cmd.RunE = func(_ *cobra.Command, _ []string) error {
 		return runUp(deps, *jsonOutput, *noColor, opts)
 	}
@@ -84,12 +91,13 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().IntVar(&opts.sshPort, "ssh-port", 22, "SSH port for the target host")
 	cmd.Flags().StringVar(&opts.sshKey, "ssh-key", "", "SSH private key path reference for the target host")
 	cmd.Flags().BoolVar(&opts.allowUnknownLinux, "allow-unknown-linux", false, "try best-effort install on unverified Linux distributions")
-	cmd.Flags().StringVar(&opts.cloud, "cloud", "", "recommended cloud provider; only hetzner is supported in Phase 4")
-	cmd.Flags().StringVar(&opts.cloudRegion, "cloud-region", provider.HetznerDefaultRegion, "provider region/location for cloud runner")
+	cmd.Flags().StringVar(&opts.cloud, "cloud", "", "experimental cloud provider (billed by the provider; requires --experimental and --cloud-region); only hetzner is supported")
+	cmd.Flags().StringVar(&opts.cloudRegion, "cloud-region", "", "provider region/location for cloud runner (required with --cloud; no default)")
 	cmd.Flags().StringVar(&opts.cloudProfile, "cloud-profile", provider.HetznerDefaultServerType, "provider server profile for cloud runner")
 	cmd.Flags().StringVar(&opts.sshAllowedCIDR, "ssh-allowed-cidr", provider.HetznerDefaultSSHAllowedCIDR, "SSH ingress CIDR for cloud runner")
-	cmd.Flags().StringVar(&opts.mode, "mode", "", "runner mode: persistent or ephemeral")
+	cmd.Flags().StringVar(&opts.mode, "mode", "", modeFlagUsage)
 	cmd.Flags().DurationVar(&opts.ephemeralTTL, "ephemeral-ttl", runmode.DefaultEphemeralTTL, "TTL safeguard for ephemeral runners")
+	cmd.Flags().BoolVar(&opts.experimental, "experimental", false, experimentalFlagUsage)
 	cmd.Flags().StringVar(&opts.extraPackages, "extra-packages", "", "comma-separated OS packages to pre-install on the runner host (e.g. libsecret-1-dev,dbus-x11)")
 	cmd.Flags().BoolVar(&opts.allowEphemeralBYORisk, "allow-ephemeral-byo-risk", false, "acknowledge that BYO ephemeral mode is not a clean VM for risky repositories")
 
@@ -116,6 +124,16 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err != nil {
 		return err
 	}
+	// `register` is BYO-only, but the interactive setup prompt in
+	// resolveModeDecision can still pick Cloud.
+	if opts.registerLifecycleOnly && strings.TrimSpace(opts.cloud) != "" {
+		return refuseRegisterCloud(renderer)
+	}
+	// Re-check the --experimental gates: the interactive prompts in
+	// resolveModeDecision may have chosen cloud or ephemeral mode.
+	if err := enforceExperimentalGates(renderer, opts); err != nil {
+		return err
+	}
 	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
 	if err := enforceModeSafetyDecision(ctx, deps, renderer, repo, decision, &modeDecision, opts, jsonOutput); err != nil {
 		return err
@@ -123,6 +141,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 
 	setupPath, err := resolveSetupPath(ctx, deps, renderer, repo, opts, jsonOutput)
 	if err != nil {
+		return err
+	}
+	if err := enforceExperimentalGates(renderer, opts); err != nil {
 		return err
 	}
 	if setupPath == setupPathCloud {
@@ -160,6 +181,12 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err != nil {
 		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
 		return NewExitError(ExitStateIO, err)
+	}
+	// A-05: never let a BYO run replace state that still records live
+	// Hetzner resources; check before host-key probe, preflight, or any
+	// mutation.
+	if err := refuseIfLiveCloudState(renderer, existing, exists, repo.FullName); err != nil {
+		return err
 	}
 	hostKey, acceptedAt, err := verifyTargetHostKey(ctx, deps, renderer, opts, jsonOutput, target, existing, exists)
 	if err != nil {
@@ -361,11 +388,11 @@ const (
 	setupPathBYOLabel      = "Bring Your Own machine (BYO)"
 	setupPathBYODesc       = "Use an existing Linux server you can SSH into."
 	setupPathCloudLabel    = "Cloud (Hetzner)"
-	setupPathCloudDesc     = "Provision a new cloud server. Creates billable resources until `runnerkit destroy` verifies cleanup."
+	setupPathCloudDesc     = "Experimental (requires --experimental and --cloud-region). Provisions a new cloud server billed by Hetzner until `runnerkit destroy` verifies cleanup."
 
 	// Step 2: mode selection (Persistent vs Ephemeral).
 	modePersistentDesc = "Reuses one runner across jobs. Lowest friction for trusted private repos."
-	modeEphemeralDesc  = "One job per runner registration. Deregisters automatically after each job."
+	modeEphemeralDesc  = "Experimental; not isolation (requires --experimental). One job per runner registration, then deregisters."
 
 	// Internal choice values for the interactive Select prompts.
 	setupChoiceBYO   = "byo"
@@ -471,6 +498,7 @@ func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, d
 	switch decision.SafetyProfile {
 	case runmode.ProfileEphemeralBYO:
 		lines = append(lines,
+			ui.WarningLine(modeBYOEphemeralExperimental),
 			ui.WarningLine(modeBYOEphemeralCaveat),
 			ui.WarningLine(modeNotFleetWarning),
 			ui.Bullet(modeTTLSafeguardCopy),
@@ -494,8 +522,7 @@ func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, d
 		lines = append(lines, ui.Bullet(modeEphemeralModeNote))
 	}
 	// Surface any decision-level warnings appended by the safety
-	// enforcement step (e.g. public/fork ephemeral cloud recommends the
-	// safer ephemeral cloud command). De-duplicate against the canonical
+	// enforcement step. De-duplicate against the canonical
 	// per-profile copy already rendered above so the same sentence does
 	// not appear twice.
 	rendered := map[string]bool{}
@@ -641,7 +668,7 @@ func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Rende
 	if !jsonOutput && !opts.nonInteractive && !opts.yes && deps.TTY.StdinTTY && deps.Prompts != nil {
 		choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: "Choose setup path for `" + repo.FullName + "`:"}, []ui.Option{
 			{Value: string(setupPathBYO), Label: "Use existing SSH host (BYO)"},
-			{Value: string(setupPathCloud), Label: "Provision recommended cloud runner (Hetzner)"},
+			{Value: string(setupPathCloud), Label: "Provision experimental cloud runner (Hetzner; billed; requires --experimental)"},
 		})
 		if err != nil {
 			return "", err
@@ -652,11 +679,26 @@ func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Rende
 		}
 		return setupPathBYO, nil
 	}
-	_ = renderer.Error("input_required", cloudNoIntentCopy, []string{"Pass --host user@host for BYO setup or pass --cloud hetzner --yes to provision the recommended cloud runner."})
+	_ = renderer.Error("input_required", cloudNoIntentCopy, []string{"Pass --host user@host for BYO setup, or pass --experimental --cloud hetzner --cloud-region <location> --yes to provision an experimental cloud runner billed by Hetzner."})
 	return "", NewExitError(ExitInputRequired, errors.New(cloudNoIntentCopy))
 }
 
 func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, modeDecision runmode.Decision, opts *upOptions, jsonOutput bool) error {
+	// A-08: ephemeral cloud is disabled; refuse before any provider call.
+	if modeDecision.SafetyProfile == runmode.ProfileEphemeralCloud || modeDecision.Mode == runmode.ModeEphemeral {
+		return refuseEphemeralCloud(renderer)
+	}
+	// A-05: refuse to provision over saved state that still records live
+	// Hetzner resources, before any GitHub or provider call.
+	store := rkstate.NewStore(deps.StateBaseDir)
+	existing, exists, err := store.GetRepository(repo.FullName)
+	if err != nil {
+		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
+		return NewExitError(ExitStateIO, err)
+	}
+	if err := refuseIfLiveCloudState(renderer, existing, exists, repo.FullName); err != nil {
+		return err
+	}
 	cloudProvider, ok := deps.Providers.Get(provider.HetznerProvider)
 	if !ok || cloudProvider == nil {
 		_ = renderer.Error("invalid_cloud_provider", "RunnerKit does not support cloud provider hetzner in Phase 4.", []string{cloudUnsupportedCopy})
@@ -722,7 +764,6 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		}
 		return renderCloudProvisionPlan(renderer, jsonOutput, repo, plan, modeDecision, opts.ephemeralTTL)
 	}
-	store := rkstate.NewStore(deps.StateBaseDir)
 	replaceExisting, err := confirmCloudStateReplaceBeforeProvision(ctx, deps, renderer, opts, jsonOutput, store, repo.FullName)
 	if err != nil {
 		return err
@@ -769,7 +810,7 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
-		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the recommended cloud runner path."})
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the cloud runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
 	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs, true)
@@ -1242,10 +1283,15 @@ func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer 
 }
 
 func confirmCloudStateReplaceBeforeProvision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, store rkstate.Store, fullName string) (bool, error) {
-	if _, exists, err := store.GetRepository(fullName); err != nil {
+	if existing, exists, err := store.GetRepository(fullName); err != nil {
 		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
 		return false, NewExitError(ExitStateIO, err)
 	} else if exists {
+		// Neither --replace nor the typed "replace owner/name" phrase may
+		// overwrite state that still records live Hetzner resources.
+		if err := refuseIfLiveCloudState(renderer, existing, exists, fullName); err != nil {
+			return false, err
+		}
 		if opts.replace {
 			return true, nil
 		}
@@ -1806,8 +1852,8 @@ func buildBYORepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSour
 			WorkDir:            opts.WorkDir,
 			ServiceName:        runnerServiceName(labelSet.RunnerName),
 		},
-		Provider:         rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
-		Cleanup:          rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
+		Provider:          rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
+		Cleanup:           rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
 		Safety:            safety,
 		ExtraPackages:     opts.ExtraPackages,
 		ImageSetupVersion: opts.ImageSetupVersion,
@@ -2036,13 +2082,13 @@ func ephemeralCompletionJSON(repoFullName string, modeDecision runmode.Decision,
 //
 //   - ProfilePersistentRisky without --allow-public-repo-risk: block with
 //     the public_repo_risk error code, render the exact UI-SPEC body,
-//     ephemeral cloud recommendation, and dangerous-override copy.
+//     GitHub-hosted recommendation, and dangerous-override copy.
 //   - ProfilePersistentRisky with --allow-public-repo-risk: keep the
 //     typed acknowledgement flow but use the Phase 5 prompt copy and
 //     surface DangerousPersistentOverrideCopy as part of the warnings.
-//   - ProfileEphemeralCloud: never block on public/fork — ephemeral cloud
-//     is the recommended path. Just append the safer-recommendation
-//     warnings to the decision so renderModeTradeoffs surfaces them.
+//   - ProfileEphemeralCloud: disabled in v1.3.4 (the VM is never
+//     destroyed after its job and keeps billing). enforceExperimentalGates
+//     refuses it earlier; this case is a defensive backstop.
 //   - ProfileEphemeralBYO on public/fork: require either typed input
 //     `use ephemeral byo for owner/name` or non-interactive
 //     `--allow-ephemeral-byo-risk --yes`; otherwise block with the
@@ -2050,19 +2096,10 @@ func ephemeralCompletionJSON(repoFullName string, modeDecision runmode.Decision,
 func enforceModeSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, modeDecision *runmode.Decision, opts *upOptions, jsonOutput bool) error {
 	switch modeDecision.SafetyProfile {
 	case runmode.ProfileEphemeralCloud:
-		// Public/fork ephemeral cloud is the recommended safer path.
-		// Append the recommendation strings so renderModeTradeoffs and
-		// downstream warnings make the safer choice visible. The exact
-		// `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner`
-		// command stays in the warning list so docs greps and human
-		// output assertions both succeed.
-		if !repo.Private || repo.Fork {
-			modeDecision.Warnings = append(modeDecision.Warnings,
-				runmode.WarningPublicForkPersistent,
-				"Use ephemeral cloud runner: runnerkit up --repo "+repo.FullName+" --mode ephemeral --cloud hetzner",
-			)
-		}
-		return nil
+		// A-08: ephemeral cloud is disabled, not a safer path for
+		// untrusted code; untrusted or public code belongs on
+		// GitHub-hosted runners.
+		return refuseEphemeralCloud(renderer)
 	case runmode.ProfileEphemeralBYO:
 		if !repo.Private || repo.Fork {
 			return enforceEphemeralBYOAcknowledgement(ctx, deps, renderer, repo, opts, jsonOutput)
@@ -2166,7 +2203,7 @@ func enforceEphemeralBYOAcknowledgement(ctx context.Context, deps Dependencies, 
 	// that index remediation[0] keep working.
 	message := runmode.WarningEphemeralBYONotCleanVM
 	remediation := []string{
-		"Use runnerkit up --repo " + repo.FullName + " --mode ephemeral --cloud hetzner for stronger isolation, or pass --allow-ephemeral-byo-risk --yes only after reviewing the risk.",
+		"Use GitHub-hosted runners for public, fork-based, or untrusted code, or pass --allow-ephemeral-byo-risk --yes only after reviewing the risk (BYO ephemeral is experimental and not isolation).",
 		errcodes.FormatLine(errcodes.AuthEphemeralBYOPublicForkAck),
 	}
 	_ = renderer.Error("ephemeral_byo_risk", message, remediation)

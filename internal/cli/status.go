@@ -68,7 +68,7 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 			return renderer.JSON(map[string]any{"ok": true, "command": "status", "scope": "all", "runners": items})
 		}
 		if len(results) == 0 {
-			return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."), ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."), ui.Bullet("Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."))
+			return renderer.Step(1, 1, "runner status", ui.WarningLine("No RunnerKit-managed runner found"), ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."), ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."), ui.Bullet("Run `runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location>` to create one (experimental; billed by Hetzner), or pass `--host user@host` to use an existing machine."))
 		}
 		lines := []ui.Line{}
 		for _, result := range results {
@@ -97,9 +97,9 @@ func runStatus(deps Dependencies, jsonOutput bool, noColor bool, opts *statusOpt
 			ui.WarningLine("No RunnerKit-managed runner found"),
 			ui.Bullet("Run runnerkit up --repo owner/name --host user@host to create a BYO runner, or pass --all to list saved runners."),
 			ui.WarningLine("No RunnerKit-managed cloud runner is saved for `owner/name`."),
-			ui.Bullet("Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."),
+			ui.Bullet("Run `runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location>` to create one (experimental; billed by Hetzner), or pass `--host user@host` to use an existing machine."),
 			ui.WarningLine("No RunnerKit-managed runner is saved for `"+repo.FullName+"`."),
-			ui.Bullet("Run `runnerkit up --repo "+repo.FullName+" --mode ephemeral --cloud hetzner` for a one-job cloud runner, or use `--host user@host` for an existing machine."),
+			ui.Bullet("Run `runnerkit up --repo "+repo.FullName+" --host user@host` to use an existing machine; for public or untrusted code, use GitHub-hosted runners."),
 		)
 	}
 	result := collectStatus(ctx, deps, store.Path(), repoState, true)

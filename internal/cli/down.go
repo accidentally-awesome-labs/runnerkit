@@ -66,6 +66,15 @@ func runDown(deps Dependencies, jsonOutput bool, noColor bool, opts *downOptions
 	if !ok {
 		return runDownWithoutState(ctx, deps, renderer, repo, opts, jsonOutput)
 	}
+	// A-04: down/unregister must never handle cloud state. It would delete
+	// the only local record of RunnerKit-created Hetzner resources while
+	// they keep billing. Mirrors the BYO guard in destroy; applies to
+	// --dry-run too, and runs before any GitHub, SSH, or provider call.
+	if isCloudProvider(repoState.Provider) {
+		message := "This runner is a RunnerKit-managed Hetzner server; down would delete the only record of it while it keeps billing."
+		_ = renderer.Error("wrong_cleanup_command", message, []string{"runnerkit destroy --repo " + repo.FullName + " (verifies deletion with Hetzner)"})
+		return NewExitError(ExitInvalidInput, errors.New(message))
+	}
 	plan := ops.BuildCleanupPlan(repoState, opts.dryRun)
 	if opts.dryRun {
 		if jsonOutput {

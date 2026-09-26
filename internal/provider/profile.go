@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// HetznerDefaultRegion is the library-level profile fallback only. The CLI
+// never defaults to it: `runnerkit up --cloud` requires an explicit
+// --cloud-region (fails with cloud_region_required), because location
+// availability changes and fsn1 has at times offered no orderable types.
 const (
 	HetznerProvider              = "hetzner"
 	HetznerDefaultRegion         = "fsn1"
