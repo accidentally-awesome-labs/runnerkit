@@ -6,25 +6,52 @@ import (
 	"testing"
 )
 
-// Bug 4 / Task G: assert that the production binary has a concrete
-// Prompter implementation that satisfies both ui.Prompter and
-// ui.PasswordPrompter. The interface-only state shipped in Plan 06-06
-// silently leaves the binary's deps.Prompts == nil and surfaces a
-// misleading "no TTY" error in real terminals.
-
-func TestNewCLIPrompter_SatisfiesPrompter(t *testing.T) {
-	t.Parallel()
-	var p Prompter = NewCLIPrompter(strings.NewReader(""), &nopWriter{})
-	if p == nil {
-		t.Fatal("expected non-nil Prompter")
-	}
-}
+// Bug 4 / Task G: the production binary must have a concrete Prompter
+// implementation that satisfies ui.Prompter, ui.InputPrompter and
+// ui.PasswordPrompter. The compile-time guards in cli_prompter.go
+// enforce this; the runtime assertions below document it for callers
+// that hold the value as a plain ui.Prompter.
 
 func TestNewCLIPrompter_SatisfiesPasswordPrompter(t *testing.T) {
 	t.Parallel()
 	var p Prompter = NewCLIPrompter(strings.NewReader(""), &nopWriter{})
 	if _, ok := p.(PasswordPrompter); !ok {
 		t.Fatal("expected CLIPrompter to satisfy PasswordPrompter")
+	}
+}
+
+func TestNewCLIPrompter_SatisfiesInputPrompter(t *testing.T) {
+	t.Parallel()
+	var p Prompter = NewCLIPrompter(strings.NewReader(""), &nopWriter{})
+	if _, ok := p.(InputPrompter); !ok {
+		t.Fatal("expected CLIPrompter to satisfy InputPrompter")
+	}
+}
+
+func TestCLIPrompter_Input_ReturnsTypedLine(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"destroy owner/repo\n", "destroy owner/repo"},
+		{"destroy owner/repo\r\n", "destroy owner/repo"},
+		{"alice@example.com", "alice@example.com"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		var out strings.Builder
+		p := NewCLIPrompter(strings.NewReader(tc.input), &out)
+		got, err := p.Input(context.Background(), Prompt{Message: "Type it:", Help: "why this matters"})
+		if err != nil {
+			t.Fatalf("input %q: unexpected err: %v", tc.input, err)
+		}
+		if got != tc.want {
+			t.Fatalf("input %q: got %q want %q", tc.input, got, tc.want)
+		}
+		if !strings.Contains(out.String(), "Type it:") || !strings.Contains(out.String(), "why this matters") {
+			t.Fatalf("prompt output missing message/help: %q", out.String())
+		}
 	}
 }
 

@@ -41,6 +41,10 @@ func buildDependencies() cli.Dependencies {
 func main() {
 	cmd := cli.NewRootCommand(buildDependencies())
 	if err := cmd.Execute(); err != nil {
+		// Commands render their own errors; anything that reached here
+		// without being rendered (Cobra parse errors, raw RunE errors) is
+		// printed once so no non-zero exit is silent (P1-1).
+		cli.ReportUnrenderedError(os.Stdout, os.Stderr, os.Args[1:], err, ui.ErrorRendered())
 		os.Exit(cli.ExitCode(err))
 	}
 }

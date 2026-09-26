@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 const fileSchemaVersion = 1
@@ -29,6 +31,11 @@ type Step struct {
 }
 
 func sessionsDir(stateBase string) string {
+	// An empty base must never resolve to the process CWD (P1-3): fall
+	// back to the same state directory state.json uses.
+	if strings.TrimSpace(stateBase) == "" {
+		stateBase = state.DefaultBaseDir()
+	}
 	return filepath.Join(stateBase, "sessions")
 }
 

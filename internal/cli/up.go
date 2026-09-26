@@ -1480,9 +1480,7 @@ func resolveBYOTarget(ctx context.Context, deps Dependencies, renderer *ui.Rende
 			_ = renderer.Error("input_required", message, []string{"Pass --host user@host for BYO setup."})
 			return remote.Target{}, NewExitError(ExitInputRequired, errors.New(message+" Pass --host user@host for BYO setup."))
 		}
-		inputPrompter, ok := deps.Prompts.(interface {
-			Input(context.Context, ui.Prompt) (string, error)
-		})
+		inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 		if !ok {
 			message := "RunnerKit can't continue because SSH host input requires an interactive prompt."
 			_ = renderer.Error("input_required", message, []string{"Pass --host user@host for BYO setup."})
@@ -2121,9 +2119,7 @@ func blockPersistentRiskWithUISpecCopy(renderer *ui.Renderer, decision gh.Safety
 }
 
 func acknowledgePersistentPublicRisk(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo) error {
-	inputPrompter, ok := deps.Prompts.(interface {
-		Input(context.Context, ui.Prompt) (string, error)
-	})
+	inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 	if !ok {
 		message := "RunnerKit can't continue because public repository risk acknowledgement requires typed confirmation."
 		_ = renderer.Error("input_required", message, []string{"Type allow persistent public repo risk for " + repo.FullName + " in an interactive terminal or pass --yes only after reviewing the risk.", gh.DangerousPersistentOverrideCopy})
@@ -2149,9 +2145,7 @@ func enforceEphemeralBYOAcknowledgement(ctx context.Context, deps Dependencies, 
 	}
 	// Interactive: require typed input "use ephemeral byo for owner/name".
 	if deps.TTY.StdinTTY && deps.Prompts != nil && !jsonOutput {
-		inputPrompter, ok := deps.Prompts.(interface {
-			Input(context.Context, ui.Prompt) (string, error)
-		})
+		inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 		if ok {
 			want := "use ephemeral byo for " + repo.FullName
 			got, err := inputPrompter.Input(ctx, ui.Prompt{Message: want, Help: runmode.WarningEphemeralBYONotCleanVM})
@@ -2223,9 +2217,7 @@ func confirmStateReplace(ctx context.Context, deps Dependencies, renderer *ui.Re
 	if jsonOutput || opts.yes || opts.nonInteractive || !deps.TTY.StdinTTY {
 		return false, replacementRequired(renderer, fullName)
 	}
-	inputPrompter, ok := deps.Prompts.(interface {
-		Input(context.Context, ui.Prompt) (string, error)
-	})
+	inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 	if !ok {
 		return false, replacementRequired(renderer, fullName)
 	}

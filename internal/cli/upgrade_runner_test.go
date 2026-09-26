@@ -2,10 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
 	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
@@ -24,175 +25,112 @@ func seedRepoState(t *testing.T, repo rkstate.RepositoryState) string {
 	return dir
 }
 
-// TestUpgradeRunner_Persistent_ReAppliesWithNewPin: a persistent BYO
-// fixture with stale RunnerTemplateVersion is upgraded; the fake remote
-// executor records bootstrap commands whose download_runner script
-// contains the bundled pin. State is updated to the bundled pin only on
-// success.
-func TestUpgradeRunner_Persistent_ReAppliesWithNewPin(t *testing.T) {
+// runDisabledLifecycleCommand runs args against seeded state with recording
+// fakes and asserts the A-06a contract: exit 2, command_disabled, the
+// v1.3.3 explanation plus manual steps, and no GitHub, SSH or state change.
+func runDisabledLifecycleCommand(t *testing.T, repo rkstate.RepositoryState, args ...string) (string, string) {
+	t.Helper()
+	stateDir := seedRepoState(t, repo)
+	before, err := os.ReadFile(rkstate.NewStore(stateDir).Path())
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	remoteExec := newFakeRemoteExecutor()
+	github := newFakePermittedGitHubService()
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand(Dependencies{
+		Version:        "test-version",
+		Out:            &out,
+		Err:            &errOut,
+		GitHub:         github,
+		RemoteExecutor: remoteExec,
+		StateBaseDir:   stateDir,
+		CommandRunner:  staticCommandRunner{remote: "git@github.com:owner/repo.git"},
+		Sleep:          noSleep,
+	})
+	cmd.SetArgs(args)
+	runErr := cmd.Execute()
+	if runErr == nil || ExitCode(runErr) != ExitInvalidInput {
+		t.Fatalf("%v: ExitCode=%d err=%v\nstdout=%s\nstderr=%s", args, ExitCode(runErr), runErr, out.String(), errOut.String())
+	}
+	if len(remoteExec.runs) != 0 || remoteExec.probeCalls != 0 {
+		t.Fatalf("%v touched the host: %#v", args, remoteExec.runs)
+	}
+	if github.authCalls != 0 || github.readCalls != 0 || github.tokenCalls != 0 || github.listCalls != 0 {
+		t.Fatalf("%v called GitHub: %#v", args, github)
+	}
+	after, err := os.ReadFile(rkstate.NewStore(stateDir).Path())
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("%v changed state.json (err=%v)", args, err)
+	}
+	return out.String(), errOut.String()
+}
+
+// A-06a (P0-3): upgrade-runner deleted .runner/.credentials and ran
+// config.sh with an empty token. It must refuse without touching anything,
+// whatever flags are passed and whatever the runner mode is.
+func TestUpgradeRunner_Disabled_NoRemoteCalls(t *testing.T) {
+	persistent := testsupport.HealthyRepositoryState()
+	persistent.RunnerTemplateVersion = "2.330.0"
+	ephemeral := testsupport.EphemeralBYORepositoryState()
+	ephemeral.Ephemeral.FinalizerStatus = "waiting"
+	for _, tc := range []struct {
+		name string
+		repo rkstate.RepositoryState
+		args []string
+	}{
+		{"persistent_yes", persistent, []string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--yes", "--no-color"}},
+		{"persistent_no_flags", persistent, []string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--no-color"}},
+		{"ephemeral_force", ephemeral, []string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--force", "--yes", "--no-color"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errOut := runDisabledLifecycleCommand(t, tc.repo, tc.args...)
+			for _, want := range []string{"upgrade-runner is disabled", "v1.3.3", ".credentials", "--disableupdate", "runnerkit down --repo owner/repo", "runnerkit up --repo owner/repo"} {
+				if !strings.Contains(errOut, want) {
+					t.Fatalf("refusal missing %q:\n%s", want, errOut)
+				}
+			}
+		})
+	}
+}
+
+func TestUpgradeRunner_DisabledJSONEnvelope(t *testing.T) {
+	out, _ := runDisabledLifecycleCommand(t, testsupport.HealthyRepositoryState(), "--json", "upgrade-runner", "--repo", testsupport.TestRepoFullName, "--yes")
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("not json: %v\n%s", err, out)
+	}
+	errObj, _ := payload["error"].(map[string]any)
+	if payload["ok"] != false || errObj["code"] != "command_disabled" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+// A-06a: doctor --fix only ever ran upgrade-runner; it is refused before
+// any GitHub, SSH or state access, in human and JSON mode.
+func TestDoctorFix_Disabled(t *testing.T) {
 	repo := testsupport.HealthyRepositoryState()
 	repo.RunnerTemplateVersion = "2.330.0"
-	stateDir := seedRepoState(t, repo)
-
-	remoteExec := newFakeRemoteExecutor()
-	var out, errOut bytes.Buffer
-	cmd := NewRootCommand(Dependencies{
-		Version:        "test-version",
-		Out:            &out,
-		Err:            &errOut,
-		GitHub:         newFakePermittedGitHubService(),
-		RemoteExecutor: remoteExec,
-		StateBaseDir:   stateDir,
-		Sleep:          noSleep,
-	})
-	cmd.SetArgs([]string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--yes", "--no-color"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("upgrade-runner returned error: %v\nstderr=%s", err, errOut.String())
-	}
-
-	// Apply was called: at least the persistent bootstrap commands flowed.
-	wanted := map[string]bool{
-		"fix_dependencies":   false,
-		"create_runner_user": false,
-		"download_runner":    false,
-		"configure_runner":   false,
-		"install_service":    false,
-		"verify_service":     false,
-	}
-	for _, c := range remoteExec.runs {
-		if _, ok := wanted[c.ID]; ok {
-			wanted[c.ID] = true
-		}
-	}
-	for id, seen := range wanted {
-		if !seen {
-			t.Fatalf("expected persistent bootstrap.Apply command %q to be invoked", id)
-		}
-	}
-	// download_runner must reference the bundled pin.
-	var downloadScript string
-	for _, c := range remoteExec.runs {
-		if c.ID == "download_runner" {
-			downloadScript = c.Script
-			break
-		}
-	}
-	if !strings.Contains(downloadScript, bootstrap.RunnerVersion) {
-		t.Fatalf("download_runner script did not reference bundled pin %q; script:\n%s", bootstrap.RunnerVersion, downloadScript)
-	}
-
-	// State was updated to the bundled pin only after Apply succeeded.
-	store := rkstate.NewStore(stateDir)
-	loaded, ok, err := store.GetRepository(testsupport.TestRepoFullName)
-	if err != nil || !ok {
-		t.Fatalf("GetRepository err=%v ok=%v", err, ok)
-	}
-	if loaded.RunnerTemplateVersion != bootstrap.RunnerVersion {
-		t.Fatalf("RunnerTemplateVersion = %q after upgrade; want %q", loaded.RunnerTemplateVersion, bootstrap.RunnerVersion)
-	}
-}
-
-// TestUpgradeRunner_Ephemeral_TerminalNoOp: ephemeral runner that has
-// already terminated (FinalizerStatus completed) results in no Apply call
-// and a clear no-op message. Exit code 0.
-func TestUpgradeRunner_Ephemeral_TerminalNoOp(t *testing.T) {
-	repo := testsupport.EphemeralBYORepositoryState()
-	repo.Ephemeral.FinalizerStatus = "completed"
-	stateDir := seedRepoState(t, repo)
-
-	remoteExec := newFakeRemoteExecutor()
-	var out, errOut bytes.Buffer
-	cmd := NewRootCommand(Dependencies{
-		Version:        "test-version",
-		Out:            &out,
-		Err:            &errOut,
-		GitHub:         newFakePermittedGitHubService(),
-		RemoteExecutor: remoteExec,
-		StateBaseDir:   stateDir,
-		Sleep:          noSleep,
-	})
-	cmd.SetArgs([]string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--yes", "--no-color"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("upgrade-runner terminal ephemeral returned error: %v\nstderr=%s", err, errOut.String())
-	}
-	if len(remoteExec.runs) != 0 {
-		var ids []string
-		for _, c := range remoteExec.runs {
-			ids = append(ids, c.ID)
-		}
-		t.Fatalf("expected no Apply commands for terminated ephemeral; got %v", ids)
-	}
-	if !strings.Contains(out.String(), "Ephemeral runner is one-shot and already terminated") {
-		t.Fatalf("expected terminal-ephemeral notice in stdout; got %q", out.String())
-	}
-}
-
-// TestUpgradeRunner_Ephemeral_WaitingRefusesWithoutForce: ephemeral runner
-// in waiting state refuses without --force; with --force, ApplyEphemeral
-// is invoked.
-func TestUpgradeRunner_Ephemeral_WaitingRefusesWithoutForce(t *testing.T) {
-	repo := testsupport.EphemeralBYORepositoryState()
-	repo.Ephemeral.FinalizerStatus = "waiting"
-
-	// Without --force: refuses.
-	{
-		stateDir := seedRepoState(t, repo)
-		remoteExec := newFakeRemoteExecutor()
-		var out, errOut bytes.Buffer
-		cmd := NewRootCommand(Dependencies{
-			Version:        "test-version",
-			Out:            &out,
-			Err:            &errOut,
-			GitHub:         newFakePermittedGitHubService(),
-			RemoteExecutor: remoteExec,
-			StateBaseDir:   stateDir,
-			Sleep:          noSleep,
-		})
-		cmd.SetArgs([]string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--yes", "--no-color"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected refuse-without-force error, got nil")
-		}
-		if got := ExitCode(err); got != ExitInvalidInput {
-			t.Fatalf("ExitCode = %d, want ExitInvalidInput=%d", got, ExitInvalidInput)
-		}
-		if len(remoteExec.runs) != 0 {
-			t.Fatalf("expected no remote calls when refusing waiting ephemeral; got %d", len(remoteExec.runs))
+	_, errOut := runDisabledLifecycleCommand(t, repo, "doctor", "--repo", testsupport.TestRepoFullName, "--fix", "--yes", "--no-color")
+	for _, want := range []string{"doctor --fix is disabled", "--disableupdate", "runnerkit down --repo owner/repo"} {
+		if !strings.Contains(errOut, want) {
+			t.Fatalf("doctor --fix refusal missing %q:\n%s", want, errOut)
 		}
 	}
 
-	// With --force: ApplyEphemeral is invoked.
-	{
-		stateDir := seedRepoState(t, repo)
-		remoteExec := newFakeRemoteExecutor()
-		var out, errOut bytes.Buffer
-		cmd := NewRootCommand(Dependencies{
-			Version:        "test-version",
-			Out:            &out,
-			Err:            &errOut,
-			GitHub:         newFakePermittedGitHubService(),
-			RemoteExecutor: remoteExec,
-			StateBaseDir:   stateDir,
-			Sleep:          noSleep,
-		})
-		cmd.SetArgs([]string{"upgrade-runner", "--repo", testsupport.TestRepoFullName, "--yes", "--force", "--no-color"})
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("--force should succeed: %v\nstderr=%s", err, errOut.String())
-		}
-		// ApplyEphemeral has install_ephemeral_service among its commands.
-		seen := false
-		for _, c := range remoteExec.runs {
-			if c.ID == "install_ephemeral_service" || c.ID == "verify_ephemeral_service" {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			var ids []string
-			for _, c := range remoteExec.runs {
-				ids = append(ids, c.ID)
-			}
-			t.Fatalf("expected ephemeral bootstrap commands when --force; got %v", ids)
+	out, _ := runDisabledLifecycleCommand(t, repo, "--json", "doctor", "--repo", testsupport.TestRepoFullName, "--fix")
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("not json: %v\n%s", err, out)
+	}
+	errObj, _ := payload["error"].(map[string]any)
+	if payload["ok"] != false || errObj["code"] != "command_disabled" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	// doctor --json contract: arrays, never null.
+	for _, key := range []string{"next_actions", "host_incident_hints"} {
+		if _, ok := payload[key].([]any); !ok {
+			t.Fatalf("doctor --fix --json missing array %q: %#v", key, payload)
 		}
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	rkstate "github.com/accidentally-awesome-labs/runnerkit/internal/state"
 )
 
 // UserConfig is persisted next to state.json (same base directory).
@@ -14,6 +16,10 @@ type UserConfig struct {
 }
 
 func userConfigPath(stateBaseDir string) string {
+	// An empty base must never resolve to the process CWD (P1-3).
+	if strings.TrimSpace(stateBaseDir) == "" {
+		stateBaseDir = rkstate.DefaultBaseDir()
+	}
 	return filepath.Join(stateBaseDir, "config.json")
 }
 
@@ -36,14 +42,14 @@ func LoadUserConfig(stateBaseDir string) (UserConfig, error) {
 
 // SaveUserConfig writes config.json atomically.
 func SaveUserConfig(stateBaseDir string, c UserConfig) error {
-	if err := os.MkdirAll(stateBaseDir, 0o700); err != nil {
+	p := userConfigPath(stateBaseDir)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	p := userConfigPath(stateBaseDir)
 	tmp := p + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err

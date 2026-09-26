@@ -16,12 +16,18 @@ func TestBuildDoctorReportFindingsAndRemediations(t *testing.T) {
 	for _, finding := range report.Findings {
 		text += finding.ID + " " + finding.Remediation + "\n"
 	}
-	for _, want := range []string{"service_failed", "ssh_unreachable", "label_drift", "install_path_missing", "network_github_failed", "cleanup_pending", "runnerkit logs --repo owner/repo --since 30m", "runnerkit recover --repo owner/repo --reregister --dry-run", "runnerkit down --repo owner/repo --dry-run"} {
+	for _, want := range []string{"service_failed", "ssh_unreachable", "label_drift", "install_path_missing", "network_github_failed", "cleanup_pending", "runnerkit logs --repo owner/repo --since 30m", "Re-register by hand: run runnerkit down --repo owner/repo", "runnerkit down --repo owner/repo --dry-run"} {
 		if want == "ssh_unreachable" {
 			continue
 		}
 		if !strings.Contains(text, want) {
 			t.Fatalf("doctor report missing %q in\n%s", want, text)
+		}
+	}
+	// A-06: disabled lifecycle mutators are never recommended.
+	for _, banned := range []string{"--reregister", "--reinstall-service", "upgrade-runner"} {
+		if strings.Contains(text, banned) {
+			t.Fatalf("doctor report recommends disabled command %q:\n%s", banned, text)
 		}
 	}
 }
