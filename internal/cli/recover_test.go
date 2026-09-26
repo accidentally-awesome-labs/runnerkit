@@ -10,6 +10,7 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
 func recoveryRemote(activeState string) *testsupport.RemoteExecutor {
@@ -132,6 +133,37 @@ func TestRecoverDisabledActionsRefuseWithManualSteps(t *testing.T) {
 			if err != nil || string(after) != string(before) {
 				t.Fatalf("%s refusal changed state.json (err=%v)", flag, err)
 			}
+		}
+	}
+}
+
+// A-06b + A-01: when the service is missing the planner returns a blocked
+// plan carrying the manual re-register steps. Applying it (no --dry-run)
+// must render that reason once, as an error on stderr, and mark it rendered
+// so main does not print the whole block reason a second time.
+func TestRecoverBlockedPlanRendersReasonOnce(t *testing.T) {
+	stateDir := t.TempDir()
+	repo := saveHealthyState(t, stateDir)
+	github := &testsupport.GitHubService{Runners: []gh.Runner{testsupport.HealthyRunner()}}
+	remoteExec := recoveryRemote("not-found")
+	ui.ResetErrorRendered()
+	t.Cleanup(ui.ResetErrorRendered)
+	out, errOut, err := executeStatusForTest(t, stateDir, github, remoteExec, "recover", "--repo", repo.Repo.FullName, "--yes", "--no-color")
+	if err == nil || ExitCode(err) != ExitSafetyGate {
+		t.Fatalf("blocked recover: ExitCode=%d err=%v", ExitCode(err), err)
+	}
+	if n := strings.Count(errOut, "Re-register by hand"); n != 1 {
+		t.Fatalf("block reason printed %d times on stderr:\n%s", n, errOut)
+	}
+	if strings.Contains(out, "Re-register by hand") {
+		t.Fatalf("block reason must go to stderr only, stdout=%s", out)
+	}
+	if !ui.ErrorRendered() {
+		t.Fatalf("blocked plan was not marked rendered; main would print it again")
+	}
+	for _, id := range remoteExec.CommandIDs() {
+		if strings.HasPrefix(id, "recover.") {
+			t.Fatalf("blocked plan ran a recovery command: %#v", remoteExec.CommandIDs())
 		}
 	}
 }

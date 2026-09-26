@@ -80,7 +80,10 @@ func runRecover(deps Dependencies, jsonOutput bool, noColor bool, opts *recoverO
 		if jsonOutput {
 			_ = renderer.JSON(recoveryPayload(repo.FullName, false, plan, nil, false, repoState.Cleanup.GitHubRunnerID))
 		} else {
-			_ = renderRecoveryPlanHuman(renderer, plan)
+			// Render the reason once, as an error on stderr. A plain Step on
+			// stdout left the error unrendered, so main printed the whole
+			// BlockReason (manual re-register steps included) a second time.
+			_ = renderer.Error("recovery_blocked", plan.BlockReason, nil)
 		}
 		return NewExitError(ExitSafetyGate, errors.New(plan.BlockReason))
 	}

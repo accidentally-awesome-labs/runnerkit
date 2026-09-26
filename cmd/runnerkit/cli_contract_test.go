@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/accidentally-awesome-labs/runnerkit/internal/state"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
 )
 
@@ -72,17 +73,26 @@ type contractResult struct {
 // no update check, then asserts nothing was written into the CWD (P1-3).
 func runContract(t *testing.T, args ...string) contractResult {
 	t.Helper()
+	return runContractIn(t, t.TempDir(), nil, args...)
+}
+
+// runContractIn is runContract with a caller-chosen state dir (so a row can
+// seed state.json first) and extra environment entries, which override the
+// defaults because exec uses the last value of a duplicated key.
+func runContractIn(t *testing.T, stateDir string, extraEnv []string, args ...string) contractResult {
+	t.Helper()
 	bin := contractBinary(t)
 	cwd := t.TempDir()
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = cwd
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = append(os.Environ(),
-		"RUNNERKIT_STATE_DIR="+t.TempDir(),
+		"RUNNERKIT_STATE_DIR="+stateDir,
 		"RUNNERKIT_NO_UPDATE_NOTIFIER=1",
 		"CI=1",
 		"NO_COLOR=1",
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -184,5 +194,27 @@ func TestCLIContract_Version(t *testing.T) {
 	}
 	if res.stdout != "runnerkit "+contractVersion+"\n" {
 		t.Fatalf("--version stdout = %q, want %q", res.stdout, "runnerkit "+contractVersion+"\n")
+	}
+}
+
+// A-03 / C-03: `doctor --ignore` persists config.json to the state dir, never
+// the CWD (v1.3.x wrote ./config.json). PATH is emptied and the token unset
+// so the row makes no SSH or GitHub calls: ssh and gh are simply not found.
+func TestCLIContract_DoctorIgnoreStaysOutOfCWD(t *testing.T) {
+	stateDir := t.TempDir()
+	if err := state.NewStore(stateDir).Save(testsupport.StateWithRepository(testsupport.HealthyRepositoryState())); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	env := []string{"PATH=" + t.TempDir(), "HOME=" + t.TempDir(), "RUNNERKIT_GITHUB_TOKEN=", "GH_TOKEN=", "GITHUB_TOKEN="}
+	res := runContractIn(t, stateDir, env, "doctor", "--repo", testsupport.TestRepoFullName, "--ignore", "host_mem_low")
+	if res.code != 0 && strings.TrimSpace(res.stderr) == "" {
+		t.Fatalf("doctor exit %d with empty stderr (stdout=%q)", res.code, res.stdout)
+	}
+	raw, err := os.ReadFile(filepath.Join(stateDir, "config.json"))
+	if err != nil {
+		t.Fatalf("doctor --ignore did not write config.json to the state dir: %v\nstdout=%s\nstderr=%s", err, res.stdout, res.stderr)
+	}
+	if !strings.Contains(string(raw), "host_mem_low") {
+		t.Fatalf("config.json missing ignored id: %s", raw)
 	}
 }
