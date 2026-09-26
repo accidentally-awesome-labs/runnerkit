@@ -2479,7 +2479,7 @@ func lastCommandFailureContext(result bootstrap.Result, err error) (string, stri
 
 // sudoPasswordPromptRemediation returns extra bootstrap_failed
 // remediation when the failed step hit a sudo password prompt. On a
-// password-sudo BYO host that means the scoped
+// password-sudo BYO host that means the installer sudoers fragment
 // /etc/sudoers.d/runnerkit-installer is missing or was written by an
 // older install.sh: v1.3.3's lacked mkdir, tee, gpg, usermod and other
 // commands setup_runner_image runs, and preflight's `sudo -n install`

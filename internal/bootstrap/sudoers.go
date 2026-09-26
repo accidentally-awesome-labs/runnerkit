@@ -8,15 +8,18 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
-// SudoersFilePath is the canonical absolute path of the scoped sudoers
-// entry that `install.sh` / scoped bootstrap installs. The
-// file is owned by root, mode 0440, and grants the SSH user passwordless
-// sudo for the minimum command set required by `runnerkit up` bootstrap.
+// SudoersFilePath is the canonical absolute path of the installer sudoers
+// fragment that `install.sh` installs (cloud-init user-data writes the same
+// fragment on RunnerKit-provisioned cloud hosts). The file is owned by
+// root, mode 0440, and grants the SSH user passwordless sudo for the
+// command set `runnerkit up` bootstrap uses. That command set is
+// root-equivalent; see RenderSudoersEntry.
 const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 
-// RenderSudoersEntry renders the scoped NOPASSWD sudoers content for
-// the given SSH user. The output is byte-stable so the idempotency
-// check in SudoersIsPrepared can compare against the on-disk content.
+// RenderSudoersEntry renders the root-equivalent installer sudoers
+// fragment (NOPASSWD) for the given SSH user. The output is byte-stable
+// so the idempotency check in SudoersIsPrepared can compare against the
+// on-disk content; TestRenderSudoersEntryGolden pins it byte for byte.
 //
 // Command set per gap docs + smoke regressions:
 //   - apt-get / dnf / yum (package install for fix_dependencies)
@@ -32,9 +35,9 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // runner under `/opt/actions-runner/runnerkit-<owner>-<repo>-local/`
 // (see install.go RenderInstallScript). The literal path never matched
 // the actual runtime path, so `verify_service` (`cd $InstallPath &&
-// sudo ./svc.sh status`) required Path B password threading at runtime
-// even on Path C-prepared hosts — defeating the "one-time prepare"
-// promise.
+// sudo ./svc.sh status`) required password threading at runtime even on
+// hosts where the fragment was installed — defeating the one-time host
+// install.
 //
 // The fix uses a sudoers `*` wildcard. Sudoers `*` does NOT match `/`,
 // so `runnerkit-*/svc.sh` is bounded to a single directory level under
@@ -42,14 +45,14 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // safety bounds match the original literal entry.
 //
 // Bug 32 (Plan 06-14, 2026-05-08): preflight probe was fixed to use an
-// allowlisted command, but the scoped sudoers entry still omitted several
+// allowlisted command, but the installer sudoers fragment still omitted several
 // commands used by the non-interactive bootstrap path (`sudo curl`,
 // `sudo sha256sum -c -`, `sudo chown`, `sudo rm`, `sudo su -s /bin/bash -`).
 // In tee/non-PTY smoke execution, preflight passed yet bootstrap failed with
 // `sudo: a terminal is required ...` because those commands fell outside the
-// scoped allowlist and required password prompting. The allowlist below now
-// includes the full root-runas command surface used by Apply/RenderInstallScript
-// so Path C (`runnerkit byo-prepare`) works end-to-end in non-interactive runs.
+// fragment and required password prompting. The list below now includes the
+// full root-runas command surface used by Apply/RenderInstallScript so a host
+// prepared by install.sh works end-to-end in non-interactive runs.
 //
 // Bug 33 (smoke-discovery 2026-05-18): the GitHub-hosted runner image parity
 // step (RenderImageSetupScript) and the ephemeral log-preservation step in
@@ -140,7 +143,10 @@ fi
 }
 
 // RemoteSudoersRemoveScript renders the script that removes the
-// scoped sudoers entry. Used by `runnerkit byo-prepare --remove`.
+// installer sudoers fragment and the optional CI sudoers drop-in.
+// Nothing calls it at present, not even tests: the command that used it
+// was removed in v1.0.8. docs/security-posture.md gives the equivalent
+// manual `sudo rm -f` for users.
 func RemoteSudoersRemoveScript() string {
 	return `set -euo pipefail
 sudo rm -f ` + SudoersFilePath + ` ` + RunnerCISudoersFilePath + `
@@ -149,9 +155,10 @@ sudo rm -f ` + SudoersFilePath + ` ` + RunnerCISudoersFilePath + `
 
 // SudoersIsPrepared returns true when the remote sudoers file exists
 // AND its content (trimmed) matches what RenderSudoersEntry(user)
-// would produce. Used by:
-//   - byo-prepare to short-circuit re-runs ("already prepared")
-//   - doctor to emit the byo_host_prepared finding
+// would produce. Only tests call it at present: the command that used it
+// to short-circuit re-runs was removed in v1.0.8, and doctor's
+// byo_host_prepared finding only checks that SudoersFilePath exists
+// (`test -f`), not its content.
 //
 // Missing file is NOT an error — returns (false, nil).
 func SudoersIsPrepared(ctx context.Context, exec remote.Executor, target remote.Target, user string) (bool, error) {

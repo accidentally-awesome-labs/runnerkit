@@ -524,7 +524,7 @@ func TestNoMisleadingRecommendationCopy(t *testing.T) {
 			}
 		}
 	}
-	// The scoped installer sudoers is root-equivalent; its comment must
+	// The installer sudoers fragment is root-equivalent; its comment must
 	// not claim otherwise.
 	sudoers, err := os.ReadFile("../../internal/bootstrap/sudoers.go")
 	if err != nil {

@@ -11,9 +11,9 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
-// TestRenderSudoersEntry asserts the scoped NOPASSWD sudoers template
-// renders with (a) the canonical managed-by header, (b) the SSH user
-// substituted, (c) the exact bootstrap command set, and (d) NO blanket
+// TestRenderSudoersEntry asserts the root-equivalent installer sudoers
+// fragment renders with (a) the canonical managed-by header, (b) the SSH
+// user substituted, (c) the exact bootstrap command set, and (d) NO blanket
 // NOPASSWD ALL anywhere in the output.
 //
 // Bug 27 (Plan 06-11, 2026-05-06): the svc.sh path is now a sudoers
@@ -64,12 +64,12 @@ func TestRenderSudoersEntry(t *testing.T) {
 		"/opt/actions-runner/runnerkit-*/svc.sh",
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("scoped sudoers missing %q:\n%s", want, got)
+			t.Fatalf("installer sudoers fragment missing %q:\n%s", want, got)
 		}
 	}
 	for _, forbidden := range []string{"ALL=(ALL) NOPASSWD: ALL", "ALL: ALL"} {
 		if strings.Contains(got, forbidden) {
-			t.Fatalf("scoped sudoers contains forbidden blanket NOPASSWD %q:\n%s", forbidden, got)
+			t.Fatalf("installer sudoers fragment contains forbidden blanket NOPASSWD %q:\n%s", forbidden, got)
 		}
 	}
 	if !strings.HasSuffix(got, "\n") {
@@ -77,15 +77,15 @@ func TestRenderSudoersEntry(t *testing.T) {
 	}
 }
 
-// Bug 27 (Plan 06-11, 2026-05-06): the scoped sudoers entry rendered
-// by `runnerkit byo-prepare` previously granted NOPASSWD for
-// `/opt/runnerkit-runner/svc.sh`, but the actual svc.sh path at runtime
-// is `/opt/actions-runner/runnerkit-<owner>-<repo>-local/svc.sh` (the
+// Bug 27 (Plan 06-11, 2026-05-06): the installer sudoers fragment
+// previously granted NOPASSWD for `/opt/runnerkit-runner/svc.sh`, but
+// the actual svc.sh path at runtime is
+// `/opt/actions-runner/runnerkit-<owner>-<repo>-local/svc.sh` (the
 // directory created by install.go from the runner name). The literal
 // path never matched, so the `verify_service` step in bootstrap.Apply
-// (`cd $InstallPath && sudo ./svc.sh status`) needed Path B password
-// threading at runtime even on a Path C-prepared host — defeating the
-// "one-time prepare" promise.
+// (`cd $InstallPath && sudo ./svc.sh status`) needed password
+// threading at runtime even on a host where the fragment was
+// installed — defeating the one-time host install.
 //
 // Fix: the entry uses a sudoers `*` wildcard glob that matches every
 // runnerkit-prefixed install directory. Sudoers `*` does NOT match
@@ -102,7 +102,7 @@ func TestRenderSudoersEntryUsesSvcShGlob(t *testing.T) {
 	got := RenderSudoersEntry("alice")
 	wantGlob := "/opt/actions-runner/runnerkit-*/svc.sh"
 	if !strings.Contains(got, wantGlob) {
-		t.Fatalf("Bug 27: rendered sudoers must contain glob %q so Path C grants NOPASSWD on the real svc.sh path; got:\n%s", wantGlob, got)
+		t.Fatalf("Bug 27: rendered sudoers must contain glob %q so the installer fragment grants NOPASSWD on the real svc.sh path; got:\n%s", wantGlob, got)
 	}
 	legacy := "/opt/runnerkit-runner/svc.sh"
 	if strings.Contains(got, legacy) {
@@ -110,8 +110,45 @@ func TestRenderSudoersEntryUsesSvcShGlob(t *testing.T) {
 	}
 }
 
-// TestVisudoValidates_GoodSudoersPasses ensures the rendered scoped
-// sudoers content passes `visudo -cf <tmp>` validation. Skipped when
+// TestRenderSudoersEntryGolden pins RenderSudoersEntry byte for byte.
+// The installer sudoers fragment is root-equivalent (su, tee, cp,
+// apt-get, systemctl etc. with any arguments give a root shell; see
+// docs/security-posture.md, SEC-1), and CLAUDE.md forbids adding
+// entries to it. Any change to the command list, including a
+// reordering, must therefore fail CI and land only as a deliberate,
+// reviewed edit of the literal below. install.sh's sudoers block is
+// generated from this function, so such an edit also needs
+// `go generate ./...` (TestInstallShSudoersMatchesTemplate and
+// `make generate-check` catch a stale install.sh).
+func TestRenderSudoersEntryGolden(t *testing.T) {
+	const want = `# /etc/sudoers.d/runnerkit-installer (managed by runnerkit install.sh)
+alice ALL=(root) NOPASSWD: \
+  /usr/bin/apt-get, /usr/bin/dnf, /usr/bin/yum, \
+  /usr/sbin/useradd, \
+  /usr/bin/install, \
+  /usr/bin/curl, \
+  /usr/bin/sha256sum, \
+  /usr/bin/tee, /usr/bin/gpg, \
+  /bin/mkdir, /usr/bin/mkdir, /usr/bin/unzip, \
+  /usr/sbin/usermod, /usr/bin/dpkg, /usr/bin/add-apt-repository, \
+  /bin/chown, /usr/bin/chown, \
+  /bin/chmod, /usr/bin/chmod, \
+  /bin/cp, /usr/bin/cp, \
+  /bin/cat, /usr/bin/cat, \
+  /bin/ln, /usr/bin/ln, \
+  /bin/rm, /usr/bin/rm, \
+  /bin/su, /usr/bin/su, \
+  /bin/tar, /usr/bin/tar, \
+  /bin/systemctl, /usr/bin/systemctl, \
+  /opt/actions-runner/runnerkit-*/svc.sh
+`
+	if got := RenderSudoersEntry("alice"); got != want {
+		t.Fatalf("RenderSudoersEntry(\"alice\") changed. The fragment is root-equivalent and must gain no entries (CLAUDE.md); update this golden literal only in a reviewed change, then run `go generate ./...`.\n got:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// TestVisudoValidates_GoodSudoersPasses ensures the rendered installer
+// sudoers fragment passes `visudo -cf <tmp>` validation. Skipped when
 // visudo is not installed (macOS dev box) so the test stays fast in
 // the default run.
 func TestVisudoValidates_GoodSudoersPasses(t *testing.T) {
@@ -133,8 +170,9 @@ func TestVisudoValidates_GoodSudoersPasses(t *testing.T) {
 
 // TestVisudoValidates_BadSudoersFails proves a malformed sudoers file
 // causes visudo -cf to return non-zero — this is the safety property
-// that prevents byo-prepare from atomically renaming a broken sudoers
-// file into /etc/sudoers.d/ and locking the user out.
+// that prevents RemoteVisudoCheckScript (and install.sh, which also runs
+// visudo -cf first) from atomically renaming a broken sudoers file into
+// /etc/sudoers.d/ and locking the user out.
 func TestVisudoValidates_BadSudoersFails(t *testing.T) {
 	visudoPath, err := exec.LookPath("visudo")
 	if err != nil {
@@ -153,13 +191,13 @@ func TestVisudoValidates_BadSudoersFails(t *testing.T) {
 // TestSudoersIsPrepared_MatchesRenderedContent asserts the idempotent
 // re-run check: when the remote already holds a sudoers file matching
 // what RenderSudoersEntry would produce, SudoersIsPrepared returns
-// true and the byo-prepare command can short-circuit without rewriting.
+// true and a caller can skip rewriting the file.
 func TestSudoersIsPrepared_MatchesRenderedContent(t *testing.T) {
 	exec := &recordingExecutor{}
 	// Note: this test uses a stub that always returns ExitCode 0 so
 	// SudoersIsPrepared with a non-matching stdout returns false.
-	// The dedicated Idempotent test in cli/byo_prepare_test wires the
-	// stdout to match RenderSudoersEntry exactly.
+	// TestSudoersIsPrepared_ExistingMatchingContentReturnsTrue below wires
+	// the stdout to match RenderSudoersEntry exactly.
 	_ = exec
 	got := strings.TrimSpace(RenderSudoersEntry("alice"))
 	if got == "" {
@@ -212,7 +250,7 @@ func TestRemoteVisudoCheckScript_MktempInvokedViaSudo(t *testing.T) {
 // TestSudoersIsPrepared_MissingFileReturnsFalse confirms that when the
 // remote sudoers file does not exist (read script exit 1), the
 // idempotency probe returns (false, nil) instead of an error so
-// byo-prepare proceeds to install.
+// a caller proceeds to install.
 func TestSudoersIsPrepared_MissingFileReturnsFalse(t *testing.T) {
 	exec := &fakeReadExecutor{exit: 1}
 	prepared, err := SudoersIsPrepared(context.Background(), exec, remote.Target{User: "alice", Host: "h", Port: 22}, "alice")

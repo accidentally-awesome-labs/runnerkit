@@ -8,9 +8,11 @@ import (
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
 )
 
-// RunnerCISudoersFilePath is the scoped sudoers drop-in that grants the GitHub
-// Actions runner service user passwordless sudo for common package managers only.
-// See docs/troubleshooting/github.md (RKD-GH-008).
+// RunnerCISudoersFilePath is the optional CI sudoers drop-in that grants the
+// GitHub Actions runner service user passwordless sudo for common package
+// managers. It is root-equivalent (package-manager hooks run any command as
+// root; see docs/security-posture.md, SEC-12). See also
+// docs/troubleshooting/github.md (RKD-GH-008).
 const RunnerCISudoersFilePath = "/etc/sudoers.d/runnerkit-runner-ci"
 
 // RenderRunnerCISudoersEntry renders NOPASSWD sudoers for the runner service
@@ -20,7 +22,8 @@ const RunnerCISudoersFilePath = "/etc/sudoers.d/runnerkit-runner-ci"
 // on a given distro are harmless (the binaries simply do not exist). Covers
 // Debian/Ubuntu, RHEL/Fedora, openSUSE, Arch, Alpine (apk paths vary).
 //
-// This is NOT a blanket NOPASSWD ALL.
+// It is not a literal NOPASSWD: ALL line, but it is still root-equivalent
+// (SEC-12).
 func RenderRunnerCISudoersEntry(serviceUser string) string {
 	return fmt.Sprintf(`# %s (managed by runnerkit install.sh --grant-ci-sudo)
 %s ALL=(root) NOPASSWD: \

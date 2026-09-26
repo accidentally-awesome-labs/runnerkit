@@ -155,7 +155,7 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 // that when Options.SudoPassword is empty, none of the rendered
 // commands are wrapped with `sudo -S` or carry the
 // RUNNERKIT_SUDO_PASSWORD env — preserving Plan 06-05's exact behavior
-// for the NOPASSWD-sudo / byo-prepared happy path.
+// for the NOPASSWD-sudo / install.sh-prepared happy path.
 // Bug 10 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
 // Plan 06-07 attempt-7 against salar@mckee-small-desktop got past
@@ -177,9 +177,8 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 // string instead of the password ("Sorry, try again"), then EOF
 // ("no password was provided").
 //
-// The byo-prepare flow (internal/cli/byo_prepare.go) does NOT have
-// this bug because it uses a different structure — prime cred once
-// via a dedicated `printf | sudo -S -v` invocation, then run the
+// The fix used a different structure: prime the cred once via a
+// dedicated `printf | sudo -S -v` invocation, then run the
 // rewritten script WITHOUT an outer brace-group pipe. Each subsequent
 // sudo -S hits the freshly-primed cred and does not read its stdin,
 // so inner `printf X | sudo Y` patterns work because sudo lets the
@@ -361,7 +360,7 @@ func TestApplyConfigureRunnerCommand_HasSudoTrue(t *testing.T) {
 	for _, c := range exec.commands {
 		if c.ID == "configure_runner" {
 			if !c.Sudo {
-				t.Fatalf("configure_runner must have Sudo: true so scoped NOPASSWD sudo applies to `sudo curl/sha256sum/chown/su`. Got Sudo=%v", c.Sudo)
+				t.Fatalf("configure_runner must have Sudo: true so the installer sudoers fragment's NOPASSWD entries apply to `sudo curl/sha256sum/chown/su`. Got Sudo=%v", c.Sudo)
 			}
 			return
 		}

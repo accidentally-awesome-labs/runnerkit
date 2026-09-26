@@ -373,8 +373,9 @@ func cloudInitUserData(user string, publicKey string, extraPackages []string) st
 		user = defaultSSHUser
 	}
 	publicKey = strings.TrimSpace(publicKey)
-	// Scoped sudoers (same rules as install.sh / byo-prepare) are applied as
-	// root during cloud-init so bootstrap works even when the cloud-init
+	// The root-equivalent installer sudoers fragment (same rules as
+	// install.sh, from bootstrap.RenderSudoersEntry) is applied as root
+	// during cloud-init so bootstrap works even when the cloud-init
 	// `users[].sudo` NOPASSWD stanza is ignored or mis-applied on some images.
 	sudoers := strings.TrimSuffix(bootstrap.RenderSudoersEntry(user), "\n")
 	var sudoersBlock strings.Builder

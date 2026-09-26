@@ -19,7 +19,7 @@ func isTerminal(file *os.File) bool {
 // buildDependencies constructs the production-binary Dependencies
 // struct. Extracted from main() so cmd/runnerkit/main_test.go can
 // regression-guard the wiring (Bug 4 / Task G — Plans 06-06 + 06-08
-// shipped Path B + Path C prompt code paths but never wired Prompts).
+// shipped interactive prompt code paths but never wired Prompts).
 func buildDependencies() cli.Dependencies {
 	return cli.Dependencies{
 		Version: version,

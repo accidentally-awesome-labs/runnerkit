@@ -172,21 +172,20 @@ func Run(ctx context.Context, executor remote.Executor, target remote.Target, op
 		// passwordless. See gap doc 06-GAP-byo-sudo-handling.md Task A.
 		//
 		// Bug 31 (Plan 06-13, 2026-05-08): the probe Script MUST be a
-		// command that is inside `runnerkit byo-prepare`'s scoped sudoers
-		// allowlist, otherwise a Path-C-prepared host (where byo-prepare
-		// installed /etc/sudoers.d/runnerkit-installer with NOPASSWD only
-		// for the bootstrap commands) still trips the password-required
-		// warning and the up command falls through to Path B's TTY
-		// prompt -- defeating the entire one-time-prepare purpose. The
-		// prior probe `sudo -n true` was NOT in the allowlist (only
-		// apt-get/dnf/yum/useradd/install/tar/systemctl/svc.sh are; see
+		// command listed in the installer sudoers fragment
+		// (/etc/sudoers.d/runnerkit-installer, written by install.sh with
+		// NOPASSWD for the bootstrap commands only; that list is still
+		// root-equivalent). Otherwise a host prepared by install.sh still
+		// trips the password-required warning and `up` treats it as a
+		// password-sudo host -- defeating the one-time host install. The
+		// prior probe `sudo -n true` was NOT in the fragment (see
 		// internal/bootstrap/sudoers.go::RenderSudoersEntry). The new
-		// probe `sudo -n install --version >/dev/null` IS in the
-		// allowlist (`/usr/bin/install`) and is also a RequiredTools
-		// member, so /usr/bin/install is guaranteed present on any host
-		// that otherwise passes preflight. The Command.ID stays
+		// probe `sudo -n install --version >/dev/null` IS in it
+		// (`/usr/bin/install`) and is also a RequiredTools member, so
+		// /usr/bin/install is guaranteed present on any host that
+		// otherwise passes preflight. The Command.ID stays
 		// `probe_sudo_n` so all existing test fakes keep working.
-		// Regression test: TestCheckPrivilege_AllowsScopedSudoers.
+		// Regression test: TestCheckPrivilege_AllowsInstallerSudoers.
 		probeResult, probeErr := executor.Run(ctx, target, remote.Command{ID: "probe_sudo_n", Script: "sudo -n install --version >/dev/null"})
 		// Bug 7 fix: classify based on the remote stderr regardless of
 		// whether the executor returns a non-nil err. internal/remote/system.go::SystemExecutor.Run

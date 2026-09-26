@@ -254,13 +254,12 @@ func applyCleanup(ctx context.Context, deps Dependencies, renderer *ui.Renderer,
 	target, targetErr := targetFromState(repoState)
 	// Bug 21 (Plan 06-10, 2026-05-06): probe sudo before remote
 	// cleanup. If `sudo -n install --version >/dev/null` fails on the host (password-protected
-	// sudo, no NOPASSWD scope for rm/svc.sh on the requested paths),
-	// prompt for the sudo password (TTY required) and thread it
-	// through service-uninstall + files-remove via the same
-	// printf|sudo -S -v pattern bootstrap uses (Plan 06-09 Bug 10).
-	// On hosts where sudo IS passwordless (NOPASSWD ALL or Path C
-	// byo-prepare), the probe exits 0 and we keep the existing
-	// unwrapped happy path.
+	// sudo, no NOPASSWD entry for rm/svc.sh on the requested paths),
+	// refuse with host_install_required (RenderHostInstallRequired)
+	// instead of running cleanup commands that would fail on a sudo
+	// password prompt. On hosts where sudo IS passwordless (NOPASSWD
+	// ALL or the installer sudoers fragment from install.sh), the probe
+	// exits 0 and we keep the existing unwrapped happy path.
 	if targetErr == nil && needsAnyRemoteSudo(selected) {
 		needs, probeErr := probeSudoNeedsPassword(ctx, deps.RemoteExecutor, target)
 		if probeErr == nil && needs {
@@ -524,9 +523,9 @@ func needsAnyRemoteSudo(selected map[ops.CleanupArtifact]bool) bool {
 }
 
 // probeSudoNeedsPassword runs `sudo -n install --version >/dev/null` on
-// the remote host. Exit
-// code 0 means sudo is passwordless (NOPASSWD ALL, Path C byo-prepare,
-// or a previously-cached cred). Non-zero exit + stderr containing
+// the remote host. Exit code 0 means sudo is passwordless (NOPASSWD ALL,
+// the installer sudoers fragment from install.sh, or a previously-cached
+// cred). Non-zero exit + stderr containing
 // `password is required` / `a terminal is required` / `a password is
 // required` indicates password-protected sudo. Other non-zero exits
 // (e.g. command-not-found, network) return needs=false and the caller
@@ -554,7 +553,7 @@ func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, targe
 		Script:  "sudo -n install --version >/dev/null",
 		Timeout: 5 * time.Second,
 	})
-	// Happy path: sudo passwordless (NOPASSWD / Path C / cached cred).
+	// Happy path: sudo passwordless (NOPASSWD / installer sudoers fragment / cached cred).
 	if result.ExitCode == 0 {
 		return false, nil
 	}
