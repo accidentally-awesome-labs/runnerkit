@@ -12,7 +12,7 @@ Pass **`--explain`** on any subcommand (global flag) to print short **WHY / RUNS
 
 ## Progress checklists
 
-During BYO **`up`** or **`register`**, RunnerKit writes resumable progress under **`sessions/`** next to `state.json` and prints a checklist after preflight.
+During BYO **`up`** or **`register`**, RunnerKit writes resumable progress under **`sessions/`** in the RunnerKit state directory (next to `state.json`) and prints a checklist after preflight. Versions v1.1.0 through v1.3.3 wrote `sessions/` into the current working directory instead; delete any stray `sessions/` directory there (it contains `user@host`).
 
 ## Doctor remediation
 
@@ -22,14 +22,10 @@ The `doctor` command can **persistently ignore** a finding id:
 runnerkit doctor --repo owner/name --ignore runner_version_stale
 ```
 
-Ignored ids are stored in **`config.json`** in the same directory as `state.json`.
+Ignored ids are stored in **`config.json`** in the same directory as `state.json` (v1.3.3 and earlier wrote it into the current working directory).
 
-For supported findings, you can apply automated fixes interactively:
-
-```bash
-runnerkit doctor --repo owner/name --fix
-```
-
-Use **`--yes`** with **`--fix`** only in trusted automation (skips confirmation). Re-run `doctor` after fixes to confirm health.
-
-Currently **`runner_version_stale`** maps to running **`upgrade-runner`** for the same repository.
+`doctor --fix` is disabled in v1.3.4 (`command_disabled`, exit 2). Its only
+fix ran `upgrade-runner`, which in v1.3.3 and earlier deleted the runner's
+credentials and unregistered it. `doctor` findings now print the manual
+steps instead; for `runner_version_stale`, usually no action is needed
+because the GitHub runner updates itself. See [upgrade.md](../upgrade.md).

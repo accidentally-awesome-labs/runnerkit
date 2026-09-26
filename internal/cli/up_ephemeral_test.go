@@ -68,7 +68,7 @@ func TestUpEphemeralBYOEndToEndApplyEphemeralAndPersistsState(t *testing.T) {
 		Sleep:          noSleep,
 		Clock:          func() time.Time { return time.Date(2026, 5, 2, 18, 30, 0, 0, time.UTC) },
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral BYO end-to-end returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -128,7 +128,7 @@ func TestUpEphemeralBYOReadinessFailureBlocksRegistrationToken(t *testing.T) {
 	remoteExec.probe.Arch = "sparc"
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: service, RemoteExecutor: remoteExec, Sleep: noSleep})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("expected preflight failure, err=%v", err)
@@ -139,6 +139,7 @@ func TestUpEphemeralBYOReadinessFailureBlocksRegistrationToken(t *testing.T) {
 }
 
 func TestUpEphemeralCloudPlanAndStateUseCloudCleanupAndModeEphemeralTag(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	withDeterministicEphemeralID(t)
 	stateDir := t.TempDir()
 	service := newFakeEphemeralGitHubService()
@@ -160,7 +161,7 @@ func TestUpEphemeralCloudPlanAndStateUseCloudCleanupAndModeEphemeralTag(t *testi
 		Sleep:          noSleep,
 		Clock:          func() time.Time { return time.Date(2026, 5, 2, 18, 30, 0, 0, time.UTC) },
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral cloud end-to-end returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -211,6 +212,7 @@ func TestUpPersistentDefaultStateStillUsesPersistentMode(t *testing.T) {
 }
 
 func TestUpEphemeralCloudReadinessFailureBlocksRegistrationToken(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	stateDir := t.TempDir()
 	service := newFakePermittedGitHubService()
 	machine := cloudReadyMachineForTest()
@@ -229,7 +231,7 @@ func TestUpEphemeralCloudReadinessFailureBlocksRegistrationToken(t *testing.T) {
 		Providers:      provider.NewRegistry(cloud),
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("expected ephemeral cloud readiness failure, err=%v", err)
@@ -254,7 +256,7 @@ func TestUpEphemeralBYOJSONCompletionIncludesEphemeralKeys(t *testing.T) {
 		RemoteExecutor: remoteExec,
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--host", "alice@example.com", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--mode", "ephemeral", "--experimental", "--host", "alice@example.com", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral BYO json completion returned error: %v\nstderr=%s", err, errOut.String())
 	}

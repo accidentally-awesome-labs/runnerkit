@@ -60,7 +60,7 @@ Saved state still references it.
 
 ```bash
 runnerkit destroy --repo owner/repo --yes        # clean up local state + any other resources
-runnerkit up --repo owner/repo --cloud hetzner   # provision afresh
+runnerkit up --repo owner/repo --experimental --cloud hetzner --cloud-region <location>   # provision afresh
 ```
 
 ***
@@ -86,7 +86,7 @@ the resource was rebuilt with a different shape.
 ```bash
 runnerkit destroy --repo owner/repo --dry-run
 runnerkit destroy --repo owner/repo --yes
-runnerkit up --repo owner/repo --cloud hetzner
+runnerkit up --repo owner/repo --experimental --cloud hetzner --cloud-region <location>
 ```
 
 ***
@@ -123,11 +123,12 @@ Then export it for the current shell:
 ```bash
 export HCLOUD_TOKEN=...
 # or: export HETZNER_CLOUD_TOKEN=...
-runnerkit up --repo owner/repo --cloud hetzner
+runnerkit up --repo owner/repo --experimental --cloud hetzner --cloud-region <location>
 ```
 
 The token must have **Read & Write** scope; read-only is not enough for
-provisioning.
+provisioning. A read-only token is enough for a `--dry-run` plan, which
+shows the price the Hetzner API reports and creates nothing.
 
 ***
 
@@ -161,7 +162,7 @@ volumes), or request a quota increase at:
 Or pick a different region with available capacity:
 
 ```bash
-runnerkit up --repo owner/repo --cloud hetzner --cloud-region nbg1
+runnerkit up --repo owner/repo --experimental --cloud hetzner --cloud-region <another-location>
 ```
 
 ***

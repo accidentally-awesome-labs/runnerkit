@@ -36,6 +36,13 @@ type FakeProvider struct {
 	ValidateInputs []ProvisionInput
 	PlanInputs     []ProvisionInput
 	ProvisionInput []ProvisionInput
+
+	// Prices stands in for the provider pricing API, keyed by
+	// "server_type/region". When nil, Plan attaches a zero placeholder
+	// estimate (Source "fake") so plans stay priced; when set and the key
+	// is missing, Plan refuses with *UnpricedLocationError like the real
+	// Hetzner provider.
+	Prices map[string]FakePrice
 }
 
 type VerificationPair struct {
@@ -64,7 +71,33 @@ func (f *FakeProvider) Plan(_ context.Context, input ProvisionInput) (ProvisionP
 	if f.PlanResult.Provider != "" {
 		return f.PlanResult, f.PlanErr
 	}
-	return HetznerProvisionPlan(input), f.PlanErr
+	plan := HetznerProvisionPlan(input)
+	if f.Prices == nil {
+		plan.EstimatedHourlyCost = fakeCost("hour")
+		plan.EstimatedMonthlyCost = fakeCost("month")
+		return plan, f.PlanErr
+	}
+	price, ok := f.Prices[plan.ServerType+"/"+plan.Region]
+	if !ok {
+		return ProvisionPlan{}, &UnpricedLocationError{ServerType: plan.ServerType, Location: plan.Region, Resource: "server"}
+	}
+	hourly, monthly := price.Hourly, price.Monthly
+	plan.EstimatedHourlyCost = &hourly
+	plan.EstimatedMonthlyCost = &monthly
+	return plan, f.PlanErr
+}
+
+// FakePrice is the price a FakeProvider plan reports for one
+// server_type/region pair.
+type FakePrice struct {
+	Hourly  CostEstimate
+	Monthly CostEstimate
+}
+
+// fakeCost is the placeholder estimate attached when a test sets no Prices.
+// It is zero and marked Source "fake" so it can never pass for a real price.
+func fakeCost(period string) *CostEstimate {
+	return &CostEstimate{Amount: "0.00", Net: "0.00", Gross: "0.00", Currency: "EUR", Period: period, Source: "fake"}
 }
 
 func (f *FakeProvider) Provision(_ context.Context, input ProvisionInput) (ProvisionResult, error) {

@@ -59,11 +59,11 @@ const SudoersFilePath = "/etc/sudoers.d/runnerkit-installer"
 // _diag logs, and reading back the installed sudoers fragment for verification.
 // None of these were in the allowlist, so bootstrap failed at setup_runner_image
 // with the same "terminal is required" symptom Bug 32 fixed elsewhere. Adding
-// them here closes the bug class for v1.3.x; v1.4.0 (install.sh pivot) will
-// tighten these to path-scoped entries to reduce attack surface.
+// them here closes the bug class for v1.3.x. Narrowing this list does not fix
+// the privilege model; a dedicated root-owned helper is planned to replace it.
 //
-// Critical: this is NOT a blanket NOPASSWD ALL. The user retains
-// password-protected sudo for everything else.
+// Root-equivalent: su, tee, cp, apt-get, systemctl etc. with any arguments
+// allow a root shell; see docs/security-posture.md.
 //
 // Caller MUST ensure user is the SSH user from a previously-validated
 // remote.Target. No sanitization is done here.

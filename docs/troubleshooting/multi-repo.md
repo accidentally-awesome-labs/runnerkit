@@ -17,13 +17,18 @@ tarball cache** under `/opt/actions-runner/runnerkit-shared-bin/<version>/`.
 ## PAT scope
 
 Easiest: one token with **`repo`** on every repository you register. Narrower
-per-repo tokens work if you prefer not to reuse a broad credential.
+per-repo fine-grained tokens (Administration read/write, Metadata read) work
+if you prefer not to reuse a broad credential. If the GitHub CLI is logged
+in, RunnerKit uses its token even when `RUNNERKIT_GITHUB_TOKEN` is set.
 
 ## Isolation caveats
 
-Self-hosted runners share the host OS and disk. A job in repository A can
-read leftover files from repository B if something writes outside the job
-workspace. Treat the machine as **trusted across repos** you register there.
+All runners on a host run as the same Unix user (`runnerkit-runner`), which
+is in the `docker` group. A job in repository A can read and change
+repository B's runner files, work directory and credentials, and can get
+root on the host. Register repositories on one host only if you trust all of
+their contributors equally. See [security posture](../security-posture.md)
+(SEC-7).
 
 ## Parallelism
 

@@ -88,7 +88,7 @@ func TestUpCloudDryRunUsesReadCheckWithoutRegistrationToken(t *testing.T) {
 		StateBaseDir:   stateDir,
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/repo", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/repo", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--dry-run", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -242,7 +242,7 @@ func TestUpCloudDryRunHumanRendersProvisionPlanContract(t *testing.T) {
 	cloud := &provider.FakeProvider{}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: service, RemoteExecutor: newFakeRemoteExecutor(), Providers: provider.NewRegistry(cloud), Sleep: noSleep})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--dry-run", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -280,7 +280,7 @@ func TestUpCloudDryRunJSONRendersProvisionPlanWithoutTokenLeak(t *testing.T) {
 		Providers: provider.NewRegistry(&provider.FakeProvider{}),
 		Sleep:     noSleep,
 	})
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--dry-run", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cloud json dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -334,7 +334,7 @@ func TestUpCloudInteractiveConfirmationPrecedesProvision(t *testing.T) {
 		StateBaseDir:   t.TempDir(),
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("confirmed cloud plan returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -361,7 +361,7 @@ func TestUpCloudDeclinedConfirmationSkipsProvision(t *testing.T) {
 		StateBaseDir: t.TempDir(),
 		Sleep:        noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitCanceled {
 		t.Fatalf("expected canceled confirmation, err=%v", err)
@@ -378,7 +378,7 @@ func TestUpCloudNoTTYWithoutYesSkipsProvision(t *testing.T) {
 	cloud := &provider.FakeProvider{}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: newFakePermittedGitHubService(), Providers: provider.NewRegistry(cloud), StateBaseDir: t.TempDir(), Sleep: noSleep})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitInputRequired {
 		t.Fatalf("expected input-required confirmation, err=%v", err)
@@ -401,13 +401,13 @@ func TestUpCloudMissingCredentialsUsesUISpecCopy(t *testing.T) {
 		Providers: provider.NewRegistry(hetzner.NewProvider(map[string]string{})),
 		Sleep:     noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--dry-run", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitInputRequired {
 		t.Fatalf("expected missing credentials input-required, err=%v", err)
 	}
 	combined := out.String() + errOut.String()
-	for _, want := range []string{"Hetzner credentials are missing. Export HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN", "runnerkit up --repo owner/name --cloud", "hetzner.", "Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>"} {
+	for _, want := range []string{"Hetzner credentials are missing. Export HCLOUD_TOKEN", "HETZNER_CLOUD_TOKEN", "runnerkit up --repo owner/name", "--experimental --cloud hetzner --cloud-region fsn1.", "Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>"} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("missing credential copy %q:\n%s", want, combined)
 		}
@@ -439,7 +439,7 @@ func TestUpCloudProvisionErrorPersistsPendingStateAndDestroyNextAction(t *testin
 		StateBaseDir: stateDir,
 		Sleep:        noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("expected safety gate provision error, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
@@ -488,7 +488,7 @@ func TestUpCloudReadinessFailureBlocksRegistrationTokenAndKeepsPendingState(t *t
 		StateBaseDir:   stateDir,
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil || ExitCode(err) != ExitSafetyGate {
 		t.Fatalf("expected readiness failure, err=%v stdout=%s stderr=%s", err, out.String(), errOut.String())
@@ -532,7 +532,7 @@ func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
 		StateBaseDir:   stateDir,
 		Sleep:          noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cloud readiness success returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -583,6 +583,7 @@ func TestUpCloudReadinessSuccessPrecedesRegistrationToken(t *testing.T) {
 }
 
 func TestUpCloudEphemeralPlanRendersHetznerCostCaveatBeforeProvision(t *testing.T) {
+	t.Skip("ephemeral cloud is disabled in v1.3.4 (ephemeral_cloud_disabled, backlog A-08); frozen until Z-03")
 	stateDir := t.TempDir()
 	service := newFakePermittedGitHubService()
 	cloud := &provider.FakeProvider{}
@@ -596,7 +597,7 @@ func TestUpCloudEphemeralPlanRendersHetznerCostCaveatBeforeProvision(t *testing.
 		StateBaseDir: stateDir,
 		Sleep:        noSleep,
 	})
-	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--yes", "--dry-run", "--no-color"})
+	cmd.SetArgs([]string{"up", "--repo", "owner/name", "--mode", "ephemeral", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--dry-run", "--no-color"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("ephemeral cloud dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 	}
@@ -702,7 +703,7 @@ func TestWaitCloudTargetReady_HonorsCloudInitTimeoutBudget(t *testing.T) {
 				StateBaseDir:   stateDir,
 				Sleep:          noSleep,
 			})
-			cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--yes", "--no-color"})
+			cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--experimental", "--cloud-region", "fsn1", "--yes", "--no-color"})
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("up cloud returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 			}

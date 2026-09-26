@@ -11,9 +11,11 @@ import (
 
 // TestDoctor_StaleRunnerVersion: when RunnerTemplateVersion is older than
 // bootstrap.RunnerVersion, BuildDoctorReport emits exactly one
-// runner_version_stale finding with severity=warning and a remediation
-// referencing `runnerkit upgrade-runner`. When the template matches the
-// pin, no stale finding is emitted.
+// runner_version_stale finding with severity=warning. The remediation no
+// longer references `runnerkit upgrade-runner`, which is disabled (A-06a):
+// it explains that the runner self-updates and gives the manual
+// re-register steps. When the template matches the pin, no stale finding
+// is emitted.
 func TestDoctor_StaleRunnerVersion(t *testing.T) {
 	repo := testsupport.HealthyRepositoryState()
 	repo.RunnerTemplateVersion = "2.330.0" // older than bootstrap.RunnerVersion ("2.334.0")
@@ -46,8 +48,13 @@ func TestDoctor_StaleRunnerVersion(t *testing.T) {
 	if !strings.Contains(got.Evidence, "2.330.0") || !strings.Contains(got.Evidence, bootstrap.RunnerVersion) {
 		t.Fatalf("evidence missing version strings: %q", got.Evidence)
 	}
-	if !strings.Contains(got.Remediation, "runnerkit upgrade-runner") {
-		t.Fatalf("remediation missing `runnerkit upgrade-runner`: %q", got.Remediation)
+	if strings.Contains(got.Remediation, "upgrade-runner") {
+		t.Fatalf("remediation still recommends the disabled upgrade-runner: %q", got.Remediation)
+	}
+	for _, want := range []string{"--disableupdate", "runnerkit down --repo owner/repo", "runnerkit up --repo owner/repo"} {
+		if !strings.Contains(got.Remediation, want) {
+			t.Fatalf("remediation missing %q: %q", want, got.Remediation)
+		}
 	}
 
 	// Same scenario with RunnerTemplateVersion == bootstrap.RunnerVersion -> no finding.

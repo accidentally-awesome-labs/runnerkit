@@ -28,13 +28,13 @@ contributor execute code on the runner host. RunnerKit blocks this by default
 
 ### Fix
 
-Use ephemeral cloud (recommended for untrusted workloads):
+Use GitHub-hosted runners for public repositories. They are free and
+unlimited for public repositories, and GitHub advises against self-hosted
+runners there. RunnerKit's ephemeral modes do not help: BYO ephemeral is not
+isolation, and ephemeral cloud is disabled.
 
-```bash
-runnerkit up --repo owner/public-repo --mode ephemeral --cloud hetzner
-```
-
-Or accept the risk explicitly (NOT recommended):
+Or accept the risk explicitly (NOT recommended; any pull request author may
+get root on the host):
 
 ```bash
 runnerkit up --repo owner/public-repo --allow-public-repo-risk --yes
@@ -99,23 +99,22 @@ See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troub
 
 ### Diagnosis
 
-Ephemeral mode is the recommended path for public/fork workloads, but BYO
-ephemeral on a shared host still carries some risk (the host's local
-filesystem is touched between job runs even if the runner is one-shot).
-Phase 5 requires explicit acknowledgment.
+BYO ephemeral mode is not isolation: the host, the runner user and its
+files are reused between jobs, so one job can affect the next. It is also
+experimental (it requires `--experimental`), has known defects (the
+finalizer runs unprivileged and the TTL is ignored) and is untested in this
+release. RunnerKit therefore asks for an explicit acknowledgment on
+public or fork repositories.
 
 ### Fix
 
-Either typed acknowledgment in the interactive prompt, or:
+Use GitHub-hosted runners for public or fork workloads.
+
+If you still want BYO ephemeral and accept that untrusted code can reach root
+on the host, give the typed acknowledgment in the interactive prompt, or:
 
 ```bash
-runnerkit up --repo owner/public-repo --mode ephemeral --allow-ephemeral-byo-risk --yes
-```
-
-Or switch to ephemeral cloud for stronger isolation:
-
-```bash
-runnerkit up --repo owner/public-repo --mode ephemeral --cloud hetzner
+runnerkit up --repo owner/public-repo --host user@host --mode ephemeral --experimental --allow-ephemeral-byo-risk --yes
 ```
 
 ***
@@ -142,11 +141,17 @@ not have permission to create runner registration tokens for this repository.
 
 ### Fix
 
-If using `gh` CLI:
+If using `gh` CLI (the classic `repo` scope is enough; RunnerKit does not
+need the `workflow` scope, so do not add it):
 
 ```bash
-gh auth refresh -h github.com -s repo,workflow
+gh auth refresh -h github.com -s repo
 ```
+
+When the GitHub CLI is installed and logged in, RunnerKit uses its token
+**even if `RUNNERKIT_GITHUB_TOKEN` is set**. To use a narrower fine-grained
+token, log `gh` out (`gh auth logout`) or run RunnerKit where `gh` is not on
+`PATH`. See [security posture](../security-posture.md) (SEC-9).
 
 If using a fine-grained PAT, regenerate at
 <https://github.com/settings/tokens?type=beta> with:

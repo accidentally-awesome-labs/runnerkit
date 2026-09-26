@@ -1,12 +1,14 @@
 module github.com/accidentally-awesome-labs/runnerkit
 
-go 1.22
+go 1.26.0
+
+toolchain go1.26.8
 
 require (
 	github.com/hashicorp/go-version v1.9.0
 	github.com/hetznercloud/hcloud-go v1.59.2
 	github.com/spf13/cobra v1.10.1
-	golang.org/x/term v0.10.0
+	golang.org/x/term v0.46.0
 )
 
 require (
@@ -20,8 +22,8 @@ require (
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	golang.org/x/net v0.12.0 // indirect
-	golang.org/x/sys v0.10.0 // indirect
-	golang.org/x/text v0.11.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )

@@ -70,7 +70,7 @@ var (
 	BootRunnerUserCreateFailed     = Code{ID: "RKD-BOOT-012", Severity: SeverityError, Title: "runnerkit-runner user creation failed", File: "bootstrap.md", Anchor: "rkd-boot-012"}
 	BootRunnerPackageInstallFailed = Code{ID: "RKD-BOOT-013", Severity: SeverityError, Title: "Runner tarball install failed", File: "bootstrap.md", Anchor: "rkd-boot-013"}
 	BootRunnerOnlineVerifyTimeout  = Code{ID: "RKD-BOOT-014", Severity: SeverityError, Title: "Runner did not report online before timeout", File: "bootstrap.md", Anchor: "rkd-boot-014"}
-	BootSudoPasswordRequired       = Code{ID: "RKD-BOOT-015", Severity: SeverityWarning, Title: "Remote sudo requires password — bootstrap needs scoped sudoers or interactive prompt", File: "bootstrap.md", Anchor: "rkd-boot-015"}
+	BootSudoPasswordRequired       = Code{ID: "RKD-BOOT-015", Severity: SeverityWarning, Title: "Remote sudo requires password — run install.sh or use an interactive sudo prompt", File: "bootstrap.md", Anchor: "rkd-boot-015"}
 	BootHostMemLow                 = Code{ID: "RKD-BOOT-016", Severity: SeverityWarning, Title: "Low MemAvailable on runner host", File: "bootstrap.md", Anchor: "rkd-boot-016"}
 	BootHostSwapConstrained        = Code{ID: "RKD-BOOT-017", Severity: SeverityWarning, Title: "No swap with constrained RAM", File: "bootstrap.md", Anchor: "rkd-boot-017"}
 	BootHostIncidentLikely         = Code{ID: "RKD-BOOT-018", Severity: SeverityWarning, Title: "Likely OOM or hard kill from journal heuristics", File: "bootstrap.md", Anchor: "rkd-boot-018"}

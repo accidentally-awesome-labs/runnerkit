@@ -116,6 +116,7 @@ func (r *Renderer) Warning(title string, body []string, next string) error {
 }
 
 func (r *Renderer) Error(code string, message string, remediation []string) error {
+	MarkErrorRendered()
 	if r.format == FormatJSON {
 		return r.JSON(map[string]any{
 			"ok": false,
@@ -162,6 +163,9 @@ func objectWithRedactionsFlag(v any) (any, error) {
 		return nil, err
 	}
 	if object, ok := payload.(map[string]any); ok {
+		if okValue, present := object["ok"]; present && okValue == false {
+			MarkErrorRendered()
+		}
 		object["redactions_applied"] = true
 		return object, nil
 	}
@@ -179,7 +183,22 @@ func (r *Renderer) writeWrapped(w io.Writer, prefix string, text string) error {
 		_, err := fmt.Fprintf(w, "%s%s\n", linePrefix, text)
 		return err
 	}
-	for i, line := range wrapText(text, width-len(linePrefix)) {
+	// Explicit newlines are kept: each line of a multi-line message
+	// (e.g. the bootstrap_failed excerpt's stderr tail, "Failed command
+	// (exit N): ..." and "Last stdout lines:") is wrapped on its own
+	// instead of being reflowed into one paragraph. Blank lines are
+	// dropped.
+	var lines []string
+	for _, paragraph := range strings.Split(text, "\n") {
+		if strings.TrimSpace(paragraph) == "" {
+			continue
+		}
+		lines = append(lines, wrapText(paragraph, width-len(linePrefix))...)
+	}
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	for i, line := range lines {
 		if i == 0 {
 			if _, err := fmt.Fprintf(w, "%s%s\n", linePrefix, line); err != nil {
 				return err

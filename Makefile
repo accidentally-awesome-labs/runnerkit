@@ -1,7 +1,7 @@
 # RunnerKit Makefile — solo developer + Claude execution.
 # Live smoke targets are MAINTAINER-ONLY and must NOT be invoked from CI (D-11).
 
-.PHONY: help test test-race test-integration vet lint smoke-live smoke-live-byo smoke-live-cloud smoke-stopwatch release-snapshot
+.PHONY: help test test-race test-integration vet lint generate generate-check vulncheck smoke-live smoke-live-byo smoke-live-cloud smoke-stopwatch release-snapshot
 
 help: ## Show this help.
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -18,6 +18,17 @@ test-integration: ## Run real-shell integration tests (requires NOPASSWD sudo on
 vet: ## go vet all packages.
 	go vet ./...
 
+generate: ## Regenerate committed generated files (go generate ./...).
+	go generate ./...
+
+generate-check: generate ## Fail if go generate changes tracked files or leaves untracked ones (same check as CI).
+	git diff --exit-code
+	@untracked="$$(git status --porcelain --untracked-files=all)"; \
+	if [ -n "$$untracked" ]; then echo "go generate left files that are not committed:"; echo "$$untracked"; exit 1; fi
+
+vulncheck: ## Report known vulnerabilities with govulncheck (report-only in CI until Stage 2).
+	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
 release-snapshot: ## Local GoReleaser dry-run (validates the build matrix).
 	goreleaser release --snapshot --skip=publish --clean --skip=sign
 
@@ -29,7 +40,7 @@ release-snapshot: ## Local GoReleaser dry-run (validates the build matrix).
 # CI environment must NOT hold the real GitHub PAT or HCLOUD_TOKEN
 # secrets these targets depend on.
 
-smoke-live: smoke-live-byo smoke-live-cloud smoke-stopwatch ## Run all live smokes (BYO + Hetzner + 10-minute stopwatch). Maintainer-only.
+smoke-live: smoke-live-byo smoke-live-cloud smoke-stopwatch ## Run all live smokes (BYO + Hetzner + setup-timing checklist pointer). Maintainer-only.
 
 smoke-live-byo: ## Phase 1 outstanding: live GitHub permission smoke. Requires RUNNERKIT_SMOKE_BYO_HOST and RUNNERKIT_SMOKE_REPO.
 	@test -n "$$RUNNERKIT_SMOKE_BYO_HOST" || { echo "RUNNERKIT_SMOKE_BYO_HOST=user@host required"; exit 2; }
@@ -43,7 +54,7 @@ smoke-live-byo: ## Phase 1 outstanding: live GitHub permission smoke. Requires R
 	@command -v python3 >/dev/null || { echo "python3 required for scripts/smoke/assert-doctor-json-contract.sh"; exit 2; }
 	./scripts/smoke/byo-permission.sh "$$RUNNERKIT_SMOKE_REPO" "$$RUNNERKIT_SMOKE_BYO_HOST"
 
-smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES BILLABLE RESOURCES. Requires HCLOUD_TOKEN and RUNNERKIT_SMOKE_REPO.
+smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES BILLABLE RESOURCES. Requires HCLOUD_TOKEN, RUNNERKIT_SMOKE_REPO and RUNNERKIT_SMOKE_CLOUD_REGION.
 	@test -n "$$HCLOUD_TOKEN"         || { echo "HCLOUD_TOKEN required"; exit 2; }
 	@test -n "$$RUNNERKIT_SMOKE_REPO" || { echo "RUNNERKIT_SMOKE_REPO=owner/name required (maintainer-controlled trusted repo, NOT public)"; exit 2; }
 	@command -v gh >/dev/null || { echo "gh CLI not installed"; exit 2; }
@@ -57,6 +68,6 @@ smoke-live-cloud: ## Phase 4 outstanding: live Hetzner end-to-end smoke. CREATES
 		./scripts/smoke/hetzner-destroy-verify.sh "$${RUNNERKIT_SMOKE_TIMEOUT:-300}" && \
 		rm -rf "$$RUNNERKIT_SMOKE_STATE_DIR"
 
-smoke-stopwatch: ## 10-minute stopwatch checklist (D-13). Maintainer manually records into RELEASE-NOTES-vX.Y.Z.md.
-	@echo "Open docs/release-process.md '## Stopwatch Checklist' and follow the BYO + Hetzner end-to-end timing."
-	@echo "Record durations into RELEASE-NOTES-v$${VER:-1.0.0}.md and .planning/phases/06-release-upgrade-docs-and-v1-validation/06-VERIFICATION.md."
+smoke-stopwatch: ## Optional setup-timing checklist (D-13). Timings are for your own notes, not a setup-time promise.
+	@echo "Open docs/release-process.md '## Setup timing (optional)' and follow the BYO + Hetzner timing checklist."
+	@echo "Record durations in your own notes; do not publish them as a setup-time promise."

@@ -70,6 +70,9 @@ runnerkit down --repo owner/repo --yes
 runnerkit up --repo owner/repo --host user@host
 ```
 
+`down` is for BYO runners only; it refuses RunnerKit-managed Hetzner state.
+For a cloud runner, remove the stale registrations in the GitHub UI (below).
+
 If `down` cannot resolve the duplicates, list and delete the stale
 registrations from the GitHub UI:
 `Settings → Actions → Runners → … → Remove`.
@@ -99,12 +102,17 @@ set.
 
 ### Fix
 
+`recover --reregister` is disabled in v1.3.4 (`command_disabled`). Re-register
+by hand to restore the canonical RunnerKit labels:
+
 ```bash
-runnerkit recover --repo owner/repo --reregister --dry-run
-runnerkit recover --repo owner/repo --reregister --yes
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
 ```
 
-This re-registers the runner with the canonical RunnerKit labels.
+For a RunnerKit-created Hetzner server, use `runnerkit destroy` instead of
+`down`, then `runnerkit up` with your original flags.
 
 ***
 
@@ -131,10 +139,10 @@ token has been revoked.
 
 ### Fix
 
-Refresh `gh` auth:
+Refresh `gh` auth (the `repo` scope is enough; do not add `workflow`):
 
 ```bash
-gh auth refresh -h github.com -s repo,workflow
+gh auth refresh -h github.com -s repo
 ```
 
 If you use a PAT directly, see [RKD-AUTH-004](auth.md#rkd-auth-004) for
@@ -215,7 +223,8 @@ runnerkit down --repo owner/repo --github-runner-id <id> --yes
 
 ### Symptom
 
-`runnerkit recover --repo owner/repo --reregister` fails with:
+In v1.3.3 and earlier, `runnerkit recover --repo owner/repo --reregister`
+failed with:
 
 ```
 RKD-GH-007: recover --reregister failed
@@ -224,20 +233,24 @@ See: https://github.com/accidentally-awesome-labs/runnerkit/blob/main/docs/troub
 
 ### Diagnosis
 
-`recover --reregister` combines a deregistration step with a fresh
-registration. Either side can fail; the underlying cause is one of
-RKD-AUTH-004 (token), RKD-GH-004 (token mint), RKD-GH-005 (registration),
-or RKD-GH-006 (deregistration).
+`recover --reregister` is disabled in v1.3.4 (`command_disabled`, exit 2)
+because it could leave the runner without an installed service. Older
+versions could fail at deregistration, token creation, registration, or
+service start.
 
 ### Fix
 
-Walk the underlying codes:
+Check the current state, then re-register by hand:
 
 ```bash
 runnerkit doctor --repo owner/repo
+runnerkit down --repo owner/repo --dry-run
+runnerkit down --repo owner/repo
+runnerkit up --repo owner/repo --host user@host
 ```
 
-Apply the more-specific fix first, then retry `recover --reregister`.
+For a RunnerKit-created Hetzner server, use `runnerkit destroy` instead of
+`down`.
 
 ***
 
@@ -275,7 +288,9 @@ the bootstrap/compute surface for the login user, not package-manager sudo for
 
 Pick one:
 
-**A — Scoped sudoers for package managers (recommended, any Linux distro)**  
+**A — Sudoers for package managers (root-equivalent)**  
+
+This grant is **root-equivalent**: `sudo apt-get -o APT::Update::Pre-Invoke::=<command> update` runs any command as root, so every workflow on the host can become root. See [security posture](../security-posture.md) (SEC-12).
 
 On the runner host (root), run `install.sh` with CI grants — same artifact as bootstrap uses for the SSH user:
 
@@ -343,7 +358,7 @@ contains dependencies) so workflow steps do not invoke `sudo`.
 
 **C — Match hosted runners (broad)**  
 Some teams use `runnerkit-runner ALL=(ALL) NOPASSWD: ALL`. Easiest for
-workflows that call many privileged commands; weakest isolation — prefer A
-when possible.
+workflows that call many privileged commands. Like **A**, it gives every
+job root; **A** only makes that less obvious.
 
 ***

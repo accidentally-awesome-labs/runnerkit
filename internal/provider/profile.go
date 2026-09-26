@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// HetznerDefaultRegion is the library-level profile fallback only. The CLI
+// never defaults to it: `runnerkit up --cloud` requires an explicit
+// --cloud-region (fails with cloud_region_required), because location
+// availability changes and fsn1 has at times offered no orderable types.
 const (
 	HetznerProvider              = "hetzner"
 	HetznerDefaultRegion         = "fsn1"
@@ -17,16 +21,17 @@ const (
 	HetznerTagManagedTrue        = "managed=true"
 )
 
+// DefaultHetznerProfile returns the recommended server profile. It carries
+// no price: RunnerKit ships no cost constants, and the plan's estimated cost
+// is filled in by the provider from its live pricing API (see CostEstimate).
 func DefaultHetznerProfile() Profile {
 	return Profile{
-		Provider:             HetznerProvider,
-		Region:               HetznerDefaultRegion,
-		ServerType:           HetznerDefaultServerType,
-		Image:                HetznerDefaultImage,
-		SSHUser:              HetznerDefaultSSHUser,
-		EstimatedHourlyCost:  "approx €0.0081/hour",
-		EstimatedMonthlyCost: "approx €4.90/month",
-		CostEstimateCaveat:   HetznerCostEstimateCaveat,
+		Provider:           HetznerProvider,
+		Region:             HetznerDefaultRegion,
+		ServerType:         HetznerDefaultServerType,
+		Image:              HetznerDefaultImage,
+		SSHUser:            HetznerDefaultSSHUser,
+		CostEstimateCaveat: HetznerCostEstimateCaveat,
 	}
 }
 
@@ -41,14 +46,12 @@ func HetznerProvisionPlan(input ProvisionInput) ProvisionPlan {
 	}
 	names := HetznerResourceNames(input)
 	return ProvisionPlan{
-		Provider:             profile.Provider,
-		Region:               profile.Region,
-		ServerType:           profile.ServerType,
-		Image:                profile.Image,
-		SSHUser:              profile.SSHUser,
-		EstimatedHourlyCost:  profile.EstimatedHourlyCost,
-		EstimatedMonthlyCost: profile.EstimatedMonthlyCost,
-		CostEstimateCaveat:   profile.CostEstimateCaveat,
+		Provider:           profile.Provider,
+		Region:             profile.Region,
+		ServerType:         profile.ServerType,
+		Image:              profile.Image,
+		SSHUser:            profile.SSHUser,
+		CostEstimateCaveat: profile.CostEstimateCaveat,
 		Resources: []ResourcePlan{
 			{Name: names["server"], Kind: "server", Billable: true, Action: "create"},
 			{Name: names["ssh_key"], Kind: "ssh_key", Billable: false, Action: "create"},
@@ -109,12 +112,6 @@ func withHetznerDefaults(profile Profile) Profile {
 	}
 	if profile.SSHUser == "" {
 		profile.SSHUser = defaults.SSHUser
-	}
-	if profile.EstimatedHourlyCost == "" {
-		profile.EstimatedHourlyCost = defaults.EstimatedHourlyCost
-	}
-	if profile.EstimatedMonthlyCost == "" {
-		profile.EstimatedMonthlyCost = defaults.EstimatedMonthlyCost
 	}
 	if profile.CostEstimateCaveat == "" {
 		profile.CostEstimateCaveat = defaults.CostEstimateCaveat

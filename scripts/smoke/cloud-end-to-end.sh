@@ -17,6 +17,9 @@ set -euo pipefail
 REPO="${1:?repo required}"
 : "${HCLOUD_TOKEN:?HCLOUD_TOKEN required}"
 : "${RUNNERKIT_SMOKE_STATE_DIR:?RUNNERKIT_SMOKE_STATE_DIR required (set by Makefile)}"
+# v1.3.4: --cloud requires --experimental and an explicit --cloud-region
+# (no default location). Pick a location where the server type is offered.
+: "${RUNNERKIT_SMOKE_CLOUD_REGION:?RUNNERKIT_SMOKE_CLOUD_REGION required (Hetzner location, e.g. one listed for cpx22 in the Cloud Console)}"
 
 # Use the maintainer-isolated tempdir set by the Makefile target so the
 # destroy-verify script can read state.json after this returns.
@@ -38,8 +41,8 @@ trap cleanup EXIT INT TERM
 
 START_EPOCH=$(date +%s)
 
-echo "===> [smoke-cloud] runnerkit up --repo ${REPO} --cloud hetzner --mode persistent --yes"
-go run ./cmd/runnerkit up --repo "${REPO}" --cloud hetzner --mode persistent --yes
+echo "===> [smoke-cloud] runnerkit up --repo ${REPO} --experimental --cloud hetzner --cloud-region ${RUNNERKIT_SMOKE_CLOUD_REGION} --mode persistent --yes"
+go run ./cmd/runnerkit up --repo "${REPO}" --experimental --cloud hetzner --cloud-region "${RUNNERKIT_SMOKE_CLOUD_REGION}" --mode persistent --yes
 
 echo "===> [smoke-cloud] runnerkit status --repo ${REPO}"
 go run ./cmd/runnerkit status --repo "${REPO}"

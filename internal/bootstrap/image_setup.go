@@ -5,7 +5,13 @@ import "fmt"
 // ImageSetupVersion is the marker version written to
 // /var/lib/runnerkit/image-setup.json after a successful run. Bump
 // this when the script changes materially so upgrade-runner re-runs.
-const ImageSetupVersion = "1"
+//
+// "2" (v1.3.4, P0-2): setup_runner_image now runs after
+// create_runner_user, so `usermod -aG docker` and the rustup install
+// finally reach the runner service user. Hosts carrying a "1" marker
+// were set up before that user existed; the bump makes the next `up`
+// re-run the script so they self-heal.
+const ImageSetupVersion = "2"
 
 // RenderImageSetupScript returns a shell script that installs
 // language runtimes, Docker, browsers, and CLI tools to match the
@@ -136,7 +142,10 @@ fi
 # ── Geckodriver ──
 if ! command -v geckodriver >/dev/null 2>&1; then
   echo "Installing Geckodriver..."
-  GD_VER=$(curl -fsSL https://api.github.com/repos/mozilla/geckodriver/releases/latest 2>/dev/null | grep -oP '"tag_name":\s*"v\K[^"]+' | head -1)
+  # '|| true': under set -euo pipefail a failed or rate-limited
+  # api.github.com lookup (unauthenticated, 60 req/h per IP) used to
+  # abort the whole step instead of reaching the empty-GD_VER skip.
+  GD_VER=$(curl -fsSL https://api.github.com/repos/mozilla/geckodriver/releases/latest 2>/dev/null | grep -oP '"tag_name":\s*"v\K[^"]+' | head -1 || true)
   if [ -n "$GD_VER" ]; then
     curl -fsSL "https://github.com/mozilla/geckodriver/releases/download/v${GD_VER}/geckodriver-v${GD_VER}-linux64.tar.gz" -o /tmp/geckodriver.tar.gz
     sudo tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin geckodriver

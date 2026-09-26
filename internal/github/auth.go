@@ -67,5 +67,9 @@ func FineGrainedTokenRemediation(repo Repo) string {
 	if fullName == "" {
 		fullName = "owner/name"
 	}
-	return "Create a fine-grained token scoped only to " + fullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."
+	return "Create a fine-grained token scoped only to " + fullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command." + ghPrecedenceNote
 }
+
+// ghPrecedenceNote explains that DiscoverAuth prefers a logged-in gh CLI
+// over RUNNERKIT_GITHUB_TOKEN (SEC-9).
+const ghPrecedenceNote = " If the GitHub CLI (gh) is installed and logged in, RunnerKit uses its token instead; run `gh auth logout` or remove gh from PATH for this command (see docs/security-posture.md, SEC-9)."

@@ -71,7 +71,7 @@ func runDestroy(deps Dependencies, jsonOutput bool, noColor bool, opts *destroyO
 	}
 	if !ok {
 		message := "No RunnerKit-managed cloud runner is saved for `" + repo.FullName + "`."
-		_ = renderer.Error("state_not_found", message, []string{"Run runnerkit up --repo " + repo.FullName + " --cloud hetzner to create one, or pass --host user@host for BYO setup."})
+		_ = renderer.Error("state_not_found", message, []string{"Run runnerkit up --repo " + repo.FullName + " --experimental --cloud hetzner --cloud-region <location> to create one (experimental; billed by Hetzner), or pass --host user@host for BYO setup."})
 		return NewExitError(ExitStateIO, errors.New(message))
 	}
 	if !isCloudProvider(repoState.Provider) {
@@ -108,9 +108,7 @@ func confirmCloudDestroy(ctx context.Context, deps Dependencies, renderer *ui.Re
 		_ = renderer.Error("input_required", message, []string{destroyInputRequiredRemedy})
 		return NewExitError(ExitInputRequired, errors.New(message))
 	}
-	inputPrompter, ok := deps.Prompts.(interface {
-		Input(context.Context, ui.Prompt) (string, error)
-	})
+	inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 	if !ok {
 		message := "RunnerKit can't continue because cloud destroy requires typed confirmation."
 		_ = renderer.Error("input_required", message, []string{destroyInputRequiredRemedy})

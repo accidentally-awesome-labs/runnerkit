@@ -47,7 +47,7 @@ func TestResolveTokenMissingRemediation(t *testing.T) {
 		t.Fatalf("expected MissingTokenError, got %T", err)
 	}
 	joined := strings.Join(missing.Remediation, "\n")
-	for _, want := range []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run runnerkit up --repo owner/name --cloud hetzner"} {
+	for _, want := range []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location>"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("remediation missing %q: %#v", want, missing.Remediation)
 		}

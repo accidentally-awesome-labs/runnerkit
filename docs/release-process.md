@@ -88,34 +88,98 @@ matching `v*` pushed from the upstream repo.
 
 Before pushing a tag, the maintainer must:
 
-1. **Run live smokes (D-11):** `make smoke-live` (see Plan 06-04). This
-   exercises the BYO permission smoke and the Hetzner end-to-end smoke
-   (including the empty-project precheck D-12 gate 1 and the destroy-verify
-   D-12 gate 2).    Both paths run **`scripts/smoke/assert-doctor-json-contract.sh`**
-   after the interactive `runnerkit doctor` step to assert the **`doctor --json`**
-   envelope includes **`schema_version`**, **`stage`**, **`host_incident_hints`** and **`next_actions`** as JSON **arrays**
-   (empty `[]` when there is nothing to report — never `null`) and that **`doctor --deep --json`**
-   succeeds (Phase 7 host-capacity / journal heuristics plumbing). Requires **`python3`**.
-   Set **`RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1`** to skip the `--deep` pass if SSH
-   journal collection is temporarily unavailable. After that, both scripts run
-   **`scripts/smoke/assert-list-json-contract.sh`** on **`list --json`** (SEED-002).
-   Optional BYO-only coverage: set **`RUNNERKIT_SMOKE_MULTI_REPO=1`** and a second
-   **`RUNNERKIT_SMOKE_REPO2`** (different private repo) so **`byo-permission.sh`**
-   registers a second repo on the same host, asserts the host bucket repo count,
-   runs the doctor JSON contract for repo2, then tears down repo2 before the primary.
-   The maintainer captures durations into
-   `RELEASE-NOTES-vX.Y.Z.md` and `06-VERIFICATION.md` per D-13.
-2. **Run the 10-minute stopwatch (D-13):** Follow the stopwatch checklist
-   added by Plan 06-04 in this same file. Record wall-clock numbers honestly.
-3. **Verify CI green:** Confirm the `pr-checks` workflow passed on the merge
-   commit. This proves `goreleaser check` and the snapshot build matrix work.
-   For local, non-interactive verification, it is acceptable to run
-   `goreleaser release --snapshot --skip=publish --clean --skip=sign` when
-   keyless cosign device flow is not available. Tag releases in upstream CI
-   MUST keep signing enabled (no `--skip=sign`).
-4. **Confirm the bundled runner pin:** `internal/bootstrap/package.go`
-   `RunnerVersion` is a known-good GitHub Actions runner version (currently
-   `2.334.0`). Bumping is a separate PR.
+1. **Verify CI green on the release commit.** `pr-checks` must pass on the
+   merge commit (tests, `goreleaser check`, snapshot build, `go generate`
+   drift check). The release workflow repeats `go vet`, the `go generate`
+   drift check and `go test -race` before GoReleaser; a failure there means
+   no release. For local verification it is acceptable to run
+   `goreleaser release --snapshot --skip=publish --clean --skip=sign`; tag
+   releases in upstream CI must keep signing enabled.
+2. **Run `make generate-check` on a clean checkout** of the release commit.
+   It fails if `go generate ./...` changes `install.sh` (whose sudoers block
+   is generated from `bootstrap.RenderSudoersEntry`) or leaves untracked
+   files.
+3. **Read the govulncheck result for the release commit.** Run the
+   `pr-checks` workflow by hand (`workflow_dispatch`) on the release SHA, or
+   use the run from the push to `main`, and read the `govulncheck` job
+   summary (the job is report-only: it stays green and raises a warning
+   annotation when there are findings). CI builds with the latest Go 1.26.x
+   patch release, so the result is expected to show **no reachable
+   findings**. A reachable standard-library finding means a newer Go
+   patch release is needed (re-run the job so `setup-go` picks it up, or
+   raise the Go version if the fix is only on a newer line, and raise the
+   `toolchain` line in `go.mod` to that patch so source builds with
+   `GOTOOLCHAIN=auto` get it too); a
+   **reachable** finding in a module dependency (`golang.org/x/*` or any
+   other non-stdlib module) means that module bump goes into this release.
+   Anything knowingly shipped goes under Known issues in the CHANGELOG.
+   Link the run in the CHANGELOG section.
+4. **Real GitHub job on a fresh password-sudo host (BYO gate).** No release
+   may claim the BYO path works unless, for that commit, a real job ran on a
+   fresh password-sudo Ubuntu 24.04 x86_64 host prepared **only** by that
+   commit's `install.sh`:
+   1. prepare the host (a container with systemd, openssh-server and a sudo
+      user **with a password** is enough) with the candidate `install.sh`;
+   2. `runnerkit up --host user@<host> --repo <throwaway private repo>`;
+   3. dispatch a workflow on the runner's labels that runs `gcc hello.c` and
+      `docker run hello-world`.
+
+   Pass: the runner is online, the job is green, and
+   `id -nG runnerkit-runner` contains `docker`. Record the run URL in the
+   CHANGELOG. **If it does not pass** (and cannot be fixed within the time
+   box), do not tag with a BYO claim: ship the fallback that makes BYO
+   `up`/`register` refuse without `--accept-known-issues`, and change the
+   README and CHANGELOG Known-issues text to "BYO is not supported in this
+   release".
+
+   On the same host, try the revocation steps in
+   [security-posture.md](security-posture.md#if-you-already-installed-runnerkit)
+   before publishing them. After step 2, confirm that the runner user can
+   no longer replace `svc.sh` or `bin`:
+   `sudo -u runnerkit-runner mv <install>/svc.sh <install>/svc.sh.orig` and
+   the same for `bin` must fail with "Permission denied". Until that has
+   been checked on a runner host, the revocation gate is not met.
+5. **Verify the Homebrew tap token.** `HOMEBREW_TAP_GITHUB_TOKEN` must be a
+   fine-grained PAT with `Contents: Read and write` on
+   `accidentally-awesome-labs/homebrew-tap` only, not expired (check the
+   expiry in GitHub settings), and SSO-authorized if required. Rotate it if
+   it was ever exposed. See [One-Time Prerequisites §2](#2-create-the-homebrew_tap_github_token-repo-secret).
+   If the release machinery has been idle for a long time, also expect to
+   re-check cosign keyless (OIDC) signing on the first run.
+6. **Manual refusal check (no Hetzner spend).** With a scratch
+   `RUNNERKIT_STATE_DIR`, seeded state and a throwaway working directory,
+   confirm with the built binary that: `down` on cloud state is refused;
+   `up --replace` on cloud state is refused; `upgrade-runner` and
+   `doctor --fix` are refused; `--mode ephemeral` with `--cloud hetzner` is refused
+   even with `--experimental`; `--cloud` without `--experimental`, and
+   without `--cloud-region`, is refused before any network call; nothing is
+   written to the working directory. Optionally, a `--dry-run` cloud plan
+   with a real **read-only** Hetzner token shows the API price and its label
+   (it creates nothing).
+7. **Docs and notes.** The CHANGELOG section lists every shipped change, has
+   a Known-issues block that matches the README "Known issues" section, and
+   says BYO works on password-sudo hosts **only** if step 4 passed. LICENSE,
+   the README banner and `docs/security-posture.md` are merged.
+8. **Optional live smokes (maintainer-only).** `make smoke-live` runs the
+   BYO permission smoke and the Hetzner end-to-end smoke (empty-project
+   precheck and destroy-verify). The cloud leg creates billable resources
+   and needs `RUNNERKIT_SMOKE_CLOUD_REGION`. Both run
+   `scripts/smoke/assert-doctor-json-contract.sh` (`doctor --json` has
+   `schema_version`, `stage`, and `host_incident_hints`/`next_actions` as
+   arrays; `doctor --deep --json` succeeds; set
+   `RUNNERKIT_SMOKE_SKIP_DOCTOR_DEEP=1` to skip the deep pass) and
+   `scripts/smoke/assert-list-json-contract.sh`. Requires `python3`. For the
+   optional BYO multi-repo leg set `RUNNERKIT_SMOKE_MULTI_REPO=1` and
+   `RUNNERKIT_SMOKE_REPO2`. These smokes do not run a workflow job, so they
+   do not replace step 4.
+9. **Confirm the bundled runner pin.** `internal/bootstrap/package.go`
+   `RunnerVersion` (2.337.0 in v1.3.4) and its SHA-256s match the
+   `actions/runner` release page. RunnerKit must never pass
+   `--disableupdate`; `TestRenderedScriptsNeverDisableUpdate` enforces it.
+
+If the tag cannot ship by its planned date, deprecate the Homebrew cask
+(`deprecate!` pointing at the README "Known issues" section) instead of
+leaving the broken release as the recommended install.
 
 ### Push the tag
 
@@ -124,18 +188,20 @@ upstream workflow, AND fork PRs strip the OIDC `id-token: write` permission
 that cosign keyless requires):
 
 ```bash
-# Example for v1.0.0
-git tag -a v1.0.0 -m "RunnerKit v1.0.0"
-git push origin v1.0.0
+git tag -a vX.Y.Z -m "RunnerKit vX.Y.Z — short summary"
+git push origin vX.Y.Z
 ```
 
 The release workflow will:
 
-1. Build all 4 platform binaries (`darwin_arm64`, `darwin_amd64`, `linux_amd64`, `linux_arm64`).
-2. Generate `runnerkit_v1.0.0_checksums.txt`.
-3. Sign the checksums file with cosign keyless (OIDC) → `runnerkit_v1.0.0_checksums.txt.sigstore.json`.
-4. Publish the GitHub Release with all assets.
-5. Push the Cask formula update to `accidentally-awesome-labs/homebrew-tap`.
+1. Run `go vet`, the `go generate` drift check and `go test -race` (job
+   `test`); GoReleaser runs only if they pass, and only in the upstream
+   repository.
+2. Build all 4 platform binaries (`darwin_arm64`, `darwin_amd64`, `linux_amd64`, `linux_arm64`).
+3. Generate `runnerkit_X.Y.Z_checksums.txt`.
+4. Sign the checksums file with cosign keyless (OIDC) → `runnerkit_X.Y.Z_checksums.txt.sigstore.json`.
+5. Publish the GitHub Release with all assets.
+6. Push the Cask formula update to `accidentally-awesome-labs/homebrew-tap`.
 
 ### Post-tag verification
 
@@ -143,7 +209,7 @@ After the workflow completes, verify the release end-to-end as a user would:
 
 ```bash
 # From a clean directory
-TAG=v1.0.0
+TAG=vX.Y.Z
 curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt"
 curl -fsSL -O "https://github.com/accidentally-awesome-labs/runnerkit/releases/download/${TAG}/runnerkit_${TAG#v}_checksums.txt.sigstore.json"
 
@@ -160,64 +226,35 @@ A `Verified OK` confirms the release is signed by the upstream workflow.
 
 | Failure | Likely cause | Fix |
 |---|---|---|
+| `test` job fails (vet, `go generate` drift, or a test) | The tagged commit is not releasable; GoReleaser does not run | Fix on `main`, delete the tag (`git push origin :refs/tags/vX.Y.Z`), and tag the fixed commit (or use the next patch version) |
 | `signs:` step: `unable to fetch certificate from sigstore` | Workflow ran from a fork PR (OIDC stripped) | Push tag from upstream repo only |
 | `homebrew_casks:` step: `403` / `401` | `HOMEBREW_TAP_GITHUB_TOKEN` missing, PAT not SSO-authorized, or scoped wrong | See "One-Time Prerequisites" §2 |
 | `notarize.macos:` step fails (`Unauthorized`, `Invalid credentials`, timeout) | Apple notary secrets missing/invalid | Verify the 5 `MACOS_*` secrets from "One-Time Prerequisites" §3 |
 | `goreleaser` `unsupported config version` | `.goreleaser.yaml` missing `version: 2` | Add `version: 2` as the first line |
 | User reports "macOS cannot verify that this app is free from malware" | macOS Gatekeeper quarantine on unsigned cask binary | User runs `xattr -d com.apple.quarantine /opt/homebrew/bin/runnerkit` (documented in `docs/troubleshooting/README.md`) |
 
-## Release Notes File (D-13)
+## Release notes
 
-Each release ships a `RELEASE-NOTES-vX.Y.Z.md` file in the repo root recording
-the maintainer's stopwatch durations from the pre-tag checklist. The first
-release file is created in Plan 06-04 (`RELEASE-NOTES-v1.0.0.md`) and
-subsequent releases follow the same template.
+From v1.3.4, release notes live in [CHANGELOG.md](../CHANGELOG.md)
+(Keep a Changelog). Move the `Unreleased` section under the new version
+heading when you tag, and paste it into the GitHub Release body. The older
+`RELEASE-NOTES-v*.md` files in the repository root are historical and are
+summarized in the CHANGELOG.
 
-The `06-VERIFICATION.md` file (created by `/gsd:verify-work` for Phase 6)
-holds the v1.0.0 baseline as the reference for future releases.
+## Setup timing (optional)
 
-## Stopwatch Checklist (D-13)
+`make smoke-stopwatch` points here. To time a BYO and a cloud setup end to
+end on a clean machine:
 
-This is the 10-minute reliable-runner promise from PROJECT.md Core Value.
-Run this on a CLEAN machine (fresh laptop, fresh VM, clean
-`$HOME/.local/state/runnerkit/`) before tagging each release. The
-maintainer's wall-clock numbers go into `RELEASE-NOTES-vX.Y.Z.md`.
-
-### BYO path (target: ≤ 10 minutes)
-
-| Step | Description                                                       | T0  | T_now | Δ   |
-| ---- | ----------------------------------------------------------------- | --- | ----- | --- |
-| 1    | `gh auth login` (if not already authed)                           |     |       |     |
-| 2    | `runnerkit up --repo $REPO --host user@host --mode persistent`    |     |       |     |
-| 3    | Trigger a workflow targeting the `runnerkit-...` label            |     |       |     |
-| 4    | Observe job runs on the new runner                                |     |       |     |
-| 5    | `runnerkit down --repo $REPO --yes`                               |     |       |     |
-
-Total wall-clock: __ minutes __ seconds.
-
-### Hetzner cloud path (target: ≤ 10 minutes)
-
-| Step | Description                                                       | T0  | T_now | Δ   |
-| ---- | ----------------------------------------------------------------- | --- | ----- | --- |
-| 1    | `gh auth login` (if not already authed)                           |     |       |     |
-| 2    | `export HCLOUD_TOKEN=...` (one-time)                              |     |       |     |
-| 3    | `runnerkit up --repo $REPO --cloud hetzner --mode persistent`     |     |       |     |
-| 4    | Trigger a workflow targeting the `runnerkit-...` label            |     |       |     |
-| 5    | Observe job runs on the new runner                                |     |       |     |
-| 6    | `runnerkit destroy --repo $REPO --yes`                            |     |       |     |
-| 7    | Verify Hetzner Console shows 0 `runnerkit-*` resources            |     |       |     |
-
-Total wall-clock: __ minutes __ seconds.
-Hetzner cost (from project billing dashboard): __ EUR.
-
-### Recording
-
-After running both paths, copy the totals into:
-
-1. `RELEASE-NOTES-v$VERSION.md` (per-release file, committed at tag time).
-2. `.planning/phases/06-release-upgrade-docs-and-v1-validation/06-VERIFICATION.md`
-   for the v1.0.0 baseline (ONE-TIME — overwritten only if the baseline
-   methodology changes).
-
-If either path exceeds 10 minutes, do NOT tag the release. Investigate the
-slow step, fix it, and re-run the stopwatch.
+1. Start a fresh Ubuntu 24.04 x86_64 host (BYO) and run the current
+   `install.sh` on it. Start the stopwatch.
+2. Run `runnerkit up --repo owner/name --host user@host --yes` and note the
+   time until the runner is reported online.
+3. Trigger a workflow that uses the printed `runs-on:` labels and note the
+   time until the job finishes. Stop the stopwatch.
+4. For cloud, repeat from step 2 with
+   `runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location> --yes`,
+   then run `runnerkit destroy --repo owner/name` and confirm it verifies
+   deletion.
+5. Record the durations in your own notes. Do not publish them as a
+   setup-time promise.

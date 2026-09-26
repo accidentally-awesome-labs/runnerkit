@@ -50,6 +50,10 @@ type RemoteError struct {
 	CommandID string
 	ExitCode  int
 	Message   string
+	// Err is the underlying executor error (for example the
+	// *exec.ExitError from the system ssh executor), if any. It is kept
+	// for errors.As/Is; the step name lives in CommandID.
+	Err error
 }
 
 func (e RemoteError) Error() string {
@@ -58,6 +62,9 @@ func (e RemoteError) Error() string {
 	}
 	return fmt.Sprintf("remote command %s failed with exit code %d", e.CommandID, e.ExitCode)
 }
+
+// Unwrap returns the underlying executor error, if any.
+func (e RemoteError) Unwrap() error { return e.Err }
 
 type UnavailableExecutor struct{}
 

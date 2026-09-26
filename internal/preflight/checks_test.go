@@ -77,6 +77,19 @@ func TestRunEmitsAllStableCheckIDs(t *testing.T) {
 	if report.Arch != "arm64" {
 		t.Fatalf("Arch = %q, want arm64", report.Arch)
 	}
+	// arm64 is not supported in this release: preflight warns (without
+	// failing) instead of reporting a pass.
+	archResult, _ := report.Result(CheckArch)
+	if archResult.Severity != SeverityWarning || !strings.Contains(archResult.Message, "not supported") || archResult.Remediation != "Use an Ubuntu x86_64 host." {
+		t.Fatalf("arm64 arch result = %#v, want warning", archResult)
+	}
+	x64, err := Run(context.Background(), fakePreflightExecutor{probe: passingProbe("ubuntu", "x86_64")}, remote.Target{User: "alice", Host: "example.com", Port: 22}, Options{})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if r, _ := x64.Result(CheckArch); r.Severity != SeverityPass {
+		t.Fatalf("x86_64 arch result = %#v, want pass", r)
+	}
 }
 
 func passingProbe(osID, arch string) remote.ProbeResult {

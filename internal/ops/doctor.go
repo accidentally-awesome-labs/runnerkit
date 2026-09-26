@@ -19,12 +19,12 @@ type Finding struct {
 }
 
 type DoctorReport struct {
-	Repo               string             `json:"repo"`
-	StatePath          string             `json:"state_path"`
-	Health             Health             `json:"health"`
-	Findings           []Finding          `json:"findings"`
-	NextActions        []NextAction       `json:"next_actions"`
-	HostIncidentHints  []HostIncidentHint `json:"host_incident_hints,omitempty"`
+	Repo              string             `json:"repo"`
+	StatePath         string             `json:"state_path"`
+	Health            Health             `json:"health"`
+	Findings          []Finding          `json:"findings"`
+	NextActions       []NextAction       `json:"next_actions"`
+	HostIncidentHints []HostIncidentHint `json:"host_incident_hints,omitempty"`
 }
 
 type DeepChecks struct {
@@ -32,7 +32,14 @@ type DeepChecks struct {
 	WorkDirOK        bool
 	InstallPathError string
 	WorkDirError     string
-	Preflight        preflight.Report
+	// InstallPathProbeErr / WorkDirProbeErr are true when the remote path
+	// probe could not run at all (no SSH target, ssh missing, connection
+	// failure). A false *OK with a false *ProbeErr means the probe ran and
+	// the path check itself exited non-zero. Only the latter justifies the
+	// manual re-register advice; the former points at SSH.
+	InstallPathProbeErr bool
+	WorkDirProbeErr     bool
+	Preflight           preflight.Report
 	// BYOHostPrepared is true when /etc/sudoers.d/runnerkit-installer
 	// was observed on the remote host (Plan 06-06 Path C applied).
 	// Surfaces as the informational `byo_host_prepared` finding.
@@ -60,16 +67,27 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	}
 	statusCmd := "runnerkit status --repo " + repo
 	logsCmd := "runnerkit logs --repo " + repo + " --since 30m"
-	recoverReregister := "runnerkit recover --repo " + repo + " --reregister --dry-run"
-	downDryRun := "runnerkit down --repo " + repo + " --dry-run"
+	// recover --reregister / --reinstall-service and upgrade-runner are
+	// disabled in this release (A-06), so findings that used to point at
+	// them carry the manual re-register steps instead.
+	manualReregister := strings.Join(ManualReregisterSteps(repo, IsCloudState(repoState)), " ")
+	// cleanup_pending and github_duplicate_candidates must never send a RunnerKit-managed cloud server to
+	// `down`, which drops the only record of a server that keeps billing.
+	cleanupDryRun := CleanupDryRunCommand(repoState)
+	sshRemediation := "Verify SSH access to " + repoState.Machine.HostRef + ", then re-run runnerkit doctor --repo " + repo + "."
 	add("state_present", SeverityPass, "state", "local RunnerKit state is present", statusCmd)
-	if observed.GitHub.Found {
+	if observed.GitHub.Error != "" {
+		// GitHub facts are unavailable (no token, network, API error). Do
+		// not infer a missing runner or label drift from the empty result:
+		// that used to send users to destroy/down a healthy runner.
+		add("github_unavailable", SeverityWarning, "github", observed.GitHub.Error, "Check GitHub access (RUNNERKIT_GITHUB_TOKEN or gh auth login), then re-run runnerkit doctor --repo "+repo+".")
+	} else if observed.GitHub.Found {
 		add("github_runner_found", SeverityPass, "github", fmt.Sprintf("GitHub runner %s id %d is present", observed.GitHub.Name, observed.GitHub.ID), statusCmd)
 		if strings.EqualFold(observed.GitHub.Status, "offline") {
 			addWithCode("github_runner_offline", errcodes.GHRunnerOffline, SeverityWarning, "github", "GitHub reports runner status offline", logsCmd)
 		}
 	} else if len(observed.GitHub.DuplicateCandidates) > 1 {
-		addWithCode("github_duplicate_candidates", errcodes.GHDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runner candidates found", downDryRun)
+		addWithCode("github_duplicate_candidates", errcodes.GHDuplicateCandidates, SeverityError, "github", "multiple RunnerKit runner candidates found", cleanupDryRun)
 	} else {
 		addWithCode("github_runner_offline", errcodes.GHRunnerOffline, SeverityWarning, "github", "GitHub runner is missing or offline", logsCmd)
 	}
@@ -77,7 +95,7 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 		if observed.SSH.HostKey == "mismatch" {
 			addWithCode("ssh_host_key_mismatch", errcodes.SSHHostKeyMismatch, SeverityError, "ssh", "saved host key fingerprint does not match observed host", "Verify the machine identity before running runnerkit recover --repo "+repo+".")
 		} else {
-			addWithCode("ssh_unreachable", errcodes.SSHUnreachable, SeverityError, "ssh", "SSH is unreachable", "Verify SSH access to "+repoState.Machine.HostRef+", then re-run runnerkit doctor --repo "+repo+".")
+			addWithCode("ssh_unreachable", errcodes.SSHUnreachable, SeverityError, "ssh", "SSH is unreachable", sshRemediation)
 		}
 	}
 	if observed.Service.ActiveState == "active" {
@@ -85,10 +103,12 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	} else if serviceFailed(observed.Service) {
 		addWithCode("service_failed", errcodes.BootServiceFailed, SeverityError, "systemd", "systemd reports ActiveState=failed for runnerkit-runner.", logsCmd)
 	} else if observed.Service.LoadState == "not-found" || strings.Contains(strings.ToLower(observed.Service.Error), "missing") {
-		addWithCode("service_missing", errcodes.BootServiceMissing, SeverityError, "systemd", "saved systemd service is missing", "runnerkit recover --repo "+repo+" --reinstall-service --dry-run")
+		addWithCode("service_missing", errcodes.BootServiceMissing, SeverityError, "systemd", "saved systemd service is missing", manualReregister)
 	}
-	if !observed.Labels.Match {
-		addWithCode("label_drift", errcodes.GHLabelDrift, SeverityWarning, "labels", labelEvidence(observed.Labels), recoverReregister)
+	// Label drift is only meaningful when GitHub returned the runner: an
+	// API error or a missing runner leaves the observed labels empty.
+	if observed.GitHub.Error == "" && observed.GitHub.Found && !observed.Labels.Match {
+		addWithCode("label_drift", errcodes.GHLabelDrift, SeverityWarning, "labels", labelEvidence(observed.Labels), manualReregister)
 	}
 	if observed.Provider.Kind != "" && observed.Provider.Kind != "byo" {
 		providerCleanup := "Run runnerkit destroy --repo " + repo + " --dry-run to review billable resources before cleanup."
@@ -102,13 +122,22 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 			add("provider_found", SeverityPass, "provider", observed.Provider.Kind+" resources are present", "runnerkit status --repo "+repo)
 		}
 	}
+	// A path check that could not run (SSH down, ssh missing) says nothing
+	// about the host; only a probe that ran and exited non-zero earns the
+	// re-register advice.
+	pathRemediation := func(probeErr bool) string {
+		if observed.SSH.Reachable && !probeErr {
+			return manualReregister
+		}
+		return sshRemediation
+	}
 	if !checks.InstallPathOK {
 		evidence := defaultEvidence(checks.InstallPathError, "install path check failed")
-		addWithCode("install_path_missing", errcodes.BootInstallPathMissing, SeverityError, "remote", evidence, recoverReregister)
+		addWithCode("install_path_missing", errcodes.BootInstallPathMissing, SeverityError, "remote", evidence, pathRemediation(checks.InstallPathProbeErr))
 	}
 	if !checks.WorkDirOK {
 		evidence := defaultEvidence(checks.WorkDirError, "work dir check failed")
-		addWithCode("work_dir_missing", errcodes.BootWorkDirMissing, SeverityWarning, "remote", evidence, recoverReregister)
+		addWithCode("work_dir_missing", errcodes.BootWorkDirMissing, SeverityWarning, "remote", evidence, pathRemediation(checks.WorkDirProbeErr))
 	}
 	for _, result := range checks.Preflight.Results {
 		switch result.ID {
@@ -139,17 +168,17 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 		}
 	}
 	if len(repoState.Cleanup.Notes) > 0 || len(repoState.Operations) > 0 {
-		addWithCode("cleanup_pending", errcodes.CleanCleanupPending, SeverityWarning, "state", "cleanup checkpoints or notes are pending", downDryRun)
+		addWithCode("cleanup_pending", errcodes.CleanCleanupPending, SeverityWarning, "state", "cleanup checkpoints or notes are pending", cleanupDryRun)
 	}
 	// Stale runner version: when the saved RunnerTemplateVersion is older
-	// than the bundled `bootstrap.RunnerVersion`, surface a warning that
-	// points at `runnerkit upgrade-runner` (D-08). Plan 06-03 will map this
-	// finding ID to RKD-BOOT-002 via the errcodes package; here we keep the
-	// snake_case finding ID consistent with the existing convention.
+	// than the bundled `bootstrap.RunnerVersion`, surface a warning
+	// (RKD-BOOT-002). It no longer points at `runnerkit upgrade-runner`,
+	// which is disabled in this release (A-06a, P0-3): the GitHub runner
+	// updates itself because RunnerKit never passes --disableupdate.
 	if observedPin := repoState.RunnerTemplateVersion; observedPin != "" && observedPin != bootstrap.RunnerVersion {
 		addWithCode("runner_version_stale", errcodes.BootRunnerVersionStale, SeverityWarning, "bootstrap",
 			fmt.Sprintf("installed runner version %s is older than bundled pin %s", observedPin, bootstrap.RunnerVersion),
-			"runnerkit upgrade-runner --repo "+repo)
+			"No action is usually needed: the GitHub runner updates itself (RunnerKit never passes --disableupdate). To reinstall with the bundled pin anyway: "+manualReregister)
 	}
 	// Ephemeral lifecycle findings: surface waiting/busy/completed/
 	// ttl_expired/cleanup_pending so doctor reports the same vocabulary
@@ -157,7 +186,7 @@ func BuildDoctorReport(repoState state.RepositoryState, observed ObservedRunner,
 	if repoState.Runner.Mode == "ephemeral" {
 		cleanup := repoState.Ephemeral.CleanupCommand
 		if cleanup == "" {
-			cleanup = downDryRun
+			cleanup = cleanupDryRun
 		}
 		switch {
 		case hasEphemeralCleanupPending(repoState.Operations, repoState.Cleanup.Notes):

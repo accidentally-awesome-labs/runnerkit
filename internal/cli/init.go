@@ -19,7 +19,7 @@ func newInitCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.C
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Print BYO host bootstrap helpers (one-time install)",
-		Long:  "Shows how to run the one-time install.sh on your runner host so runnerkit register/up can use passwordless scoped sudo over SSH.",
+		Long:  "Shows how to run the one-time install.sh on your runner host so runnerkit register/up can use passwordless sudo for RunnerKit's bootstrap commands over SSH (root-equivalent; see docs/security-posture.md).",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runInit(deps, *jsonOutput, *noColor, opts)
 		},

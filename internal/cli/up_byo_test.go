@@ -96,6 +96,14 @@ func TestUpDryRunDoesNotApplyBootstrap(t *testing.T) {
 	if service.tokenCalls != 0 {
 		t.Fatalf("dry-run created registration token: %d", service.tokenCalls)
 	}
+	// SEC-R2: on Ubuntu the plan the user previews must disclose image
+	// setup, the docker group grant and the third-party apt sources.
+	flat := strings.Join(strings.Fields(out.String()+errOut.String()), " ")
+	for _, want := range []string{"setup_runner_image", "docker group", "root-equivalent", "third-party apt sources"} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("dry-run plan missing %q:\n%s", want, flat)
+		}
+	}
 }
 
 func TestUpCompletionHumanJSONAndWorkflowFileUnchanged(t *testing.T) {
@@ -126,6 +134,9 @@ func TestUpCompletionHumanJSONAndWorkflowFileUnchanged(t *testing.T) {
 			t.Fatalf("human output missing %q:\n%s", want, out)
 		}
 	}
+	if flat := strings.Join(strings.Fields(errOut), " "); !strings.Contains(flat, "added to the docker group (root-equivalent for every job)") {
+		t.Fatalf("up on an Ubuntu host must warn about the docker group before applying:\n%s", errOut)
+	}
 	workflowBytes, err := os.ReadFile(workflowPath)
 	if err != nil {
 		t.Fatal(err)
@@ -145,5 +156,41 @@ func TestUpCompletionHumanJSONAndWorkflowFileUnchanged(t *testing.T) {
 	}
 	if payload["runner_installed"] != true || payload["redactions_applied"] != true || payload["github_runner_id"].(float64) != 123 {
 		t.Fatalf("unexpected json payload: %#v", payload)
+	}
+}
+
+// Re-running BYO `up --yes` on saved state without --replace must refuse
+// before bootstrap, not after the slow install and re-registration.
+func TestUpExistingStateRefusesBeforeBootstrapWithoutReplace(t *testing.T) {
+	stateDir := t.TempDir()
+	if _, errOut, err := executeWithStateDir(t, stateDir, "up", "--repo", "owner/repo", "--host", "alice@example.com", "--yes", "--no-color"); err != nil {
+		t.Fatalf("first up returned error: %v\nstderr=%s", err, errOut)
+	}
+	run := func(args ...string) (*fakeRemoteExecutor, *fakePermittedGitHubService, string, error) {
+		remoteExec := newFakeRemoteExecutor()
+		service := newFakePermittedGitHubService()
+		var out, errOut bytes.Buffer
+		cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, StateBaseDir: stateDir, GitHub: service, RemoteExecutor: remoteExec, Sleep: noSleep})
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		return remoteExec, service, out.String() + errOut.String(), err
+	}
+	remoteExec, service, combined, err := run("up", "--repo", "owner/repo", "--host", "alice@example.com", "--yes", "--no-color")
+	if err == nil || ExitCode(err) != ExitInputRequired {
+		t.Fatalf("expected input_required without --replace, err=%v\n%s", err, combined)
+	}
+	if !strings.Contains(combined, "--replace") {
+		t.Fatalf("refusal must mention --replace:\n%s", combined)
+	}
+	for _, command := range remoteExec.runs {
+		if command.ID == "fix_dependencies" || command.ID == "configure_runner" {
+			t.Fatalf("bootstrap ran before the replace check: %s", command.ID)
+		}
+	}
+	if service.tokenCalls != 0 {
+		t.Fatalf("registration token created before the replace check: %d", service.tokenCalls)
+	}
+	if _, _, combined, err := run("up", "--repo", "owner/repo", "--host", "alice@example.com", "--yes", "--replace", "--no-color"); err != nil {
+		t.Fatalf("up --replace returned error: %v\n%s", err, combined)
 	}
 }

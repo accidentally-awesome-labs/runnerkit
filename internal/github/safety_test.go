@@ -12,8 +12,8 @@ func TestPublicRepoRiskBodyMatchesUISpec(t *testing.T) {
 	}
 }
 
-func TestPublicRepoRiskNextActionRecommendsEphemeralCloud(t *testing.T) {
-	want := "Use `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner` for stronger isolation, or use GitHub-hosted runners."
+func TestPublicRepoRiskNextActionRecommendsGitHubHosted(t *testing.T) {
+	want := "Use GitHub-hosted runners for public, fork-based, or untrusted code (free and unlimited for public repositories)."
 	if PublicRepoRiskNextAction != want {
 		t.Fatalf("PublicRepoRiskNextAction = %q, want %q", PublicRepoRiskNextAction, want)
 	}
@@ -26,10 +26,13 @@ func TestDangerousPersistentOverrideCopyExistsAndMatchesUISpec(t *testing.T) {
 	}
 }
 
-func TestEvaluateSafetyPublicWarningsIncludeEphemeralCloudCommand(t *testing.T) {
+func TestEvaluateSafetyPublicWarningsRecommendGitHubHostedNotEphemeralCloud(t *testing.T) {
 	decision := EvaluateSafety(Repo{FullName: "owner/name", Private: false}, SafetyOptions{})
 	combined := strings.Join(decision.Warnings, " | ")
-	if !strings.Contains(combined, "runnerkit up --repo owner/name --mode ephemeral --cloud hetzner") {
-		t.Fatalf("expected ephemeral cloud command in warnings: %q", combined)
+	if !strings.Contains(combined, "GitHub-hosted runners") {
+		t.Fatalf("expected GitHub-hosted recommendation in warnings: %q", combined)
+	}
+	if strings.Contains(combined, "--mode ephemeral --cloud") {
+		t.Fatalf("warnings must not recommend ephemeral cloud (disabled in v1.3.4): %q", combined)
 	}
 }

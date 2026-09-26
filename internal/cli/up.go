@@ -52,6 +52,7 @@ type upOptions struct {
 	mode                  string
 	ephemeralTTL          time.Duration
 	extraPackages         string
+	experimental          bool // --experimental: required for --cloud and BYO --mode ephemeral (v1.3.4)
 	registerLifecycleOnly bool // true for `runnerkit register` (SEED-002 foundation gate)
 }
 
@@ -66,10 +67,16 @@ type GitHubService interface {
 }
 
 func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Command {
-	opts := &upOptions{sshPort: 22, cloudRegion: provider.HetznerDefaultRegion, cloudProfile: provider.HetznerDefaultServerType, sshAllowedCIDR: provider.HetznerDefaultSSHAllowedCIDR}
+	opts := &upOptions{sshPort: 22, cloudProfile: provider.HetznerDefaultServerType, sshAllowedCIDR: provider.HetznerDefaultSSHAllowedCIDR}
 	cmd := &cobra.Command{Use: "up"}
 	cmd.Short = "Set up a BYO GitHub Actions runner"
 	cmd.Long = "Connect a BYO Linux host, preflight it over SSH, bootstrap a non-root persistent runner service, and print RunnerKit label guidance."
+	// The --experimental gates run offline in PreRunE, before repository
+	// resolution or the first GitHub call, so a refused cloud/ephemeral
+	// request never touches GitHub, SSH, or the provider.
+	cmd.PreRunE = func(_ *cobra.Command, _ []string) error {
+		return enforceExperimentalGates(newRenderer(deps, *jsonOutput, *noColor), opts)
+	}
 	cmd.RunE = func(_ *cobra.Command, _ []string) error {
 		return runUp(deps, *jsonOutput, *noColor, opts)
 	}
@@ -84,12 +91,13 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().IntVar(&opts.sshPort, "ssh-port", 22, "SSH port for the target host")
 	cmd.Flags().StringVar(&opts.sshKey, "ssh-key", "", "SSH private key path reference for the target host")
 	cmd.Flags().BoolVar(&opts.allowUnknownLinux, "allow-unknown-linux", false, "try best-effort install on unverified Linux distributions")
-	cmd.Flags().StringVar(&opts.cloud, "cloud", "", "recommended cloud provider; only hetzner is supported in Phase 4")
-	cmd.Flags().StringVar(&opts.cloudRegion, "cloud-region", provider.HetznerDefaultRegion, "provider region/location for cloud runner")
+	cmd.Flags().StringVar(&opts.cloud, "cloud", "", "experimental cloud provider (billed by the provider; requires --experimental and --cloud-region); only hetzner is supported")
+	cmd.Flags().StringVar(&opts.cloudRegion, "cloud-region", "", "provider region/location for cloud runner (required with --cloud; no default)")
 	cmd.Flags().StringVar(&opts.cloudProfile, "cloud-profile", provider.HetznerDefaultServerType, "provider server profile for cloud runner")
 	cmd.Flags().StringVar(&opts.sshAllowedCIDR, "ssh-allowed-cidr", provider.HetznerDefaultSSHAllowedCIDR, "SSH ingress CIDR for cloud runner")
-	cmd.Flags().StringVar(&opts.mode, "mode", "", "runner mode: persistent or ephemeral")
+	cmd.Flags().StringVar(&opts.mode, "mode", "", modeFlagUsage)
 	cmd.Flags().DurationVar(&opts.ephemeralTTL, "ephemeral-ttl", runmode.DefaultEphemeralTTL, "TTL safeguard for ephemeral runners")
+	cmd.Flags().BoolVar(&opts.experimental, "experimental", false, experimentalFlagUsage)
 	cmd.Flags().StringVar(&opts.extraPackages, "extra-packages", "", "comma-separated OS packages to pre-install on the runner host (e.g. libsecret-1-dev,dbus-x11)")
 	cmd.Flags().BoolVar(&opts.allowEphemeralBYORisk, "allow-ephemeral-byo-risk", false, "acknowledge that BYO ephemeral mode is not a clean VM for risky repositories")
 
@@ -116,6 +124,16 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err != nil {
 		return err
 	}
+	// `register` is BYO-only, but the interactive setup prompt in
+	// resolveModeDecision can still pick Cloud.
+	if opts.registerLifecycleOnly && strings.TrimSpace(opts.cloud) != "" {
+		return refuseRegisterCloud(renderer)
+	}
+	// Re-check the --experimental gates: the interactive prompts in
+	// resolveModeDecision may have chosen cloud or ephemeral mode.
+	if err := enforceExperimentalGates(renderer, opts); err != nil {
+		return err
+	}
 	decision := gh.EvaluateSafety(repo, gh.SafetyOptions{AllowPublicRepoRisk: opts.allowPublicRepoRisk})
 	if err := enforceModeSafetyDecision(ctx, deps, renderer, repo, decision, &modeDecision, opts, jsonOutput); err != nil {
 		return err
@@ -123,6 +141,9 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 
 	setupPath, err := resolveSetupPath(ctx, deps, renderer, repo, opts, jsonOutput)
 	if err != nil {
+		return err
+	}
+	if err := enforceExperimentalGates(renderer, opts); err != nil {
 		return err
 	}
 	if setupPath == setupPathCloud {
@@ -139,7 +160,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		message := fmt.Sprintf("RunnerKit can't create a repository runner registration token for %s.", repo.FullName)
 		remediation := status.Remediation
 		if len(remediation) == 0 {
-			remediation = []string{"Create a fine-grained token scoped only to " + repo.FullName + " with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."}
+			remediation = []string{gh.FineGrainedTokenRemediation(repo)}
 		}
 		// Append the stable RKD-AUTH-004 code + See: URL after the
 		// existing remediation copy (D-15). Append (not prepend) so
@@ -160,6 +181,22 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	if err != nil {
 		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
 		return NewExitError(ExitStateIO, err)
+	}
+	// A-05: never let a BYO run replace state that still records live
+	// Hetzner resources; check before host-key probe, preflight, or any
+	// mutation.
+	if err := refuseIfLiveCloudState(renderer, existing, exists, repo.FullName); err != nil {
+		return err
+	}
+	// Ask about replacing saved state before the slow bootstrap and the
+	// re-registration, not after: --yes/--json/non-TTY runs used to finish
+	// the whole install and then exit input_required without saving.
+	if exists && !opts.replace && !opts.dryRun {
+		confirmedReplace, err := confirmStateReplace(ctx, deps, renderer, opts, repo.FullName, jsonOutput)
+		if err != nil {
+			return err
+		}
+		opts.replace = confirmedReplace
 	}
 	hostKey, acceptedAt, err := verifyTargetHostKey(ctx, deps, renderer, opts, jsonOutput, target, existing, exists)
 	if err != nil {
@@ -182,7 +219,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	labelSet := buildModeLabelSet(repo, modeDecision, arch)
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
-		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the Phase 2 BYO persistent runner path."})
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use an Ubuntu x86_64 host."})
 		return NewExitError(ExitSafetyGate, err)
 	}
 	autoDetected := autoDetectExtraPackages(deps, jsonOutput)
@@ -226,7 +263,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 		}
 	}
 
-	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target); err != nil {
+	if err := confirmBootstrapPlan(ctx, deps, renderer, opts, jsonOutput, target, bootstrapPlan); err != nil {
 		return err
 	}
 	if !jsonOutput && !opts.dryRun {
@@ -254,6 +291,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 				return NewExitError(ExitSafetyGate, err)
 			}
 			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
+			remediation = append(remediation, sudoPasswordPromptRemediation(result, deps.Version)...)
 			if cmdID, stderr := lastCommandFailureContext(result, err); stderr != "" {
 				remediation = append(remediation, "Remote stderr ("+cmdID+"): "+renderer.Redactor().String(stderr))
 			}
@@ -272,6 +310,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 				return NewExitError(ExitSafetyGate, err)
 			}
 			remediation := []string{"Review the remote host output, fix the issue, and re-run runnerkit up."}
+			remediation = append(remediation, sudoPasswordPromptRemediation(result, deps.Version)...)
 			if cmdID, stderr := lastCommandFailureContext(result, err); stderr != "" {
 				remediation = append(remediation, "Remote stderr ("+cmdID+"): "+renderer.Redactor().String(stderr))
 			}
@@ -328,14 +367,13 @@ const (
 	cloudUnsupportedCopy             = "Supported Phase 4 cloud value: --cloud hetzner."
 	cloudPrimaryCTA                  = "Provision cloud runner"
 	cloudEmptyStateHeadingExample    = "No RunnerKit-managed cloud runner is saved for `owner/name`."
-	cloudEmptyStateBodyExample       = "Run `runnerkit up --repo owner/name --cloud hetzner` to create one, or pass `--host user@host` to use an existing machine."
 	cloudFutureCleanupExample        = "Future cleanup: runnerkit destroy --repo owner/name"
 	cloudProvisioningPlanTitle       = "Cloud runner provisioning plan"
 	cloudCostCaveatCopy              = "Estimated cost is approximate. Provider pricing varies by region and time; billing stops only after RunnerKit-created billable resources are deleted or verified non-billable."
 	cloudProvisionConfirmationRemedy = "Pass --yes to create billable Hetzner resources after reviewing the cloud provisioning plan, or pass --dry-run to preview only."
 	cloudProvisionPending            = "cloud_provision_pending"
 	cloudReadinessPending            = "cloud_readiness_pending"
-	cloudReadinessFailedMessage      = "Cloud machine is not ready for runner registration yet. Fix the provider or SSH readiness issue, then rerun runnerkit up --repo owner/name --cloud hetzner."
+	cloudReadinessFailedMessage      = "Cloud machine is not ready for runner registration yet. Run runnerkit destroy --repo owner/name (verifies deletion with Hetzner), then re-run runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location>."
 	cloudProviderSuccessExample      = "Provider: Hetzner fsn1 cpx22 ubuntu-24.04"
 	cloudJSONKeyFutureDestroyCommand = "future_destroy_command"
 	cloudJSONKeyEstimatedHourlyCost  = "estimated_hourly_cost"
@@ -361,11 +399,11 @@ const (
 	setupPathBYOLabel      = "Bring Your Own machine (BYO)"
 	setupPathBYODesc       = "Use an existing Linux server you can SSH into."
 	setupPathCloudLabel    = "Cloud (Hetzner)"
-	setupPathCloudDesc     = "Provision a new cloud server. Creates billable resources until `runnerkit destroy` verifies cleanup."
+	setupPathCloudDesc     = "Experimental (requires --experimental and --cloud-region). Provisions a new cloud server billed by Hetzner until `runnerkit destroy` verifies cleanup."
 
 	// Step 2: mode selection (Persistent vs Ephemeral).
 	modePersistentDesc = "Reuses one runner across jobs. Lowest friction for trusted private repos."
-	modeEphemeralDesc  = "One job per runner registration. Deregisters automatically after each job."
+	modeEphemeralDesc  = "Experimental; not isolation (requires --experimental). One job per runner registration, then deregisters."
 
 	// Internal choice values for the interactive Select prompts.
 	setupChoiceBYO   = "byo"
@@ -471,6 +509,7 @@ func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, d
 	switch decision.SafetyProfile {
 	case runmode.ProfileEphemeralBYO:
 		lines = append(lines,
+			ui.WarningLine(modeBYOEphemeralExperimental),
 			ui.WarningLine(modeBYOEphemeralCaveat),
 			ui.WarningLine(modeNotFleetWarning),
 			ui.Bullet(modeTTLSafeguardCopy),
@@ -494,8 +533,7 @@ func renderModeTradeoffs(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, d
 		lines = append(lines, ui.Bullet(modeEphemeralModeNote))
 	}
 	// Surface any decision-level warnings appended by the safety
-	// enforcement step (e.g. public/fork ephemeral cloud recommends the
-	// safer ephemeral cloud command). De-duplicate against the canonical
+	// enforcement step. De-duplicate against the canonical
 	// per-profile copy already rendered above so the same sentence does
 	// not appear twice.
 	rendered := map[string]bool{}
@@ -641,7 +679,7 @@ func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Rende
 	if !jsonOutput && !opts.nonInteractive && !opts.yes && deps.TTY.StdinTTY && deps.Prompts != nil {
 		choice, err := deps.Prompts.Select(ctx, ui.Prompt{Message: "Choose setup path for `" + repo.FullName + "`:"}, []ui.Option{
 			{Value: string(setupPathBYO), Label: "Use existing SSH host (BYO)"},
-			{Value: string(setupPathCloud), Label: "Provision recommended cloud runner (Hetzner)"},
+			{Value: string(setupPathCloud), Label: "Provision experimental cloud runner (Hetzner; billed; requires --experimental)"},
 		})
 		if err != nil {
 			return "", err
@@ -652,11 +690,26 @@ func resolveSetupPath(ctx context.Context, deps Dependencies, renderer *ui.Rende
 		}
 		return setupPathBYO, nil
 	}
-	_ = renderer.Error("input_required", cloudNoIntentCopy, []string{"Pass --host user@host for BYO setup or pass --cloud hetzner --yes to provision the recommended cloud runner."})
+	_ = renderer.Error("input_required", cloudNoIntentCopy, []string{"Pass --host user@host for BYO setup, or pass --experimental --cloud hetzner --cloud-region <location> --yes to provision an experimental cloud runner billed by Hetzner."})
 	return "", NewExitError(ExitInputRequired, errors.New(cloudNoIntentCopy))
 }
 
 func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, modeDecision runmode.Decision, opts *upOptions, jsonOutput bool) error {
+	// A-08: ephemeral cloud is disabled; refuse before any provider call.
+	if modeDecision.SafetyProfile == runmode.ProfileEphemeralCloud || modeDecision.Mode == runmode.ModeEphemeral {
+		return refuseEphemeralCloud(renderer)
+	}
+	// A-05: refuse to provision over saved state that still records live
+	// Hetzner resources, before any GitHub or provider call.
+	store := rkstate.NewStore(deps.StateBaseDir)
+	existing, exists, err := store.GetRepository(repo.FullName)
+	if err != nil {
+		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
+		return NewExitError(ExitStateIO, err)
+	}
+	if err := refuseIfLiveCloudState(renderer, existing, exists, repo.FullName); err != nil {
+		return err
+	}
 	cloudProvider, ok := deps.Providers.Get(provider.HetznerProvider)
 	if !ok || cloudProvider == nil {
 		_ = renderer.Error("invalid_cloud_provider", "RunnerKit does not support cloud provider hetzner in Phase 4.", []string{cloudUnsupportedCopy})
@@ -692,10 +745,11 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	registerKnownCloudProviderSecrets(renderer)
 	validation, err := cloudProvider.Validate(ctx, input)
 	if err != nil || !validation.OK {
-		message := "Hetzner credentials are missing. Export HCLOUD_TOKEN or HETZNER_CLOUD_TOKEN, then rerun runnerkit up --repo " + repo.FullName + " --cloud hetzner."
+		rerun := "runnerkit up --repo " + repo.FullName + " --experimental --cloud hetzner --cloud-region " + defaultString(opts.cloudRegion, "<location>")
+		message := "Hetzner credentials are missing. Export HCLOUD_TOKEN or HETZNER_CLOUD_TOKEN, then rerun " + rerun + "."
 		remediation := validation.Remediation
 		if len(remediation) == 0 {
-			remediation = []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run runnerkit up --repo " + repo.FullName + " --cloud hetzner"}
+			remediation = []string{"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>", "Re-run " + rerun}
 		}
 		// Append the stable RKD-PROV-004 code + See: URL after the
 		// existing remediation copy (D-15). Append (not prepend) so
@@ -709,6 +763,10 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	plan, err := cloudProvider.Plan(ctx, input)
 	if err != nil {
+		var unpriced *provider.UnpricedLocationError
+		if errors.As(err, &unpriced) {
+			return renderCloudLocationUnpriced(renderer, unpriced)
+		}
 		_ = renderer.Error("cloud_plan_failed", "RunnerKit could not build the cloud provisioning plan.", []string{err.Error()})
 		return NewExitError(ExitSafetyGate, err)
 	}
@@ -718,7 +776,6 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 		}
 		return renderCloudProvisionPlan(renderer, jsonOutput, repo, plan, modeDecision, opts.ephemeralTTL)
 	}
-	store := rkstate.NewStore(deps.StateBaseDir)
 	replaceExisting, err := confirmCloudStateReplaceBeforeProvision(ctx, deps, renderer, opts, jsonOutput, store, repo.FullName)
 	if err != nil {
 		return err
@@ -765,7 +822,7 @@ func runCloudUp(ctx context.Context, deps Dependencies, renderer *ui.Renderer, r
 	}
 	runnerPkg, err := bootstrap.PackageFor("linux", arch)
 	if err != nil {
-		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use linux/x64 or linux/arm64 for the recommended cloud runner path."})
+		_ = renderer.Error("unsupported_runner_package", err.Error(), []string{"Use an x86_64 (Ubuntu) server type for the cloud runner path."})
 		return NewExitError(ExitSafetyGate, err)
 	}
 	bootstrapOpts := buildBootstrapOptions(repo, labelSet, runnerPkg, report, extraPkgs, true)
@@ -910,8 +967,10 @@ func resolveCloudPublicKey(opts *upOptions) string {
 }
 
 func renderCloudReadinessFailure(renderer *ui.Renderer, repo gh.Repo, cause error) error {
-	message := strings.Replace(cloudReadinessFailedMessage, "owner/name", repo.FullName, 1)
-	remediation := []string{"Run runnerkit destroy --repo " + repo.FullName + " if billable Hetzner resources were created and you want to stop billing."}
+	message := strings.ReplaceAll(cloudReadinessFailedMessage, "owner/name", repo.FullName)
+	// The server IDs are already saved; up refuses to run again on live
+	// cloud state (cloud_state_exists), so destroy comes first.
+	remediation := []string{"Run runnerkit destroy --repo " + repo.FullName + " before retrying; the Hetzner server keeps billing until destroy verifies deletion."}
 	if cause != nil {
 		remediation = append([]string{cause.Error()}, remediation...)
 	}
@@ -1104,16 +1163,23 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 		planLabels = ephemeralLabels
 		planSnippet = labels.WorkflowSnippet(ephemeralLabels)
 	}
+	// A-07: every amount shown comes from the provider pricing API. A plan
+	// without a price is refused rather than shown with a guessed figure.
+	if plan.EstimatedHourlyCost == nil || plan.EstimatedMonthlyCost == nil {
+		return renderCloudLocationUnpriced(renderer, &provider.UnpricedLocationError{ServerType: plan.ServerType, Location: plan.Region, Resource: "server"})
+	}
 	if jsonOutput {
 		payload := map[string]any{
-			"ok":               true,
-			"command":          "up",
-			"repo":             repo.FullName,
-			"cloud_plan":       plan,
-			"runner_installed": false,
-			"state_saved":      false,
-			"workflow_snippet": planSnippet,
-			"labels":           planLabels,
+			"ok":                             true,
+			"command":                        "up",
+			"repo":                           repo.FullName,
+			"cloud_plan":                     plan,
+			"runner_installed":               false,
+			"state_saved":                    false,
+			"workflow_snippet":               planSnippet,
+			"labels":                         planLabels,
+			cloudJSONKeyEstimatedHourlyCost:  plan.EstimatedHourlyCost,
+			cloudJSONKeyEstimatedMonthlyCost: plan.EstimatedMonthlyCost,
 		}
 		for k, v := range modeSelectionPayload(modeDecision, ttl) {
 			payload[k] = v
@@ -1127,7 +1193,9 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 		ui.Bullet("Region: " + plan.Region),
 		ui.Bullet("Server type: " + plan.ServerType),
 		ui.Bullet("Image: " + plan.Image),
-		ui.Bullet("Estimated cost: " + plan.EstimatedHourlyCost + ", " + plan.EstimatedMonthlyCost),
+		ui.Bullet("Estimated cost: " + plan.EstimatedHourlyCost.Label() + ", " + plan.EstimatedMonthlyCost.Label()),
+		ui.Bullet("Monthly price breakdown: " + formatCloudCostComponents(plan.EstimatedMonthlyCost)),
+		ui.Bullet(cloudCostSourceLine(plan.EstimatedMonthlyCost)),
 		ui.Bullet("Resources: server, SSH key, firewall, public IPv4/IPv6"),
 		ui.Bullet("Not created: backups, snapshots, volumes, floating IPs"),
 		ui.Bullet("Resource names: " + formatCloudResourceNames(plan.ResourceNames)),
@@ -1144,6 +1212,38 @@ func renderCloudProvisionPlan(renderer *ui.Renderer, jsonOutput bool, repo gh.Re
 	}
 	lines = append(lines, ui.Next("Future cleanup: "+plan.FutureDestroyCommand))
 	return renderer.Step(1, 1, cloudProvisioningPlanTitle, lines...)
+}
+
+// renderCloudLocationUnpriced refuses a cloud plan the provider pricing API
+// cannot price (A-07). It runs before Provision, so nothing is created.
+func renderCloudLocationUnpriced(renderer *ui.Renderer, unpriced *provider.UnpricedLocationError) error {
+	_ = renderer.Error("cloud_location_unpriced", unpriced.Error()+".", []string{
+		"RunnerKit shows only prices reported by the Hetzner API and will not create a server it cannot price.",
+		"Re-run with another --cloud-region (or --cloud-profile) that Hetzner prices for your account.",
+	})
+	return NewExitError(ExitInvalidInput, unpriced)
+}
+
+func formatCloudCostComponents(cost *provider.CostEstimate) string {
+	if cost == nil || len(cost.Components) == 0 {
+		return "not reported"
+	}
+	parts := make([]string, 0, len(cost.Components))
+	for _, component := range cost.Components {
+		parts = append(parts, component.Label())
+	}
+	return strings.Join(parts, "; ")
+}
+
+func cloudCostSourceLine(cost *provider.CostEstimate) string {
+	if cost != nil && cost.Source == provider.CostSourceHetznerAPI {
+		return "Prices " + provider.CostSourceNote(cost.FetchedAt)
+	}
+	source := "unknown"
+	if cost != nil && cost.Source != "" {
+		source = cost.Source
+	}
+	return "Price source: " + source
 }
 
 func formatCloudResourceNames(names map[string]string) string {
@@ -1197,10 +1297,15 @@ func confirmCloudProvisionPlan(ctx context.Context, deps Dependencies, renderer 
 }
 
 func confirmCloudStateReplaceBeforeProvision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, store rkstate.Store, fullName string) (bool, error) {
-	if _, exists, err := store.GetRepository(fullName); err != nil {
+	if existing, exists, err := store.GetRepository(fullName); err != nil {
 		_ = renderer.Error("state_io_failed", "RunnerKit can't read saved runner state.", []string{"Check permissions for " + store.Path() + " and re-run runnerkit up."})
 		return false, NewExitError(ExitStateIO, err)
 	} else if exists {
+		// Neither --replace nor the typed "replace owner/name" phrase may
+		// overwrite state that still records live Hetzner resources.
+		if err := refuseIfLiveCloudState(renderer, existing, exists, fullName); err != nil {
+			return false, err
+		}
 		if opts.replace {
 			return true, nil
 		}
@@ -1394,7 +1499,7 @@ func mergeCloudInventory(existing rkstate.CloudInventory, result provider.Provis
 		cloud.Tags = cloneStringMap(plan.Tags)
 	}
 	if cloud.CostProfile.Provider == "" {
-		cloud.CostProfile = rkstate.CostProfileRef{Provider: plan.Provider, Region: plan.Region, ServerType: plan.ServerType, Image: plan.Image, EstimatedHourlyCost: plan.EstimatedHourlyCost, EstimatedMonthlyCost: plan.EstimatedMonthlyCost, Caveat: plan.CostEstimateCaveat}
+		cloud.CostProfile = rkstate.CostProfileRef{Provider: plan.Provider, Region: plan.Region, ServerType: plan.ServerType, Image: plan.Image, EstimatedHourlyCost: plan.EstimatedHourlyCost.Summary(), EstimatedMonthlyCost: plan.EstimatedMonthlyCost.Summary(), Caveat: plan.CostEstimateCaveat}
 	}
 	cloud.CloudInitVersion = defaultString(cloud.CloudInitVersion, hetzner.CloudInitUserDataVersion)
 	return cloud
@@ -1435,9 +1540,7 @@ func resolveBYOTarget(ctx context.Context, deps Dependencies, renderer *ui.Rende
 			_ = renderer.Error("input_required", message, []string{"Pass --host user@host for BYO setup."})
 			return remote.Target{}, NewExitError(ExitInputRequired, errors.New(message+" Pass --host user@host for BYO setup."))
 		}
-		inputPrompter, ok := deps.Prompts.(interface {
-			Input(context.Context, ui.Prompt) (string, error)
-		})
+		inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 		if !ok {
 			message := "RunnerKit can't continue because SSH host input requires an interactive prompt."
 			_ = renderer.Error("input_required", message, []string{"Pass --host user@host for BYO setup."})
@@ -1541,7 +1644,15 @@ func renderDryRun(renderer *ui.Renderer, jsonOutput bool, repo gh.Repo, source g
 	if err := renderPreflightHuman(renderer, report); err != nil {
 		return err
 	}
-	return renderer.Step(2, 2, "bootstrap-plan", ui.Bullet("Runner name: "+labelSet.RunnerName), ui.Bullet("Target: "+target.Display()), ui.Bullet("Labels: ["+strings.Join(labelSet.Labels, ", ")+"]"), ui.Bullet(labelSet.RunsOnYAML), ui.WarningLine(labelSet.Warning), ui.Bullet("Dry run: no state file was written and no runner was installed."))
+	lines := []ui.Line{ui.Bullet("Runner name: " + labelSet.RunnerName), ui.Bullet("Target: " + target.Display()), ui.Bullet("Labels: [" + strings.Join(labelSet.Labels, ", ") + "]"), ui.Bullet(labelSet.RunsOnYAML), ui.WarningLine(labelSet.Warning)}
+	for _, step := range plan.Steps {
+		lines = append(lines, ui.Bullet("Plan step "+step.ID+": "+step.Name))
+	}
+	if plan.HasStep(workflow.StepSetupRunnerImage) {
+		lines = append(lines, ui.WarningLine(dockerGroupWarning))
+	}
+	lines = append(lines, ui.Bullet("Dry run: no state file was written and no runner was installed."))
+	return renderer.Step(2, 2, "bootstrap-plan", lines...)
 }
 
 // mergeWarnings concatenates safety and mode-selection warnings while
@@ -1614,7 +1725,14 @@ func buildBootstrapOptions(repo gh.Repo, labelSet labels.LabelSet, pkg bootstrap
 	}
 }
 
-func confirmBootstrapPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, target remote.Target) error {
+// dockerGroupWarning is printed before the BYO install confirmation when the
+// plan runs setup_runner_image (SEC-5).
+const dockerGroupWarning = "The runner user will be added to the docker group (root-equivalent for every job); see docs/security-posture.md SEC-5."
+
+func confirmBootstrapPlan(ctx context.Context, deps Dependencies, renderer *ui.Renderer, opts *upOptions, jsonOutput bool, target remote.Target, plan workflow.Plan) error {
+	if !jsonOutput && plan.HasStep(workflow.StepSetupRunnerImage) {
+		_ = renderer.Warning(dockerGroupWarning, []string{"Setup also adds third-party apt sources (Docker, NodeSource, Microsoft, Google Chrome, Mozilla PPA, GitHub CLI) as root."}, "")
+	}
 	if opts.yes {
 		return nil
 	}
@@ -1763,8 +1881,8 @@ func buildBYORepositoryState(deps Dependencies, repo gh.Repo, source gh.AuthSour
 			WorkDir:            opts.WorkDir,
 			ServiceName:        runnerServiceName(labelSet.RunnerName),
 		},
-		Provider:         rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
-		Cleanup:          rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
+		Provider:          rkstate.ProviderRef{Kind: "byo", IDs: map[string]string{}},
+		Cleanup:           rkstate.CleanupMetadata{GitHubRunnerID: onlineRunner.ID, ManagedPaths: []string{opts.InstallPath, "/var/lib/runnerkit"}, ProviderResourceIDs: []string{}},
 		Safety:            safety,
 		ExtraPackages:     opts.ExtraPackages,
 		ImageSetupVersion: opts.ImageSetupVersion,
@@ -1993,13 +2111,13 @@ func ephemeralCompletionJSON(repoFullName string, modeDecision runmode.Decision,
 //
 //   - ProfilePersistentRisky without --allow-public-repo-risk: block with
 //     the public_repo_risk error code, render the exact UI-SPEC body,
-//     ephemeral cloud recommendation, and dangerous-override copy.
+//     GitHub-hosted recommendation, and dangerous-override copy.
 //   - ProfilePersistentRisky with --allow-public-repo-risk: keep the
 //     typed acknowledgement flow but use the Phase 5 prompt copy and
 //     surface DangerousPersistentOverrideCopy as part of the warnings.
-//   - ProfileEphemeralCloud: never block on public/fork — ephemeral cloud
-//     is the recommended path. Just append the safer-recommendation
-//     warnings to the decision so renderModeTradeoffs surfaces them.
+//   - ProfileEphemeralCloud: disabled in v1.3.4 (the VM is never
+//     destroyed after its job and keeps billing). enforceExperimentalGates
+//     refuses it earlier; this case is a defensive backstop.
 //   - ProfileEphemeralBYO on public/fork: require either typed input
 //     `use ephemeral byo for owner/name` or non-interactive
 //     `--allow-ephemeral-byo-risk --yes`; otherwise block with the
@@ -2007,19 +2125,10 @@ func ephemeralCompletionJSON(repoFullName string, modeDecision runmode.Decision,
 func enforceModeSafetyDecision(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo, decision gh.SafetyDecision, modeDecision *runmode.Decision, opts *upOptions, jsonOutput bool) error {
 	switch modeDecision.SafetyProfile {
 	case runmode.ProfileEphemeralCloud:
-		// Public/fork ephemeral cloud is the recommended safer path.
-		// Append the recommendation strings so renderModeTradeoffs and
-		// downstream warnings make the safer choice visible. The exact
-		// `runnerkit up --repo owner/name --mode ephemeral --cloud hetzner`
-		// command stays in the warning list so docs greps and human
-		// output assertions both succeed.
-		if !repo.Private || repo.Fork {
-			modeDecision.Warnings = append(modeDecision.Warnings,
-				runmode.WarningPublicForkPersistent,
-				"Use ephemeral cloud runner: runnerkit up --repo "+repo.FullName+" --mode ephemeral --cloud hetzner",
-			)
-		}
-		return nil
+		// A-08: ephemeral cloud is disabled, not a safer path for
+		// untrusted code; untrusted or public code belongs on
+		// GitHub-hosted runners.
+		return refuseEphemeralCloud(renderer)
 	case runmode.ProfileEphemeralBYO:
 		if !repo.Private || repo.Fork {
 			return enforceEphemeralBYOAcknowledgement(ctx, deps, renderer, repo, opts, jsonOutput)
@@ -2076,9 +2185,7 @@ func blockPersistentRiskWithUISpecCopy(renderer *ui.Renderer, decision gh.Safety
 }
 
 func acknowledgePersistentPublicRisk(ctx context.Context, deps Dependencies, renderer *ui.Renderer, repo gh.Repo) error {
-	inputPrompter, ok := deps.Prompts.(interface {
-		Input(context.Context, ui.Prompt) (string, error)
-	})
+	inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 	if !ok {
 		message := "RunnerKit can't continue because public repository risk acknowledgement requires typed confirmation."
 		_ = renderer.Error("input_required", message, []string{"Type allow persistent public repo risk for " + repo.FullName + " in an interactive terminal or pass --yes only after reviewing the risk.", gh.DangerousPersistentOverrideCopy})
@@ -2104,9 +2211,7 @@ func enforceEphemeralBYOAcknowledgement(ctx context.Context, deps Dependencies, 
 	}
 	// Interactive: require typed input "use ephemeral byo for owner/name".
 	if deps.TTY.StdinTTY && deps.Prompts != nil && !jsonOutput {
-		inputPrompter, ok := deps.Prompts.(interface {
-			Input(context.Context, ui.Prompt) (string, error)
-		})
+		inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 		if ok {
 			want := "use ephemeral byo for " + repo.FullName
 			got, err := inputPrompter.Input(ctx, ui.Prompt{Message: want, Help: runmode.WarningEphemeralBYONotCleanVM})
@@ -2127,7 +2232,7 @@ func enforceEphemeralBYOAcknowledgement(ctx context.Context, deps Dependencies, 
 	// that index remediation[0] keep working.
 	message := runmode.WarningEphemeralBYONotCleanVM
 	remediation := []string{
-		"Use runnerkit up --repo " + repo.FullName + " --mode ephemeral --cloud hetzner for stronger isolation, or pass --allow-ephemeral-byo-risk --yes only after reviewing the risk.",
+		"Use GitHub-hosted runners for public, fork-based, or untrusted code, or pass --allow-ephemeral-byo-risk --yes only after reviewing the risk (BYO ephemeral is experimental and not isolation).",
 		errcodes.FormatLine(errcodes.AuthEphemeralBYOPublicForkAck),
 	}
 	_ = renderer.Error("ephemeral_byo_risk", message, remediation)
@@ -2178,9 +2283,7 @@ func confirmStateReplace(ctx context.Context, deps Dependencies, renderer *ui.Re
 	if jsonOutput || opts.yes || opts.nonInteractive || !deps.TTY.StdinTTY {
 		return false, replacementRequired(renderer, fullName)
 	}
-	inputPrompter, ok := deps.Prompts.(interface {
-		Input(context.Context, ui.Prompt) (string, error)
-	})
+	inputPrompter, ok := deps.Prompts.(ui.InputPrompter)
 	if !ok {
 		return false, replacementRequired(renderer, fullName)
 	}
@@ -2304,25 +2407,138 @@ func runnerServiceName(runnerName string) string {
 	return "actions.runner." + runnerName + ".service"
 }
 
-// lastCommandFailureContext extracts the failing command's ID and
-// stderr from a bootstrap.Result + the err returned by Apply /
-// ApplyEphemeral so callers can surface remote diagnostics in
+// lastCommandFailureContext extracts the failing command's ID and a
+// diagnostic excerpt from a bootstrap.Result + the err returned by
+// Apply / ApplyEphemeral so callers can surface remote diagnostics in
 // bootstrap_failed messages. The CommandID comes from
-// remote.RemoteError when present (the typical exit-code path);
-// stderr comes from the trailing entry of result.Commands. Returns
-// empty strings if no useful context is available.
+// remote.RemoteError, which Apply / ApplyEphemeral return for every
+// non-service step failure (P1-15, v1.3.4: the raw *exec.ExitError
+// used to escape unwrapped and the step printed as "(unknown)").
+//
+// The excerpt is built from the trailing entry of result.Commands:
+//   - stderr without ssh known-hosts chatter or the RKFAIL trap line,
+//     bounded to its last bootstrapStderrTailLines lines;
+//   - "Failed command (exit N): <cmd>" when bootstrap.FailTrapLine
+//     fired;
+//   - the last bootstrapStdoutTailLines lines of stdout, which is where
+//     apt-get and most installers report what went wrong;
+//   - when a RemoteError step produced no output at all, its exit code
+//     (or the executor error), so the step is still named.
+//
+// The excerpt is empty only when there is nothing useful to show.
 func lastCommandFailureContext(result bootstrap.Result, err error) (string, string) {
-	var stderr string
+	var last remote.Result
 	if len(result.Commands) > 0 {
-		stderr = strings.TrimSpace(result.Commands[len(result.Commands)-1].Stderr)
+		last = result.Commands[len(result.Commands)-1]
 	}
 	commandID := ""
+	exitCode := 0
 	var remoteErr remote.RemoteError
-	if errors.As(err, &remoteErr) {
+	haveRemoteErr := errors.As(err, &remoteErr)
+	if haveRemoteErr {
 		commandID = remoteErr.CommandID
+		exitCode = remoteErr.ExitCode
 	}
 	if commandID == "" {
-		commandID = "unknown"
+		// Not produced by Apply / ApplyEphemeral today; still name the
+		// position instead of printing "(unknown)".
+		commandID = fmt.Sprintf("bootstrap step %d", len(result.Commands))
 	}
-	return commandID, stderr
+
+	var details []string
+	if failed := bootstrap.FailedCommand(last.Stderr); failed != "" {
+		if exitCode != 0 {
+			details = append(details, fmt.Sprintf("Failed command (exit %d): %s", exitCode, failed))
+		} else {
+			details = append(details, "Failed command: "+failed)
+		}
+	}
+	if stdout := bootstrapTailLines(last.Stdout, bootstrapStdoutTailLines); stdout != "" {
+		details = append(details, "Last stdout lines:\n"+stdout)
+	}
+	stderr := bootstrapTailLines(cleanBootstrapStderr(last.Stderr), bootstrapStderrTailLines)
+	if len(details) == 0 && stderr == "" && haveRemoteErr {
+		// A step that failed without any output (killed by a timeout,
+		// ssh transport error) must still be named: callers drop the
+		// whole line when the excerpt is empty.
+		if remoteErr.Err != nil && exitCode == -1 {
+			details = append(details, "Executor error: "+remoteErr.Err.Error())
+		} else {
+			details = append(details, fmt.Sprintf("Exit code: %d", exitCode))
+		}
+	}
+	if len(details) == 0 {
+		return commandID, stderr
+	}
+	if stderr == "" {
+		// Callers label the excerpt "Remote stderr (<step>):".
+		stderr = "(empty)"
+	}
+	return commandID, stderr + "\n" + strings.Join(details, "\n")
+}
+
+// sudoPasswordPromptRemediation returns extra bootstrap_failed
+// remediation when the failed step hit a sudo password prompt. On a
+// password-sudo BYO host that means the scoped
+// /etc/sudoers.d/runnerkit-installer is missing or was written by an
+// older install.sh: v1.3.3's lacked mkdir, tee, gpg, usermod and other
+// commands setup_runner_image runs, and preflight's `sudo -n install`
+// probe passes there. Seen in the v1.3.4 local BYO e2e run, where the
+// generic "fix the issue" line gave no way forward.
+func sudoPasswordPromptRemediation(result bootstrap.Result, cliVersion string) []string {
+	if len(result.Commands) == 0 {
+		return nil
+	}
+	last := result.Commands[len(result.Commands)-1]
+	output := strings.ToLower(last.Stderr + "\n" + last.Stdout)
+	for _, marker := range []string{"password is required", "a terminal is required", "no tty present"} {
+		if strings.Contains(output, marker) {
+			return []string{
+				"Remote sudo asked for a password: /etc/sudoers.d/runnerkit-installer on this host is missing or was written by an older install.sh (v1.3.3 and earlier lack commands bootstrap now runs, such as mkdir, tee, gpg and usermod).",
+				"SSH to the runner host, re-run the current install.sh once (interactive sudo), then re-run runnerkit up (add --replace if RunnerKit already has saved state for this repository):",
+				HostInstallOneLiner(cliVersion),
+			}
+		}
+	}
+	return nil
+}
+
+const (
+	bootstrapStderrTailLines = 30
+	bootstrapStdoutTailLines = 15
+)
+
+// cleanBootstrapStderr drops ssh known-hosts chatter (older hosts or
+// executors without LogLevel=ERROR) and the RKFAIL trap output (the
+// marker line plus, for a multi-line command such as a heredoc, the
+// rest of its text), which lastCommandFailureContext renders
+// separately.
+func cleanBootstrapStderr(stderr string) string {
+	stderr, _ = bootstrap.SplitFailTrap(stderr)
+	var kept []string
+	for _, line := range strings.Split(stderr, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, bootstrap.FailTrapMarker) {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Warning: Permanently added") && strings.Contains(trimmed, "known hosts") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// bootstrapTailLines returns the last n lines of s after trimming surrounding
+// whitespace, or "" when s is blank.
+func bootstrapTailLines(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }

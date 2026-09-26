@@ -40,7 +40,9 @@ runnerkit down --repo owner/repo --yes
 runnerkit destroy --repo owner/repo --yes
 ```
 
-After cleanup completes, the warning clears.
+Use `down` only for BYO runners; it refuses RunnerKit-managed Hetzner state
+(`wrong_cleanup_command`) because the server would keep billing. Use
+`destroy` for cloud runners. After cleanup completes, the warning clears.
 
 ***
 
@@ -108,18 +110,41 @@ file in use by the runner service, or the SSH user lost sudo capability.
 runnerkit down --repo owner/repo --yes
 ```
 
-If the second attempt fails identically, remove the managed paths by
-hand and re-run `down` to clear the local state:
+If the second attempt fails identically, remove **this runner's** paths
+by hand and re-run `down` to clear the local state. Look up the exact install
+path and work directory first; do not use wildcards, because
+other repositories on the same host have their own
+`/opt/actions-runner/runnerkit-*` directories and share
+`/var/lib/runnerkit` and `/opt/actions-runner/runnerkit-shared-bin`:
+
+```bash
+runnerkit state show --repo owner/repo --json   # install_path and work_dir
+```
+
+Then, with those values (example values shown):
 
 ```bash
 ssh user@host '
-  sudo systemctl stop runnerkit-runner || true
-  sudo rm -rf /opt/actions-runner/runnerkit-* /var/lib/runnerkit
-  sudo rm -f /etc/systemd/system/runnerkit-runner.service
+  cd /opt/actions-runner/runnerkit-owner-repo-local && sudo ./svc.sh stop || true
+  cd /opt/actions-runner/runnerkit-owner-repo-local && sudo ./svc.sh uninstall || true
+  sudo rm -rf /opt/actions-runner/runnerkit-owner-repo-local /var/lib/runnerkit/work/runnerkit-owner-repo-local
   sudo systemctl daemon-reload
 '
 runnerkit down --repo owner/repo --yes
 ```
+
+If the GitHub registration is still listed, remove it in the repository's
+**Settings → Actions → Runners**.
+
+> **Caution:** `sudo ./svc.sh …` above, and `runnerkit down`, `up`,
+> `recover` and `destroy`, run `svc.sh` from the runner-owned install
+> directory as root. On a host that ran untrusted workflows, a job may have
+> replaced it. Compare `svc.sh` and `bin/actions.runner.service.template`
+> against the release tarball first, or remove the unit without `svc.sh`
+> (`sudo systemctl disable --now 'actions.runner.*'`, then
+> `sudo rm /etc/systemd/system/actions.runner.*.service` and
+> `sudo systemctl daemon-reload`). See
+> [security-posture.md](../security-posture.md#if-you-already-installed-runnerkit).
 
 ***
 
@@ -235,13 +260,19 @@ cp $HOME/.local/state/runnerkit/state.json.backup-v1-...Z \
    $HOME/.local/state/runnerkit/state.json
 ```
 
-Otherwise, delete the corrupted file and re-run `runnerkit up` (you will
-lose local metadata but the GitHub-side runner can be reattached):
+Otherwise, move the corrupted file aside rather than deleting it.
+`state.json` holds **every** repository RunnerKit manages on this
+workstation, including Hetzner server IDs that `runnerkit destroy` needs to
+stop billing, so keep a copy you can recover IDs from:
 
 ```bash
-rm $HOME/.local/state/runnerkit/state.json
-runnerkit up --repo owner/repo --host user@host
+mv $HOME/.local/state/runnerkit/state.json $HOME/.local/state/runnerkit/state.json.corrupt
 ```
+
+Before running `runnerkit up` again, check the Hetzner Cloud Console for
+servers labelled `runnerkit=true` and the repository's
+**Settings → Actions → Runners** for registrations that no longer have local
+state, and remove them by hand.
 
 ***
 
@@ -336,13 +367,11 @@ state:
 runnerkit upgrade
 ```
 
-If you intentionally want the older binary's behavior, delete the state
-and re-run setup, accepting the loss of local metadata:
-
-```bash
-rm $HOME/.local/state/runnerkit/state.json
-runnerkit up --repo owner/repo --host user@host
-```
+Do not delete `state.json` to make an older binary work: it holds every
+managed repository, including Hetzner server IDs that `runnerkit destroy`
+needs to stop billing. If you must use the older binary, restore the
+matching side-by-side backup (`state.json.backup-v<N>-<timestamp>`) instead,
+as described in [upgrade.md](../upgrade.md#3-state-migrations).
 
 ***
 

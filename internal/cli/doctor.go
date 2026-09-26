@@ -39,8 +39,10 @@ func newDoctorCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra
 	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "show pass findings")
 	cmd.Flags().BoolVar(&opts.deep, "deep", false, "collect extra host evidence (e.g. journal OOM hints) even when the runner looks healthy")
 	cmd.Flags().BoolVar(&opts.withLogSnippets, "with-log-snippets", false, "with heuristics, include short matching log lines (use when sharing diagnostics)")
-	cmd.Flags().BoolVar(&opts.fix, "fix", false, "attempt safe auto-remediation for supported findings")
-	cmd.Flags().BoolVar(&opts.fixYes, "yes", false, "with --fix, skip confirmation prompts (use only in trusted automation)")
+	// --fix only ever ran upgrade-runner, which is disabled (A-06a); the
+	// flags stay so existing scripts get the explanation.
+	cmd.Flags().BoolVar(&opts.fix, "fix", false, "disabled in this release (known issue); prints the manual steps")
+	cmd.Flags().BoolVar(&opts.fixYes, "yes", false, "ignored; doctor --fix is disabled")
 	cmd.Flags().StringSliceVar(&opts.ignore, "ignore", nil, "persistently ignore a doctor finding id (repeatable flag)")
 	return cmd
 }
@@ -72,6 +74,9 @@ func doctorJSONError(renderer *ui.Renderer, jsonOutput bool, st stage.Stage, cod
 func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOptions) error {
 	defer maybeShowUpdateNotice(deps, jsonOutput)
 	renderer := newRenderer(deps, jsonOutput, noColor)
+	if opts.fix {
+		return refuseDoctorFix(renderer, jsonOutput, opts.repo)
+	}
 	ctx := context.Background()
 	repo, err := resolveReadOnlyRepo(ctx, deps, renderer, opts.repo, "Pass --repo owner/name or run runnerkit doctor from a GitHub repository.")
 	if err != nil {
@@ -101,11 +106,6 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	appendSharedHostDoctorFinding(&report, store, repoState)
 	st := stage.InferFromDoctor(status.Observed, report.Health, checks)
 
-	if opts.fix && jsonOutput {
-		_ = doctorJSONError(renderer, jsonOutput, st, "doctor_fix_json", "doctor --fix cannot be combined with --json (re-run without --json to apply fixes).", nil)
-		return NewExitError(ExitInvalidInput, errors.New("doctor fix with json"))
-	}
-
 	cfg, err := LoadUserConfig(deps.StateBaseDir)
 	if err != nil {
 		_ = doctorJSONError(renderer, jsonOutput, st, "user_config_io", "RunnerKit can't read config.json.", []string{err.Error()})
@@ -121,16 +121,6 @@ func runDoctor(deps Dependencies, jsonOutput bool, noColor bool, opts *doctorOpt
 	ignoreMap := doctorIgnoreSet(cfg.DoctorIgnoreFindingIDs)
 	display := report
 	display.Findings = filterDoctorFindings(report.Findings, ignoreMap)
-
-	if opts.fix {
-		if !opts.fixYes && deps.Prompts == nil {
-			_ = doctorJSONError(renderer, jsonOutput, st, "doctor_fix_requires_prompts", "doctor --fix needs an interactive terminal or pass --yes.", nil)
-			return NewExitError(ExitInputRequired, errors.New("doctor fix prompts"))
-		}
-		if err := applyDoctorFixes(ctx, deps, renderer, repo, report, ignoreMap, opts.fixYes, noColor); err != nil {
-			return NewExitError(ExitSafetyGate, err)
-		}
-	}
 
 	if jsonOutput {
 		// Nil slices in map[string]any marshal as JSON null; tooling expects arrays.
@@ -168,7 +158,7 @@ func collectDoctorHostHints(ctx context.Context, deps Dependencies, repoState rk
 func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rkstate.RepositoryState) ops.DeepChecks {
 	target, err := targetFromState(repoState)
 	if err != nil {
-		return ops.DeepChecks{InstallPathError: err.Error(), WorkDirError: err.Error()}
+		return ops.DeepChecks{InstallPathError: err.Error(), WorkDirError: err.Error(), InstallPathProbeErr: true, WorkDirProbeErr: true}
 	}
 	installScript := "test -f " + shellQuote(repoState.Machine.InstallPath+"/config.sh") + " && test -f " + shellQuote(repoState.Machine.InstallPath+"/run.sh") + " && test -f " + shellQuote(repoState.Machine.InstallPath+"/.runner")
 	workScript := "test -d " + shellQuote(repoState.Machine.WorkDir)
@@ -180,6 +170,8 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 	// is enough to emit the informational `byo_host_prepared` finding.
 	byoResult, byoErr := deps.RemoteExecutor.Run(ctx, target, remote.Command{ID: "doctor.byo_host_prepared", Script: "test -f " + bootstrap.SudoersFilePath, Timeout: 5 * time.Second})
 	checks := ops.DeepChecks{InstallPathOK: installErr == nil && installResult.ExitCode == 0, WorkDirOK: workErr == nil && workResult.ExitCode == 0, Preflight: report, BYOHostPrepared: byoErr == nil && byoResult.ExitCode == 0}
+	checks.InstallPathProbeErr = !checks.InstallPathOK && !remoteProbeRan(installResult, installErr)
+	checks.WorkDirProbeErr = !checks.WorkDirOK && !remoteProbeRan(workResult, workErr)
 	if !checks.InstallPathOK {
 		checks.InstallPathError = strings.TrimSpace(installResult.Stderr + " " + installResult.Stdout)
 		if checks.InstallPathError == "" && installErr != nil {
@@ -193,6 +185,17 @@ func collectDoctorChecks(ctx context.Context, deps Dependencies, repoState rksta
 		}
 	}
 	return checks
+}
+
+// remoteProbeRan reports whether a remote check actually executed on the
+// host: no executor error, or a remote non-zero exit. ssh reports its own
+// connection failures as exit 255, and a missing ssh binary or other local
+// failure as -1 (see remote.SystemExecutor).
+func remoteProbeRan(result remote.Result, err error) bool {
+	if err == nil {
+		return true
+	}
+	return result.ExitCode > 0 && result.ExitCode != 255
 }
 
 func renderDoctorHuman(renderer *ui.Renderer, report ops.DoctorReport, verbose bool, st stage.Stage) error {

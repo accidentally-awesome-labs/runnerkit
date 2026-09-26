@@ -38,6 +38,6 @@ func ResolveToken(env map[string]string) (TokenSource, error) {
 	}
 	return TokenSource{}, &MissingTokenError{Remediation: []string{
 		"Export HCLOUD_TOKEN=<token from Hetzner Cloud Console>",
-		"Re-run runnerkit up --repo owner/name --cloud hetzner",
+		"Re-run runnerkit up --repo owner/name --experimental --cloud hetzner --cloud-region <location>",
 	}}
 }

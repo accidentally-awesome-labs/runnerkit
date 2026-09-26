@@ -98,7 +98,7 @@ func TestDiscoverAuthUsesGhFirstAndRegistersToken(t *testing.T) {
 
 func TestFineGrainedTokenRemediationCopy(t *testing.T) {
 	repo := Repo{FullName: "owner/name"}
-	want := "Create a fine-grained token scoped only to owner/name with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command."
+	want := "Create a fine-grained token scoped only to owner/name with repository Administration read/write and Metadata read, then pass it with RUNNERKIT_GITHUB_TOKEN for this command. If the GitHub CLI (gh) is installed and logged in, RunnerKit uses its token instead; run `gh auth logout` or remove gh from PATH for this command (see docs/security-posture.md, SEC-9)."
 	if got := FineGrainedTokenRemediation(repo); got != want {
 		t.Fatalf("remediation = %q, want %q", got, want)
 	}
