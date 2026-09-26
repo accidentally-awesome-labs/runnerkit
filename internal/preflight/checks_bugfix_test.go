@@ -23,8 +23,8 @@ import (
 // a hard preflight failure; the fix made the switch tolerant of
 // *exec.ExitError. The probe Script literal was later changed from
 // `sudo -n true` to `sudo -n install --version >/dev/null` (Plan
-// 06-13, Bug 31) so the probe binds to byo-prepare's scoped sudoers
-// allowlist; the Bug 7 stderr-classification contract is unchanged.
+// 06-13, Bug 31) so the probe binds to a command listed in the installer
+// sudoers fragment; the Bug 7 stderr-classification contract is unchanged.
 //
 // Bug 8: runNetworkCheck calls `curl -fsS https://github.com/...`. The
 // `-f` flag makes curl exit 22 on HTTP 4xx, so an anonymous probe of

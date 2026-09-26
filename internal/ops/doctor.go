@@ -41,7 +41,8 @@ type DeepChecks struct {
 	WorkDirProbeErr     bool
 	Preflight           preflight.Report
 	// BYOHostPrepared is true when /etc/sudoers.d/runnerkit-installer
-	// was observed on the remote host (Plan 06-06 Path C applied).
+	// (the root-equivalent installer sudoers fragment written by
+	// install.sh) was observed on the remote host.
 	// Surfaces as the informational `byo_host_prepared` finding.
 	BYOHostPrepared bool
 }

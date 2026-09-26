@@ -151,8 +151,9 @@ func TestDownRequiresHostInstallWhenSudoNeedsPassword(t *testing.T) {
 	}
 }
 
-// When sudo does NOT require a password (NOPASSWD path / scoped sudoers),
-// commands — preserving the existing happy path.
+// When sudo does NOT require a password (NOPASSWD path / installer sudoers
+// fragment), down runs the cleanup commands without threading a sudo
+// password — preserving the existing happy path.
 func TestDownDoesNotPromptWhenSudoIsPasswordless(t *testing.T) {
 	stateDir := t.TempDir()
 	repo := saveHealthyState(t, stateDir)

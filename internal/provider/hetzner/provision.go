@@ -127,6 +127,13 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 	if strings.TrimSpace(input.PublicKey) == "" {
 		return provider.ProvisionResult{}, fmt.Errorf("public SSH key is required for Hetzner cloud provisioning")
 	}
+	// Refuse a bad --ssh-allowed-cidr before any create call. This used to
+	// fall back to 0.0.0.0/0, opening SSH to every IPv4 address while the
+	// plan showed the user's value.
+	sshRules, err := firewallRules(input.SSHAllowedCIDR)
+	if err != nil {
+		return provider.ProvisionResult{}, err
+	}
 	// Refuse before any create call when the API has no price for this
 	// type and location (A-07): nothing billable is created unpriced.
 	hourly, monthly, err := p.quote(ctx, client, serverType, profile)
@@ -156,7 +163,7 @@ func (p *Provider) Provision(ctx context.Context, input provider.ProvisionInput)
 		resourceIDs["ssh_key"] = strconv.Itoa(sshKey.ID)
 	}
 
-	firewall, err := client.CreateFirewall(ctx, hcloud.FirewallCreateOpts{Name: plan.ResourceNames["firewall"], Labels: labels, Rules: firewallRules(input.SSHAllowedCIDR)})
+	firewall, err := client.CreateFirewall(ctx, hcloud.FirewallCreateOpts{Name: plan.ResourceNames["firewall"], Labels: labels, Rules: sshRules})
 	if firewall != nil && firewall.ID != 0 {
 		resourceIDs["firewall"] = strconv.Itoa(firewall.ID)
 	}
@@ -350,14 +357,22 @@ func lookupProfile(ctx context.Context, client Client, profile provider.Profile)
 	return location, serverType, image, provider.ValidationResult{OK: true}, nil
 }
 
-func firewallRules(cidr string) []hcloud.FirewallRule {
+// firewallRules returns the inbound SSH rule for cidr (empty means
+// provider.HetznerDefaultSSHAllowedCIDR). A value that is not an IPv4 CIDR
+// is an error: it must never widen to 0.0.0.0/0, and an IPv6-only rule
+// would lock RunnerKit out, because it connects to the server's IPv4
+// address (machineFromServer).
+func firewallRules(cidr string) ([]hcloud.FirewallRule, error) {
 	_, ipnet, err := net.ParseCIDR(defaultCIDR(cidr))
 	if err != nil {
-		_, ipnet, _ = net.ParseCIDR(provider.HetznerDefaultSSHAllowedCIDR)
+		return nil, fmt.Errorf("--ssh-allowed-cidr %q is not a CIDR (for one address use /32): %w", cidr, err)
+	}
+	if ipnet.IP.To4() == nil {
+		return nil, fmt.Errorf("--ssh-allowed-cidr %q is not an IPv4 CIDR; RunnerKit connects to the server's IPv4 address (for one address use /32)", cidr)
 	}
 	port := "22"
 	desc := "RunnerKit SSH readiness access"
-	return []hcloud.FirewallRule{{Direction: hcloud.FirewallRuleDirectionIn, SourceIPs: []net.IPNet{*ipnet}, Protocol: hcloud.FirewallRuleProtocolTCP, Port: &port, Description: &desc}}
+	return []hcloud.FirewallRule{{Direction: hcloud.FirewallRuleDirectionIn, SourceIPs: []net.IPNet{*ipnet}, Protocol: hcloud.FirewallRuleProtocolTCP, Port: &port, Description: &desc}}, nil
 }
 
 func defaultCIDR(cidr string) string {
@@ -373,8 +388,9 @@ func cloudInitUserData(user string, publicKey string, extraPackages []string) st
 		user = defaultSSHUser
 	}
 	publicKey = strings.TrimSpace(publicKey)
-	// Scoped sudoers (same rules as install.sh / byo-prepare) are applied as
-	// root during cloud-init so bootstrap works even when the cloud-init
+	// The root-equivalent installer sudoers fragment (same rules as
+	// install.sh, from bootstrap.RenderSudoersEntry) is applied as root
+	// during cloud-init so bootstrap works even when the cloud-init
 	// `users[].sudo` NOPASSWD stanza is ignored or mis-applied on some images.
 	sudoers := strings.TrimSuffix(bootstrap.RenderSudoersEntry(user), "\n")
 	var sudoersBlock strings.Builder

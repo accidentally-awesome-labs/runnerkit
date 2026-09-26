@@ -37,8 +37,9 @@ func RenderInstallScript(opts Options) string {
 	// so the host's sudoers needs only (root) NOPASSWD — no (ALL) runas
 	// required. Closes Bug 3 from 06-GAP-byo-sudo-handling.md.
 	// sudo -u <non-root> would match (ALL) runas, which neither the
-	// byo-prepare scoped template nor a typical (root) NOPASSWD: ALL host
-	// sudoers covers. See gap doc lines 122-199 for the full rationale.
+	// installer sudoers fragment (RenderSudoersEntry) nor a typical
+	// (root) NOPASSWD: ALL host sudoers covers. See gap doc lines 122-199
+	// for the full rationale.
 	return fmt.Sprintf(`set -euo pipefail
 id -u %[1]s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %[1]s
 sudo install -d -o %[1]s -g %[1]s %[2]s
@@ -90,8 +91,9 @@ func RenderEphemeralInstallScript(opts Options) string {
 	// so the host's sudoers needs only (root) NOPASSWD — no (ALL) runas
 	// required. Closes Bug 3 from 06-GAP-byo-sudo-handling.md.
 	// sudo -u <non-root> would match (ALL) runas, which neither the
-	// byo-prepare scoped template nor a typical (root) NOPASSWD: ALL host
-	// sudoers covers. See gap doc lines 122-199 for the full rationale.
+	// installer sudoers fragment (RenderSudoersEntry) nor a typical
+	// (root) NOPASSWD: ALL host sudoers covers. See gap doc lines 122-199
+	// for the full rationale.
 	return fmt.Sprintf(`set -euo pipefail
 id -u %[1]s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %[1]s
 sudo install -d -o %[1]s -g %[1]s %[2]s
@@ -266,7 +268,7 @@ func RenderRemoveConfigScript(installPath string, serviceUser string) string {
 	serviceUser = defaultString(serviceUser, DefaultServiceUser)
 	installPath = defaultString(strings.TrimSpace(installPath), "/opt/actions-runner")
 	// Match RenderInstallScript: invoke config.sh via `sudo su -s /bin/bash - <user> -c "..."`
-	// so Path C scoped sudoers (NOPASSWD on /bin/su) applies. `sudo -u`
+	// so the installer sudoers fragment (NOPASSWD on /bin/su) applies. `sudo -u`
 	// targets a different sudoers vector and commonly fails with
 	// "a terminal is required" on non-interactive SSH sessions.
 	return fmt.Sprintf(`set -euo pipefail
@@ -281,7 +283,7 @@ func RenderReconfigureScript(opts Options) string {
 	workDir := defaultString(opts.WorkDir, filepath.Join("/var/lib/runnerkit/work", opts.RunnerName))
 	labels := strings.Join(opts.Labels, ",")
 	// Same run-as pattern as RenderInstallScript / RenderRemoveConfigScript
-	// for Path C scoped sudoers.
+	// for the installer sudoers fragment.
 	return fmt.Sprintf(`set -euo pipefail
 cd %[1]s
 sudo su -s /bin/bash - %[2]s -c "cd %[1]s && RUNNERKIT_REGISTRATION_TOKEN=\"$RUNNERKIT_REGISTRATION_TOKEN\" ./config.sh --unattended --url %[3]s --token \"$RUNNERKIT_REGISTRATION_TOKEN\" --name %[4]s --labels %[5]s --work %[6]s --replace"

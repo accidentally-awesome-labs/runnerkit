@@ -198,6 +198,33 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 	}
 }
 
+// A bare IP in --ssh-allowed-cidr used to widen the firewall to 0.0.0.0/0;
+// now nothing is created.
+func TestProvisionRefusesSSHAllowedCIDRThatIsNotACIDR(t *testing.T) {
+	client := newFakeClient()
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
+	input := provisionInput()
+	input.SSHAllowedCIDR = "203.0.113.5"
+	if _, err := p.Provision(context.Background(), input); err == nil || !strings.Contains(err.Error(), "not a CIDR") {
+		t.Fatalf("Provision with a bare IP must fail, got %v", err)
+	}
+	if creates := createCalls(client.calls); len(creates) != 0 {
+		t.Fatalf("nothing may be created for an invalid CIDR, got %#v", creates)
+	}
+}
+
+func TestFirewallRulesDefaultsOnlyWhenEmpty(t *testing.T) {
+	rules, err := firewallRules("")
+	if err != nil || rules[0].SourceIPs[0].String() != "0.0.0.0/0" {
+		t.Fatalf("empty CIDR = %v, %v; want the 0.0.0.0/0 default", rules, err)
+	}
+	for _, bad := range []string{"0.0.0.0", "2001:db8::1/128"} {
+		if _, err := firewallRules(bad); err == nil {
+			t.Fatalf("%q must be an error, not a rule", bad)
+		}
+	}
+}
+
 // Bug 26 (Plan 06-11, 2026-05-06): destroy.go's cascade-delete approach
 // requires Hetzner to auto-allocate primary IPs with `AutoDelete: true`
 // — the default for ServerCreatePublicNet when EnableIPv4 / EnableIPv6

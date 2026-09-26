@@ -156,11 +156,11 @@ func buildFakeRunnerTarball(t *testing.T, path string) string {
 
 // TestApply_RegisterRunner_RootOnlyNopasswd asserts that the
 // rendered register_runner shell form is acceptable to a sudoers
-// configuration consisting only of `(root) NOPASSWD: ALL` — i.e. the
-// byo-prepare scoped sudoers entry alone is sufficient with no `(ALL)`
-// runas required. This closes the test gap that hid Bug 3 from Plans
-// 06-05 + 06-06 verification (gap doc 06-GAP-byo-sudo-handling.md
-// lines 122-199 + 338-365).
+// configuration consisting only of `(root) NOPASSWD: ALL` — i.e. a
+// `(root)` runas, as in the installer sudoers fragment, is sufficient
+// with no `(ALL)` runas required. This closes the test gap that hid
+// Bug 3 from Plans 06-05 + 06-06 verification (gap doc
+// 06-GAP-byo-sudo-handling.md lines 122-199 + 338-365).
 //
 // Strategy: render the install script via RenderInstallScript, extract
 // the register_runner line, and assert (a) absence of `sudo -u

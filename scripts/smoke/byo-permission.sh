@@ -30,8 +30,8 @@ echo "===> [smoke-byo] Asserting install dir contains config.sh on the remote ho
 # RenderInstallScript's `sudo install -d -o <serviceUser>` + the
 # tarball's preserved mode), so the SSH user can stat both without
 # elevation. `sudo test -f` over a non-tty SSH session fails with
-# "a terminal is required" because `test` is not in the byo-prepare
-# scoped sudoers allowlist.
+# "a terminal is required" because `test` is not in the installer
+# sudoers fragment that install.sh writes.
 ssh "${HOST}" 'test -f /opt/actions-runner/runnerkit-*/config.sh' || {
   echo "FAIL: config.sh not found in /opt/actions-runner/runnerkit-*/ — bootstrap did not land the tarball"
   exit 3

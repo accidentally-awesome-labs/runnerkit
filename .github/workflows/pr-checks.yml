@@ -57,8 +57,72 @@ jobs:
       # (copylocks, lostcancel, ...) fail the PR, not the tag.
       - name: go vet
         run: go vet ./...
+      # Tests get a scratch HOME and RunnerKit state directory, no GitHub
+      # token and no update check, so none of them can read or write the
+      # real ones (C-02). The Go caches stay where setup-go put them.
       - name: go test
-        run: go test ./... -count=1 -race
+        run: |
+          set -euo pipefail
+          GOCACHE="$(go env GOCACHE)"
+          GOMODCACHE="$(go env GOMODCACHE)"
+          GOPATH="$(go env GOPATH)"
+          export GOCACHE GOMODCACHE GOPATH
+          export HOME="$RUNNER_TEMP/home" XDG_CONFIG_HOME="$RUNNER_TEMP/home/.config" XDG_STATE_HOME="$RUNNER_TEMP/home/.local/state" XDG_CACHE_HOME="$RUNNER_TEMP/home/.cache"
+          export RUNNERKIT_STATE_DIR="$RUNNER_TEMP/rkstate" RUNNERKIT_NO_UPDATE_NOTIFIER=1
+          unset GH_TOKEN GITHUB_TOKEN RUNNERKIT_GITHUB_TOKEN
+          mkdir -p "$HOME" "$RUNNERKIT_STATE_DIR"
+          go test ./... -count=1 -race
+      # --ignored: stray files such as internal/cli/sessions/ are gitignored
+      # and would otherwise pass unseen (P1-3).
+      - name: tests leave no files in the checkout
+        run: |
+          set -euo pipefail
+          left="$(git status --porcelain --ignored --untracked-files=all)"
+          if [ -n "$left" ]; then
+            echo "::error::go test left files in the checkout; tests must write under t.TempDir():"
+            echo "$left"
+            exit 1
+          fi
+
+  # CONTRIBUTING.md: every commit carries a DCO Signed-off-by line (H-02).
+  # Only pull requests from forks are checked. A branch in this repository
+  # needs write access, so its author is a maintainer (like the DCO app's
+  # `require.members: false`). author_association cannot tell: GitHub
+  # reports org members with private membership as CONTRIBUTOR. A skipped
+  # job counts as passing when this check is required on main.
+  dco:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every commit is signed off
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          missing=0
+          # Only the pull request's own commits: exclude everything on the
+          # base branch, including commits merged in from it later. Assigned
+          # first so a failing rev-list fails the step instead of checking
+          # nothing.
+          commits="$(git rev-list --no-merges "$HEAD" --not "$BASE" "origin/$BASE_REF")"
+          for c in $commits; do
+            msg="$(git log -1 --format=%B "$c")"
+            if ! grep -Eq '^Signed-off-by: .+ <[^<>@ ]+@[^<> ]+>[[:space:]]*$' <<<"$msg"; then
+              echo "::error::commit $(git log -1 --format='%h %s' "$c") has no 'Signed-off-by: Name <email>' line"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Add the line with 'git commit -s'. For existing commits run 'git rebase --signoff $BASE' (the base this pull request was checked against), then force-push; see CONTRIBUTING.md."
+            exit 1
+          fi
 
   # Generated files (e.g. install.sh's sudoers block) must be committed in sync
   # with their Go source of truth.

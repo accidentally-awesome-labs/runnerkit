@@ -95,7 +95,7 @@ func TestDoctor_LabelDriftIsCaseInsensitiveClosesBug20(t *testing.T) {
 
 // TestDoctor_ByoHostPreparedFinding asserts that when DeepChecks
 // reports the remote host has /etc/sudoers.d/runnerkit-installer
-// (i.e. `runnerkit byo-prepare` was previously applied), the doctor
+// (i.e. install.sh was previously run on the host), the doctor
 // report emits a `byo_host_prepared` finding with informational
 // severity. When BYOHostPrepared is false, no such finding is added.
 func TestDoctor_ByoHostPreparedFinding(t *testing.T) {

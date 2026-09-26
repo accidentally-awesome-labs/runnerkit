@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/provider"
@@ -19,6 +21,7 @@ const (
 	experimentalRequiredCode   = "experimental_required"
 	ephemeralCloudDisabledCode = "ephemeral_cloud_disabled"
 	cloudRegionRequiredCode    = "cloud_region_required"
+	invalidSSHAllowedCIDRCode  = "invalid_ssh_allowed_cidr"
 	cloudStateExistsCode       = "cloud_state_exists"
 
 	experimentalFlagUsage = "opt in to experimental, unsupported paths: --cloud (billed by the provider) and BYO --mode ephemeral (not isolation)"
@@ -68,6 +71,18 @@ func enforceExperimentalGates(renderer *ui.Renderer, opts *upOptions) error {
 				"Check in the Hetzner Cloud Console where server type " + serverType + " is currently offered, then pass --cloud-region <location>.",
 			})
 			return NewExitError(ExitInvalidInput, errors.New(cloudRegionRequiredCode))
+		}
+		// A value that is not a CIDR used to open the firewall to
+		// 0.0.0.0/0 while the plan showed the user's value. An IPv6 CIDR
+		// would lock RunnerKit out: it connects to the server's IPv4
+		// address, and the firewall has only this one SSH rule.
+		if cidr := strings.TrimSpace(opts.sshAllowedCIDR); cidr != "" {
+			if _, ipnet, err := net.ParseCIDR(cidr); err != nil || ipnet.IP.To4() == nil {
+				_ = renderer.Error(invalidSSHAllowedCIDRCode, "--ssh-allowed-cidr must be an IPv4 CIDR, not "+strconv.Quote(cidr)+".", []string{
+					"RunnerKit connects to the server's IPv4 address. For one address use /32, for example --ssh-allowed-cidr 203.0.113.5/32.",
+				})
+				return NewExitError(ExitInvalidInput, errors.New(invalidSSHAllowedCIDRCode))
+			}
 		}
 		return nil
 	}
