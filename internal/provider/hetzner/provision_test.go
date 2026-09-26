@@ -211,6 +211,31 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 // Regression guard: assert provision sets EnableIPv4=true,
 // EnableIPv6=true, IPv4=nil, IPv6=nil. The fakeClient captures
 // ServerCreateOpts so we can inspect PublicNet directly.
+// A bare IP in --ssh-allowed-cidr used to widen the firewall to 0.0.0.0/0;
+// now nothing is created.
+func TestProvisionRefusesSSHAllowedCIDRThatIsNotACIDR(t *testing.T) {
+	client := newFakeClient()
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
+	input := provisionInput()
+	input.SSHAllowedCIDR = "203.0.113.5"
+	if _, err := p.Provision(context.Background(), input); err == nil || !strings.Contains(err.Error(), "not a CIDR") {
+		t.Fatalf("Provision with a bare IP must fail, got %v", err)
+	}
+	if creates := createCalls(client.calls); len(creates) != 0 {
+		t.Fatalf("nothing may be created for an invalid CIDR, got %#v", creates)
+	}
+}
+
+func TestFirewallRulesDefaultsOnlyWhenEmpty(t *testing.T) {
+	rules, err := firewallRules("")
+	if err != nil || rules[0].SourceIPs[0].String() != "0.0.0.0/0" {
+		t.Fatalf("empty CIDR = %v, %v; want the 0.0.0.0/0 default", rules, err)
+	}
+	if _, err := firewallRules("0.0.0.0"); err == nil {
+		t.Fatal("a bare address must be an error, not the default")
+	}
+}
+
 func TestProvisionEnablesPublicIPsWithoutOverridingForBug26(t *testing.T) {
 	client := newFakeClient()
 	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))

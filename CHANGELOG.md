@@ -39,7 +39,8 @@ cloud path and BYO ephemeral mode behind `--experimental`.
   <time>; excludes traffic overage".
 - New refusals, all exit 2: `wrong_cleanup_command`, `cloud_state_exists`,
   `ephemeral_cloud_disabled`, `cloud_region_required`,
-  `cloud_location_unpriced`, `command_disabled`, `command_removed`.
+  `cloud_location_unpriced`, `invalid_ssh_allowed_cidr`,
+  `command_disabled`, `command_removed`.
 - `LICENSE` (Apache-2.0), `CONTRIBUTING.md` (DCO sign-off, no CLA),
   `SECURITY.md`, [`docs/security-posture.md`](docs/security-posture.md) and
   this changelog.
@@ -179,6 +180,10 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 - The hard-coded "approx €4.90/month" cloud estimate is gone. A location
   where Hetzner reports no price is refused before anything is created
   (`cloud_location_unpriced`).
+- `--ssh-allowed-cidr` must be a CIDR (`invalid_ssh_allowed_cidr`, exit 2,
+  before any network call). A bare address such as `203.0.113.5` used to
+  open the firewall to `0.0.0.0/0` while the plan showed the address; use
+  `203.0.113.5/32`.
 - The installer sudoers comment and docs no longer call the fragment
   "scoped" or "not a blanket NOPASSWD ALL": it is root-equivalent. The
   `docker` group membership that now takes effect is root-equivalent too.
@@ -234,8 +239,30 @@ Mirrors the README "Known issues" section.
   default; unusual `apt-get install` lines can produce wrong package names.
 - `runnerkit logs` and the `doctor` OOM hints can query the wrong systemd
   unit; `status` and `doctor` exit 0 even when they report errors.
-- Cloud readiness retries every cloud-init failure until the 15-minute
-  timeout instead of failing fast.
+- **Cloud defects** (not fixed while the cloud path is frozen):
+  - Readiness does not fail fast: if cloud-init ends in an error, `up`
+    retries silently for 15 minutes while the server bills, then fails with
+    `cloud_readiness_failed` without cloud-init's details. Run
+    `runnerkit destroy --repo owner/name`.
+  - `up` always uploads your SSH public key as a new Hetzner key, so it
+    fails with `uniqueness_error` (before creating anything) when the key
+    is already in the Hetzner project, for example from another
+    repository's cloud runner.
+  - Server type stock in `--cloud-region` is not checked. When Hetzner has
+    none, `up` fails after creating an SSH key and a firewall; run
+    `runnerkit destroy` before trying another location.
+  - On cloud runners, workflow steps that use `sudo` fail (the job sudo
+    grant is BYO-only), there is no swap, and the default `cpx22` is small
+    enough to trigger RunnerKit's own low-memory warning. Pass a larger
+    Hetzner type with `--cloud-profile` for heavy builds.
+  - Once the server is gone or unreachable over SSH, `destroy` deletes the
+    Hetzner resources and the GitHub runner but keeps the local record: it
+    reports "Cleanup incomplete" and exits 0, and `up` then refuses that
+    repository (`cloud_state_exists`) until you remove its entry from
+    RunnerKit's state file (check the Hetzner Console first).
+  - SSH is open to every IPv4 address unless you pass `--ssh-allowed-cidr`,
+    and your SSH key can log in as `root` and as `runnerkit-admin`, which
+    has passwordless sudo (SEC-11).
 
 ### Erratum for v1.3.3
 

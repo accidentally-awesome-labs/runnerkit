@@ -39,6 +39,30 @@ page install today) is **v1.3.3**; see
   ephemeral mode requires `--experimental`, is not isolation, and has known
   defects (the finalizer runs unprivileged and the TTL is ignored); it is
   untested in this release.
+- **Cloud defects** (not fixed while the cloud path is frozen):
+  - Readiness does not fail fast: if cloud-init ends in an error, `up`
+    retries silently for 15 minutes while the server bills, then fails with
+    `cloud_readiness_failed` without cloud-init's details. Run
+    `runnerkit destroy --repo owner/name`.
+  - `up` always uploads your SSH public key as a new Hetzner key, so it
+    fails with `uniqueness_error` (before creating anything) when the key
+    is already in the Hetzner project, for example from another
+    repository's cloud runner.
+  - Server type stock in `--cloud-region` is not checked. When Hetzner has
+    none, `up` fails after creating an SSH key and a firewall; run
+    `runnerkit destroy` before trying another location.
+  - On cloud runners, workflow steps that use `sudo` fail (the job sudo
+    grant is BYO-only), there is no swap, and the default `cpx22` is small
+    enough to trigger RunnerKit's own low-memory warning. Pass a larger
+    Hetzner type with `--cloud-profile` for heavy builds.
+  - Once the server is gone or unreachable over SSH, `destroy` deletes the
+    Hetzner resources and the GitHub runner but keeps the local record: it
+    reports "Cleanup incomplete" and exits 0, and `up` then refuses that
+    repository (`cloud_state_exists`) until you remove its entry from
+    RunnerKit's state file (check the Hetzner Console first).
+  - SSH is open to every IPv4 address unless you pass `--ssh-allowed-cidr`,
+    and your SSH key can log in as `root` and as `runnerkit-admin`, which
+    has passwordless sudo (SEC-11).
 - **Disabled commands.** `upgrade-runner`, `doctor --fix`,
   `recover --reinstall-service` and `recover --reregister` refuse to run
   (exit 2) and print manual steps. The GitHub runner updates itself;
@@ -68,6 +92,9 @@ Full list: [CHANGELOG.md](CHANGELOG.md) and
   `runnerkit destroy --repo owner/name` for each one.
 - The "approx €4.90/month" cloud estimate is invented; check the Hetzner
   price list.
+- `--ssh-allowed-cidr` with a bare address (no `/32`) opened SSH to every
+  IPv4 address instead. Check the firewall of cloud runners created that
+  way in the Hetzner Console.
 - `runnerkit byo-prepare` does not exist (it was removed in v1.0.8, although
   the v1.3.3 release notes tell you to run it). BYO setup on password-sudo
   hosts fails at `setup_runner_image`.

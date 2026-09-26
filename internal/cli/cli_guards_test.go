@@ -382,6 +382,25 @@ func TestUp_CloudRequiresRegion(t *testing.T) {
 	h.assertNoGitHub(t)
 }
 
+// A value that is not a CIDR used to open the firewall to 0.0.0.0/0 while
+// the plan showed the user's value; it is refused before any network call.
+func TestUp_CloudRefusesSSHAllowedCIDRThatIsNotACIDR(t *testing.T) {
+	for _, bad := range []string{"203.0.113.5", "203.0.113.5/33", "home"} {
+		h := newGuardHarness(t)
+		err := h.run(t, nil, false, "up", "--repo", "owner/repo", "--cloud", "hetzner", "--experimental", "--cloud-region", "nbg1", "--ssh-allowed-cidr", bad, "--yes", "--dry-run", "--no-color")
+		assertExitInvalidInput(t, h, err, "invalid_ssh_allowed_cidr")
+		if !strings.Contains(h.combined(), "/32") {
+			t.Fatalf("refusal for %q must show the /32 form:\n%s", bad, h.combined())
+		}
+		h.assertNoProviderOrSSH(t)
+		h.assertNoGitHub(t)
+	}
+	h := newGuardHarness(t)
+	if err := h.run(t, nil, false, "up", "--repo", "owner/repo", "--cloud", "hetzner", "--experimental", "--cloud-region", "nbg1", "--ssh-allowed-cidr", "203.0.113.5/32", "--yes", "--dry-run", "--no-color"); err != nil {
+		t.Fatalf("a /32 CIDR must be accepted: %v\n%s", err, h.combined())
+	}
+}
+
 func TestUp_CloudWithExperimentalAndRegionReachesProvider(t *testing.T) {
 	h := newGuardHarness(t)
 	if err := h.run(t, nil, false, "up", "--repo", "owner/repo", "--cloud", "hetzner", "--experimental", "--cloud-region", "nbg1", "--yes", "--dry-run", "--no-color"); err != nil {
