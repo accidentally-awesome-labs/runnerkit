@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ type pricingHCloudClient struct {
 	hetzner.Client
 	serverTypes map[string]*hcloud.ServerType
 	pricing     hcloud.Pricing
+	pricingErr  error
 	creates     int
 }
 
@@ -38,7 +40,7 @@ func (c *pricingHCloudClient) GetImage(_ context.Context, name string) (*hcloud.
 }
 
 func (c *pricingHCloudClient) GetPricing(context.Context) (hcloud.Pricing, error) {
-	return c.pricing, nil
+	return c.pricing, c.pricingErr
 }
 
 func (c *pricingHCloudClient) CreateSSHKey(context.Context, hcloud.SSHKeyCreateOpts) (*hcloud.SSHKey, error) {
@@ -229,5 +231,30 @@ func TestCloudPlan_MissingPriceRefuses(t *testing.T) {
 	}
 	if !strings.Contains(out.String()+errOut.String(), "cloud_location_unpriced") {
 		t.Fatalf("missing cloud_location_unpriced:\n%s%s", out.String(), errOut.String())
+	}
+}
+
+// A pricing API failure is not an unpriced location: it surfaces as
+// cloud_plan_failed and nothing is created or saved.
+func TestCloudPlan_PricingAPIFailure(t *testing.T) {
+	client := newPricingHCloudClient()
+	client.pricingErr = errors.New("hcloud: 503 service unavailable")
+	var out, errOut bytes.Buffer
+	deps := pricingCloudDeps(t, client, &out, &errOut)
+	cmd := NewRootCommand(deps)
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--cloud-region", "nbg1", "--cloud-profile", "cpx22", "--yes", "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected pricing failure\nstdout=%s\nstderr=%s", out.String(), errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if !strings.Contains(combined, `"code":"cloud_plan_failed"`) || strings.Contains(combined, "cloud_location_unpriced") {
+		t.Fatalf("pricing API failure must render cloud_plan_failed:\n%s", combined)
+	}
+	if client.creates != 0 {
+		t.Fatalf("pricing failure made %d create calls, want 0", client.creates)
+	}
+	if _, err := os.Stat(state.NewStore(deps.StateBaseDir).Path()); !os.IsNotExist(err) {
+		t.Fatalf("pricing failure wrote state or stat failed unexpectedly: %v", err)
 	}
 }

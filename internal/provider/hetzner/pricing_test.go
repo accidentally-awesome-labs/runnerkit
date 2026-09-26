@@ -223,3 +223,33 @@ func TestQuoteCostRejectsUnparseablePrice(t *testing.T) {
 		t.Fatalf("quoteCost error = %v, want unparseable price error", err)
 	}
 }
+
+func TestQuoteCostRejectsNonDecimalPrice(t *testing.T) {
+	for _, bad := range []string{"1/3", "-0.50", "1e2", "+0.50"} {
+		pricing := fakePricing("EUR", fakeIPv4Price("hel1", "0.0008", "0.0010", bad, "0.60"))
+		st := fakeServerType("cx32", fakeServerPrice("hel1", "0.0100", "0.0120", "6.80", "8.16"))
+		if _, _, err := quoteCost(st, pricing, "hel1", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "unparseable") {
+			t.Fatalf("quoteCost(%q) error = %v, want unparseable price error", bad, err)
+		}
+	}
+}
+
+// A pricing API failure is not an unpriced location: Plan and Provision
+// return the API error (the CLI shows cloud_plan_failed) and create nothing.
+func TestPricingAPIFailureCreatesNothing(t *testing.T) {
+	client := newFakeClient()
+	client.pricingErr = errors.New("hcloud: 503 service unavailable")
+	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))
+
+	_, err := p.Plan(context.Background(), provisionInput())
+	var unpriced *provider.UnpricedLocationError
+	if err == nil || errors.As(err, &unpriced) || !strings.Contains(err.Error(), "read Hetzner pricing") {
+		t.Fatalf("Plan error = %v, want wrapped pricing API error", err)
+	}
+	if _, err := p.Provision(context.Background(), provisionInput()); err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("Provision error = %v, want pricing API error", err)
+	}
+	if gotCreates := createCalls(client.calls); len(gotCreates) != 0 {
+		t.Fatalf("pricing failure made create calls: %#v", gotCreates)
+	}
+}

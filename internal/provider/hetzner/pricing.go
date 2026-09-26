@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,11 @@ import (
 
 // primaryIPv4Type is the Primary IP type name in GET /pricing.
 const primaryIPv4Type = "ipv4"
+
+// apiDecimal is the shape of a Hetzner API price string ("4.4900000000").
+// big.Rat.SetString alone would also accept fractions ("1/3"), exponents and
+// signs, which the API never sends and which could not be shown exactly.
+var apiDecimal = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
 
 // quote fetches the live price list and prices the planned server plus its
 // auto-allocated primary IPv4 in the profile's location. serverType may be
@@ -158,7 +164,7 @@ func sumCost(period, currency string, fetchedAt time.Time, components ...provide
 		}{{"net", c.Net, net}, {"gross", c.Gross, gross}} {
 			value := strings.TrimSpace(field.value)
 			parsed, ok := new(big.Rat).SetString(value)
-			if !ok {
+			if !ok || !apiDecimal.MatchString(value) {
 				return nil, fmt.Errorf("Hetzner pricing API returned an unparseable %s %s price %q for %s", period, field.kind, field.value, c.Resource)
 			}
 			field.sum.Add(field.sum, parsed)
