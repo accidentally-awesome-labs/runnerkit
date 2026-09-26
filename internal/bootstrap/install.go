@@ -110,35 +110,100 @@ func Apply(ctx context.Context, exec remote.Executor, target remote.Target, opts
 		exec = remote.UnavailableExecutor{}
 	}
 	normalizeOptions(&opts)
+	commands := append(prepareHostCommands(opts),
+		downloadRunnerCommand(opts),
+		remote.Command{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
+		remote.Command{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
+		remote.Command{ID: "verify_service", Script: "set -euo pipefail\ncd " + defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName)) + "\nsudo ./svc.sh status\n", Sudo: true},
+	)
+	return runBootstrapCommands(ctx, exec, target, commands, "install_service", "verify_service")
+}
+
+// prepareHostCommands returns the host-preparation prefix shared by
+// Apply and ApplyEphemeral: fix_dependencies, create_runner_user and
+// (Ubuntu/Debian only) setup_runner_image.
+//
+// P0-2 (v1.3.4): create_runner_user MUST precede setup_runner_image.
+// The image script adds the service user to the docker group and
+// installs rustup as that user; both are best-effort (`|| true`) and
+// silently did nothing when the user did not exist yet, leaving every
+// fresh host without Docker access or Rust for jobs.
+func prepareHostCommands(opts Options) []remote.Command {
 	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages, opts.CloudProvisioned)
 	commands := []remote.Command{
 		{ID: "fix_dependencies", Script: RenderDependencyFixScript(allPackages), Sudo: true},
+		{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
 	}
 	if isUbuntuLike(opts.OSReleaseID) {
 		commands = append(commands, remote.Command{
 			ID: "setup_runner_image", Script: RenderImageSetupScript(opts.ServiceUser, opts.ImageSetupVersion), Sudo: true,
 		})
 	}
-	commands = append(commands,
-		remote.Command{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
-		downloadRunnerCommand(opts),
-		remote.Command{ID: "configure_runner", Script: RenderInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
-		remote.Command{ID: "install_service", Script: RenderServiceScript(opts), Sudo: true},
-		remote.Command{ID: "verify_service", Script: "set -euo pipefail\ncd " + defaultString(opts.InstallPath, filepath.Join("/opt/actions-runner", opts.RunnerName)) + "\nsudo ./svc.sh status\n", Sudo: true},
-	)
+	return commands
+}
+
+// FailTrapLine is prepended to every bootstrap script Apply and
+// ApplyEphemeral dispatch. On the first failing command bash prints
+// `RKFAIL:<command text>` to stderr (the unexpanded source text, so
+// env-carried secrets such as the registration token are not
+// expanded into it) before `set -e` exits; the exit status is
+// unchanged. Commands guarded by `if`, `||` or `&&` and failures inside
+// `$(...)` do not fire it, so scripts that tolerate failures stay
+// quiet. P1-15: before v1.3.4 a failure never said which line of a
+// step script (setup_runner_image alone is ~150 lines) had failed.
+const FailTrapLine = `trap 'echo "RKFAIL:${BASH_COMMAND}" >&2' ERR`
+
+// FailTrapMarker prefixes the line FailTrapLine writes to stderr.
+const FailTrapMarker = "RKFAIL:"
+
+// FailedCommand returns the command text from the last FailTrapMarker
+// line in stderr, or "" when the trap did not fire.
+func FailedCommand(stderr string) string {
+	lines := strings.Split(stderr, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, FailTrapMarker) {
+			return strings.TrimSpace(strings.TrimPrefix(line, FailTrapMarker))
+		}
+	}
+	return ""
+}
+
+// withFailTrap prepends FailTrapLine to script (once).
+func withFailTrap(script string) string {
+	if strings.HasPrefix(script, FailTrapLine) {
+		return script
+	}
+	return FailTrapLine + "\n" + script
+}
+
+// runBootstrapCommands runs commands in order and stops at the first
+// failure. Failures of serviceIDs surface as ServiceNotActiveError;
+// every other failure is a remote.RemoteError naming the failing step,
+// including transport errors (P1-15: the raw *exec.ExitError from the
+// system ssh executor used to escape unwrapped, and `up` printed the
+// failing step as "(unknown)").
+func runBootstrapCommands(ctx context.Context, exec remote.Executor, target remote.Target, commands []remote.Command, serviceIDs ...string) (Result, error) {
 	out := Result{Commands: make([]remote.Result, 0, len(commands))}
 	for _, command := range commands {
+		command.Script = withFailTrap(command.Script)
 		result, err := exec.Run(ctx, target, command)
 		out.Commands = append(out.Commands, result)
-		if err != nil || result.ExitCode != 0 {
-			if command.ID == "verify_service" || command.ID == "install_service" {
-				return out, ServiceNotActiveError{Err: err, CommandID: command.ID, Stderr: result.Stderr}
-			}
-			if err != nil {
-				return out, err
-			}
-			return out, remote.RemoteError{CommandID: command.ID, ExitCode: result.ExitCode}
+		if err == nil && result.ExitCode == 0 {
+			continue
 		}
+		exitCode := result.ExitCode
+		if exitCode == 0 {
+			// Transport-level error with no remote exit status.
+			exitCode = -1
+		}
+		remoteErr := remote.RemoteError{CommandID: command.ID, ExitCode: exitCode, Err: err}
+		for _, id := range serviceIDs {
+			if command.ID == id {
+				return out, ServiceNotActiveError{Err: remoteErr, CommandID: command.ID, Stderr: result.Stderr}
+			}
+		}
+		return out, remoteErr
 	}
 	return out, nil
 }
@@ -161,17 +226,7 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		exec = remote.UnavailableExecutor{}
 	}
 	normalizeOptions(&opts)
-	allPackages := mergePackages(opts.MissingTools, opts.ExtraPackages, opts.CloudProvisioned)
-	commands := []remote.Command{
-		{ID: "fix_dependencies", Script: RenderDependencyFixScript(allPackages), Sudo: true},
-	}
-	if isUbuntuLike(opts.OSReleaseID) {
-		commands = append(commands, remote.Command{
-			ID: "setup_runner_image", Script: RenderImageSetupScript(opts.ServiceUser, opts.ImageSetupVersion), Sudo: true,
-		})
-	}
-	commands = append(commands,
-		remote.Command{ID: "create_runner_user", Script: fmt.Sprintf("set -euo pipefail\nid -u %s >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin %s\n", opts.ServiceUser, opts.ServiceUser), Sudo: true},
+	commands := append(prepareHostCommands(opts),
 		downloadRunnerCommand(opts),
 		remote.Command{ID: "configure_ephemeral_runner", Script: RenderEphemeralInstallScript(opts), Env: map[string]string{"RUNNERKIT_REGISTRATION_TOKEN": opts.RunnerToken}, RedactArgs: []string{opts.RunnerToken}, Sudo: true},
 		remote.Command{ID: "install_ephemeral_finalizer", Script: RenderEphemeralFinalizerScript(opts), Sudo: true},
@@ -179,22 +234,7 @@ func ApplyEphemeral(ctx context.Context, exec remote.Executor, target remote.Tar
 		remote.Command{ID: "install_ephemeral_ttl_timer", Script: RenderEphemeralTTLTimerScript(opts), Sudo: true},
 		remote.Command{ID: "verify_ephemeral_service", Script: fmt.Sprintf("set -euo pipefail\nsystemctl is-active %s || systemctl status %s --no-pager\n", opts.EphemeralServiceName, opts.EphemeralServiceName), Sudo: true},
 	)
-	out := Result{Commands: make([]remote.Result, 0, len(commands))}
-	for _, command := range commands {
-		result, err := exec.Run(ctx, target, command)
-		out.Commands = append(out.Commands, result)
-		if err != nil || result.ExitCode != 0 {
-			switch command.ID {
-			case "install_ephemeral_service", "install_ephemeral_ttl_timer", "verify_ephemeral_service":
-				return out, ServiceNotActiveError{Err: err, CommandID: command.ID, Stderr: result.Stderr}
-			}
-			if err != nil {
-				return out, err
-			}
-			return out, remote.RemoteError{CommandID: command.ID, ExitCode: result.ExitCode}
-		}
-	}
-	return out, nil
+	return runBootstrapCommands(ctx, exec, target, commands, "install_ephemeral_service", "install_ephemeral_ttl_timer", "verify_ephemeral_service")
 }
 
 // SharedRunnerCacheRoot is the host directory holding one copy of the

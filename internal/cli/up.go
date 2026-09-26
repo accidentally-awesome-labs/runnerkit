@@ -2304,25 +2304,96 @@ func runnerServiceName(runnerName string) string {
 	return "actions.runner." + runnerName + ".service"
 }
 
-// lastCommandFailureContext extracts the failing command's ID and
-// stderr from a bootstrap.Result + the err returned by Apply /
-// ApplyEphemeral so callers can surface remote diagnostics in
+// lastCommandFailureContext extracts the failing command's ID and a
+// diagnostic excerpt from a bootstrap.Result + the err returned by
+// Apply / ApplyEphemeral so callers can surface remote diagnostics in
 // bootstrap_failed messages. The CommandID comes from
-// remote.RemoteError when present (the typical exit-code path);
-// stderr comes from the trailing entry of result.Commands. Returns
-// empty strings if no useful context is available.
+// remote.RemoteError, which Apply / ApplyEphemeral return for every
+// non-service step failure (P1-15, v1.3.4: the raw *exec.ExitError
+// used to escape unwrapped and the step printed as "(unknown)").
+//
+// The excerpt is built from the trailing entry of result.Commands:
+//   - stderr without ssh known-hosts chatter or the RKFAIL trap line,
+//     bounded to its last bootstrapStderrTailLines lines;
+//   - "Failed command (exit N): <cmd>" when bootstrap.FailTrapLine
+//     fired;
+//   - the last bootstrapStdoutTailLines lines of stdout, which is where
+//     apt-get and most installers report what went wrong.
+//
+// The excerpt is empty when there is nothing useful to show.
 func lastCommandFailureContext(result bootstrap.Result, err error) (string, string) {
-	var stderr string
+	var last remote.Result
 	if len(result.Commands) > 0 {
-		stderr = strings.TrimSpace(result.Commands[len(result.Commands)-1].Stderr)
+		last = result.Commands[len(result.Commands)-1]
 	}
 	commandID := ""
+	exitCode := 0
 	var remoteErr remote.RemoteError
 	if errors.As(err, &remoteErr) {
 		commandID = remoteErr.CommandID
+		exitCode = remoteErr.ExitCode
 	}
 	if commandID == "" {
-		commandID = "unknown"
+		// Not produced by Apply / ApplyEphemeral today; still name the
+		// position instead of printing "(unknown)".
+		commandID = fmt.Sprintf("bootstrap step %d", len(result.Commands))
 	}
-	return commandID, stderr
+
+	var details []string
+	if failed := bootstrap.FailedCommand(last.Stderr); failed != "" {
+		if exitCode != 0 {
+			details = append(details, fmt.Sprintf("Failed command (exit %d): %s", exitCode, failed))
+		} else {
+			details = append(details, "Failed command: "+failed)
+		}
+	}
+	if stdout := bootstrapTailLines(last.Stdout, bootstrapStdoutTailLines); stdout != "" {
+		details = append(details, "Last stdout lines:\n"+stdout)
+	}
+	stderr := bootstrapTailLines(cleanBootstrapStderr(last.Stderr), bootstrapStderrTailLines)
+	if len(details) == 0 {
+		return commandID, stderr
+	}
+	if stderr == "" {
+		// Callers label the excerpt "Remote stderr (<step>):".
+		stderr = "(empty)"
+	}
+	return commandID, stderr + "\n" + strings.Join(details, "\n")
+}
+
+const (
+	bootstrapStderrTailLines = 30
+	bootstrapStdoutTailLines = 15
+)
+
+// cleanBootstrapStderr drops ssh known-hosts chatter (older hosts or
+// executors without LogLevel=ERROR) and the RKFAIL trap line, which
+// lastCommandFailureContext renders separately.
+func cleanBootstrapStderr(stderr string) string {
+	var kept []string
+	for _, line := range strings.Split(stderr, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, bootstrap.FailTrapMarker) {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Warning: Permanently added") && strings.Contains(trimmed, "known hosts") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// bootstrapTailLines returns the last n lines of s after trimming surrounding
+// whitespace, or "" when s is blank.
+func bootstrapTailLines(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }

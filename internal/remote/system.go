@@ -211,12 +211,19 @@ func sshArgs(target Target, remoteCommand string) []string {
 	// calls should not depend on ambient known_hosts trust. Disable
 	// known_hosts file writes/reads here and rely on RunnerKit's explicit
 	// host-key checks.
+	//
+	// LogLevel=ERROR (P1-15, v1.3.4): with UserKnownHostsFile=/dev/null
+	// every connection prints "Warning: Permanently added ... to the list
+	// of known hosts." on stderr, which buried the real remote error at
+	// the top of every bootstrap failure. Genuine ssh errors (auth,
+	// connection refused) are still printed at ERROR level.
 	args := []string{
 		"-p", strconv.Itoa(target.Port),
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
 	}
 	if strings.TrimSpace(target.KeyPath) != "" {
 		args = append(args, "-i", target.KeyPath)

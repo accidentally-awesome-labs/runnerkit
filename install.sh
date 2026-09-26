@@ -29,6 +29,7 @@ SUDOERS_PATH="/etc/sudoers.d/runnerkit-installer"
 
 render_sudoers() {
 	local u="$1"
+	# BEGIN runnerkit-sudoers (generated from bootstrap.RenderSudoersEntry by `go generate ./internal/bootstrap`; do not edit)
 	cat <<EOF
 # /etc/sudoers.d/runnerkit-installer (managed by runnerkit install.sh)
 ${u} ALL=(root) NOPASSWD: \\
@@ -37,13 +38,21 @@ ${u} ALL=(root) NOPASSWD: \\
   /usr/bin/install, \\
   /usr/bin/curl, \\
   /usr/bin/sha256sum, \\
+  /usr/bin/tee, /usr/bin/gpg, \\
+  /bin/mkdir, /usr/bin/mkdir, /usr/bin/unzip, \\
+  /usr/sbin/usermod, /usr/bin/dpkg, /usr/bin/add-apt-repository, \\
   /bin/chown, /usr/bin/chown, \\
+  /bin/chmod, /usr/bin/chmod, \\
+  /bin/cp, /usr/bin/cp, \\
+  /bin/cat, /usr/bin/cat, \\
+  /bin/ln, /usr/bin/ln, \\
   /bin/rm, /usr/bin/rm, \\
   /bin/su, /usr/bin/su, \\
   /bin/tar, /usr/bin/tar, \\
   /bin/systemctl, /usr/bin/systemctl, \\
   /opt/actions-runner/runnerkit-*/svc.sh
 EOF
+	# END runnerkit-sudoers
 }
 
 TMP="$(mktemp "${TMPDIR:-/tmp}/runnerkit-installer.XXXXXX")"
