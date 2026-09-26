@@ -383,9 +383,10 @@ func TestUp_CloudRequiresRegion(t *testing.T) {
 }
 
 // A value that is not a CIDR used to open the firewall to 0.0.0.0/0 while
-// the plan showed the user's value; it is refused before any network call.
+// the plan showed the user's value, and an IPv6 CIDR locks RunnerKit out of
+// the server; both are refused before any network call.
 func TestUp_CloudRefusesSSHAllowedCIDRThatIsNotACIDR(t *testing.T) {
-	for _, bad := range []string{"203.0.113.5", "203.0.113.5/33", "home"} {
+	for _, bad := range []string{"203.0.113.5", "203.0.113.5/33", "home", "2001:db8::1/128"} {
 		h := newGuardHarness(t)
 		err := h.run(t, nil, false, "up", "--repo", "owner/repo", "--cloud", "hetzner", "--experimental", "--cloud-region", "nbg1", "--ssh-allowed-cidr", bad, "--yes", "--dry-run", "--no-color")
 		assertExitInvalidInput(t, h, err, "invalid_ssh_allowed_cidr")

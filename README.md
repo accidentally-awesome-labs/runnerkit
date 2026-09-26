@@ -43,23 +43,26 @@ page install today) is **v1.3.3**; see
   - Readiness does not fail fast: if cloud-init ends in an error, `up`
     retries silently for 15 minutes while the server bills, then fails with
     `cloud_readiness_failed` without cloud-init's details. Run
-    `runnerkit destroy --repo owner/name`.
+    `runnerkit destroy --repo owner/name`, then see the `destroy` item
+    below.
   - `up` always uploads your SSH public key as a new Hetzner key, so it
     fails with `uniqueness_error` (before creating anything) when the key
     is already in the Hetzner project, for example from another
     repository's cloud runner.
   - Server type stock in `--cloud-region` is not checked. When Hetzner has
     none, `up` fails after creating an SSH key and a firewall; run
-    `runnerkit destroy` before trying another location.
+    `runnerkit destroy`, then see the `destroy` item below, before trying
+    another location.
   - On cloud runners, workflow steps that use `sudo` fail (the job sudo
     grant is BYO-only), there is no swap, and the default `cpx22` is small
     enough to trigger RunnerKit's own low-memory warning. Pass a larger
     Hetzner type with `--cloud-profile` for heavy builds.
-  - Once the server is gone or unreachable over SSH, `destroy` deletes the
-    Hetzner resources and the GitHub runner but keeps the local record: it
-    reports "Cleanup incomplete" and exits 0, and `up` then refuses that
-    repository (`cloud_state_exists`) until you remove its entry from
-    RunnerKit's state file (check the Hetzner Console first).
+  - After any failed cloud `up`, or once the server is gone or unreachable
+    over SSH, `destroy` deletes the Hetzner resources and the GitHub runner
+    but keeps the local record: it reports "Cleanup incomplete" and exits 0,
+    and `up` then refuses that repository (`cloud_state_exists`) until you
+    remove its entry from `state.json` in RunnerKit's state directory
+    (check the Hetzner Console first).
   - SSH is open to every IPv4 address unless you pass `--ssh-allowed-cidr`,
     and your SSH key can log in as `root` and as `runnerkit-admin`, which
     has passwordless sudo (SEC-11).

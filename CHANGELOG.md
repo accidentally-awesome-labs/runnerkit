@@ -180,10 +180,12 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 - The hard-coded "approx €4.90/month" cloud estimate is gone. A location
   where Hetzner reports no price is refused before anything is created
   (`cloud_location_unpriced`).
-- `--ssh-allowed-cidr` must be a CIDR (`invalid_ssh_allowed_cidr`, exit 2,
-  before any network call). A bare address such as `203.0.113.5` used to
-  open the firewall to `0.0.0.0/0` while the plan showed the address; use
-  `203.0.113.5/32`.
+- `--ssh-allowed-cidr` must be an IPv4 CIDR (`invalid_ssh_allowed_cidr`,
+  exit 2, before any network call). A bare address such as `203.0.113.5`
+  used to open the firewall to `0.0.0.0/0` while the plan showed the
+  address; use `203.0.113.5/32`. An IPv6 CIDR is refused too: RunnerKit
+  connects to the server's IPv4 address, so it locked RunnerKit out of a
+  billed server.
 - The installer sudoers comment and docs no longer call the fragment
   "scoped" or "not a blanket NOPASSWD ALL": it is root-equivalent. The
   `docker` group membership that now takes effect is root-equivalent too.
@@ -243,23 +245,26 @@ Mirrors the README "Known issues" section.
   - Readiness does not fail fast: if cloud-init ends in an error, `up`
     retries silently for 15 minutes while the server bills, then fails with
     `cloud_readiness_failed` without cloud-init's details. Run
-    `runnerkit destroy --repo owner/name`.
+    `runnerkit destroy --repo owner/name`, then see the `destroy` item
+    below.
   - `up` always uploads your SSH public key as a new Hetzner key, so it
     fails with `uniqueness_error` (before creating anything) when the key
     is already in the Hetzner project, for example from another
     repository's cloud runner.
   - Server type stock in `--cloud-region` is not checked. When Hetzner has
     none, `up` fails after creating an SSH key and a firewall; run
-    `runnerkit destroy` before trying another location.
+    `runnerkit destroy`, then see the `destroy` item below, before trying
+    another location.
   - On cloud runners, workflow steps that use `sudo` fail (the job sudo
     grant is BYO-only), there is no swap, and the default `cpx22` is small
     enough to trigger RunnerKit's own low-memory warning. Pass a larger
     Hetzner type with `--cloud-profile` for heavy builds.
-  - Once the server is gone or unreachable over SSH, `destroy` deletes the
-    Hetzner resources and the GitHub runner but keeps the local record: it
-    reports "Cleanup incomplete" and exits 0, and `up` then refuses that
-    repository (`cloud_state_exists`) until you remove its entry from
-    RunnerKit's state file (check the Hetzner Console first).
+  - After any failed cloud `up`, or once the server is gone or unreachable
+    over SSH, `destroy` deletes the Hetzner resources and the GitHub runner
+    but keeps the local record: it reports "Cleanup incomplete" and exits 0,
+    and `up` then refuses that repository (`cloud_state_exists`) until you
+    remove its entry from `state.json` in RunnerKit's state directory
+    (check the Hetzner Console first).
   - SSH is open to every IPv4 address unless you pass `--ssh-allowed-cidr`,
     and your SSH key can log in as `root` and as `runnerkit-admin`, which
     has passwordless sudo (SEC-11).
@@ -281,9 +286,9 @@ wrong.**
 - Added `ln`, `chmod`, `cp` and `cat` to `RenderSudoersEntry` for the
   runner-image setup step (Bug 33). These commands accept any path and are
   root-equivalent. The change did not reach `install.sh`.
-- `doctor --json` error paths always include `schema_version`, `stage`,
-  `command`, `next_actions` and `host_incident_hints` (arrays, never
-  `null`). The existing `ok`, `error` and `redactions_applied` fields are
+- `doctor --json` errors after the repository is resolved (every error
+  except `invalid_repo`) include `schema_version`, `stage`, `command`,
+  `next_actions` and `host_incident_hints` (arrays, never `null`). The existing `ok`, `error` and `redactions_applied` fields are
   unchanged.
 
 ## [1.3.0] – [1.3.2]
@@ -310,7 +315,9 @@ reconstructed from the tags later.
   `down`), and a shared runner tarball cache under
   `/opt/actions-runner/runnerkit-shared-bin/<version>/`.
 - `register` fails with `lifecycle_foundation_missing` when the host has no
-  `runnerkit-runner` user yet; run `up` (or `install.sh`) there first.
+  `runnerkit-runner` user yet; run `runnerkit up --host user@host` for one
+  repository on that host first (`install.sh` alone does not create the
+  user).
 - `doctor` notes when several RunnerKit install directories share a host.
 - See [docs/troubleshooting/multi-repo.md](docs/troubleshooting/multi-repo.md).
 
@@ -320,7 +327,8 @@ reconstructed from the tags later.
   `--unicode` global flags; BYO progress checklists.
 - `status --json` and `doctor --json` include `schema_version`, `stage` and
   `next_actions`; human `doctor` output shows a `STAGE:` line, and
-  `runnerkit --json` with no subcommand returns `next_actions`.
+  `runnerkit --json` with no subcommand returns `next_actions` when no
+  repositories are saved.
 - Copy-paste command panels (ASCII; `--unicode` for UTF-8 borders). See
   [docs/troubleshooting/doctor-ux.md](docs/troubleshooting/doctor-ux.md).
 - `doctor --ignore` and `doctor --fix` (`--fix` is disabled in v1.3.4; see

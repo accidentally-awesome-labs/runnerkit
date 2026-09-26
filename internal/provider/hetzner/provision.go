@@ -358,12 +358,17 @@ func lookupProfile(ctx context.Context, client Client, profile provider.Profile)
 }
 
 // firewallRules returns the inbound SSH rule for cidr (empty means
-// provider.HetznerDefaultSSHAllowedCIDR). A value that is not a CIDR is an
-// error: it must never widen to 0.0.0.0/0.
+// provider.HetznerDefaultSSHAllowedCIDR). A value that is not an IPv4 CIDR
+// is an error: it must never widen to 0.0.0.0/0, and an IPv6-only rule
+// would lock RunnerKit out, because it connects to the server's IPv4
+// address (machineFromServer).
 func firewallRules(cidr string) ([]hcloud.FirewallRule, error) {
 	_, ipnet, err := net.ParseCIDR(defaultCIDR(cidr))
 	if err != nil {
-		return nil, fmt.Errorf("--ssh-allowed-cidr %q is not a CIDR (for one address use /32, or /128 for IPv6): %w", cidr, err)
+		return nil, fmt.Errorf("--ssh-allowed-cidr %q is not a CIDR (for one address use /32): %w", cidr, err)
+	}
+	if ipnet.IP.To4() == nil {
+		return nil, fmt.Errorf("--ssh-allowed-cidr %q is not an IPv4 CIDR; RunnerKit connects to the server's IPv4 address (for one address use /32)", cidr)
 	}
 	port := "22"
 	desc := "RunnerKit SSH readiness access"

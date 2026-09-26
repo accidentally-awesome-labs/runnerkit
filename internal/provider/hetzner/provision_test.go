@@ -198,19 +198,6 @@ func TestProvisionCreatesResourcesInOrderWithDefaultProfileAndTags(t *testing.T)
 	}
 }
 
-// Bug 26 (Plan 06-11, 2026-05-06): destroy.go's cascade-delete approach
-// requires Hetzner to auto-allocate primary IPs with `AutoDelete: true`
-// — the default for ServerCreatePublicNet when EnableIPv4 / EnableIPv6
-// is true and no explicit IPv4/IPv6 *PrimaryIP override is provided.
-// If a future change passes `IPv4: &PrimaryIP{...}` (or `IPv6`), the
-// cascade is broken — the primary IPs survive server.Delete and
-// `runnerkit destroy` falls into the live `Server must be offline for
-// this action (server_not_stopped)` path on the unassign step that
-// destroy.go relies on auto-cascade to skip.
-//
-// Regression guard: assert provision sets EnableIPv4=true,
-// EnableIPv6=true, IPv4=nil, IPv6=nil. The fakeClient captures
-// ServerCreateOpts so we can inspect PublicNet directly.
 // A bare IP in --ssh-allowed-cidr used to widen the firewall to 0.0.0.0/0;
 // now nothing is created.
 func TestProvisionRefusesSSHAllowedCIDRThatIsNotACIDR(t *testing.T) {
@@ -231,11 +218,26 @@ func TestFirewallRulesDefaultsOnlyWhenEmpty(t *testing.T) {
 	if err != nil || rules[0].SourceIPs[0].String() != "0.0.0.0/0" {
 		t.Fatalf("empty CIDR = %v, %v; want the 0.0.0.0/0 default", rules, err)
 	}
-	if _, err := firewallRules("0.0.0.0"); err == nil {
-		t.Fatal("a bare address must be an error, not the default")
+	for _, bad := range []string{"0.0.0.0", "2001:db8::1/128"} {
+		if _, err := firewallRules(bad); err == nil {
+			t.Fatalf("%q must be an error, not a rule", bad)
+		}
 	}
 }
 
+// Bug 26 (Plan 06-11, 2026-05-06): destroy.go's cascade-delete approach
+// requires Hetzner to auto-allocate primary IPs with `AutoDelete: true`
+// — the default for ServerCreatePublicNet when EnableIPv4 / EnableIPv6
+// is true and no explicit IPv4/IPv6 *PrimaryIP override is provided.
+// If a future change passes `IPv4: &PrimaryIP{...}` (or `IPv6`), the
+// cascade is broken — the primary IPs survive server.Delete and
+// `runnerkit destroy` falls into the live `Server must be offline for
+// this action (server_not_stopped)` path on the unassign step that
+// destroy.go relies on auto-cascade to skip.
+//
+// Regression guard: assert provision sets EnableIPv4=true,
+// EnableIPv6=true, IPv4=nil, IPv6=nil. The fakeClient captures
+// ServerCreateOpts so we can inspect PublicNet directly.
 func TestProvisionEnablesPublicIPsWithoutOverridingForBug26(t *testing.T) {
 	client := newFakeClient()
 	p := NewProvider(map[string]string{EnvHCLOUDToken: "fake-token"}, WithClient(client))

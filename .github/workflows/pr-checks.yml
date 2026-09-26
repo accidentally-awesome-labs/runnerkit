@@ -106,15 +106,19 @@ jobs:
           set -euo pipefail
           missing=0
           # Only the pull request's own commits: exclude everything on the
-          # base branch, including commits merged in from it later.
-          for c in $(git rev-list --no-merges "$HEAD" --not "$BASE" "origin/$BASE_REF"); do
-            if ! git log -1 --format=%B "$c" | grep -Eq '^Signed-off-by: .+ <[^<>@ ]+@[^<> ]+>[[:space:]]*$'; then
+          # base branch, including commits merged in from it later. Assigned
+          # first so a failing rev-list fails the step instead of checking
+          # nothing.
+          commits="$(git rev-list --no-merges "$HEAD" --not "$BASE" "origin/$BASE_REF")"
+          for c in $commits; do
+            msg="$(git log -1 --format=%B "$c")"
+            if ! grep -Eq '^Signed-off-by: .+ <[^<>@ ]+@[^<> ]+>[[:space:]]*$' <<<"$msg"; then
               echo "::error::commit $(git log -1 --format='%h %s' "$c") has no 'Signed-off-by: Name <email>' line"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "Add the line with 'git commit -s', or 'git rebase --signoff main' for existing commits, then force-push (see CONTRIBUTING.md)."
+            echo "Add the line with 'git commit -s'. For existing commits run 'git rebase --signoff $BASE' (the base this pull request was checked against), then force-push; see CONTRIBUTING.md."
             exit 1
           fi
 
