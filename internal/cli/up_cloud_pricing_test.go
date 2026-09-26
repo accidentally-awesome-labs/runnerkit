@@ -138,7 +138,7 @@ func TestCloudPlan_PriceFromAPI(t *testing.T) {
 			client := newPricingHCloudClient()
 			var out, errOut bytes.Buffer
 			cmd := NewRootCommand(pricingCloudDeps(t, client, &out, &errOut))
-			cmd.SetArgs([]string{"up", "--repo", "owner/name", "--cloud", "hetzner", "--cloud-region", tc.region, "--cloud-profile", tc.profile, "--yes", "--dry-run", "--no-color"})
+			cmd.SetArgs([]string{"up", "--repo", "owner/name", "--experimental", "--cloud", "hetzner", "--cloud-region", tc.region, "--cloud-profile", tc.profile, "--yes", "--dry-run", "--no-color"})
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 			}
@@ -156,7 +156,7 @@ func TestCloudPlan_PriceFromAPI(t *testing.T) {
 			out.Reset()
 			errOut.Reset()
 			cmd = NewRootCommand(pricingCloudDeps(t, client, &out, &errOut))
-			cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--cloud-region", tc.region, "--cloud-profile", tc.profile, "--yes", "--dry-run", "--no-color"})
+			cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--experimental", "--cloud", "hetzner", "--cloud-region", tc.region, "--cloud-profile", tc.profile, "--yes", "--dry-run", "--no-color"})
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("json dry-run returned error: %v\nstdout=%s\nstderr=%s", err, out.String(), errOut.String())
 			}
@@ -194,7 +194,7 @@ func TestCloudPlan_UnpricedLocationRefuses(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps := pricingCloudDeps(t, client, &out, &errOut)
 	cmd := NewRootCommand(deps)
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--cloud-region", "sin", "--cloud-profile", "cpx22", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--experimental", "--cloud", "hetzner", "--cloud-region", "sin", "--cloud-profile", "cpx22", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("expected unpriced location refusal\nstdout=%s\nstderr=%s", out.String(), errOut.String())
@@ -221,7 +221,7 @@ func TestCloudPlan_MissingPriceRefuses(t *testing.T) {
 	fake := &provider.FakeProvider{Prices: map[string]provider.FakePrice{}}
 	var out, errOut bytes.Buffer
 	cmd := NewRootCommand(Dependencies{Version: "test-version", Out: &out, Err: &errOut, GitHub: newFakePermittedGitHubService(), RemoteExecutor: newFakeRemoteExecutor(), Providers: provider.NewRegistry(fake), StateBaseDir: t.TempDir(), Sleep: noSleep})
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--cloud-region", "nbg1", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--experimental", "--cloud", "hetzner", "--cloud-region", "nbg1", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if got := ExitCode(err); got != ExitInvalidInput {
 		t.Fatalf("ExitCode() = %d (err %v), want %d\n%s%s", got, err, ExitInvalidInput, out.String(), errOut.String())
@@ -242,7 +242,7 @@ func TestCloudPlan_PricingAPIFailure(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps := pricingCloudDeps(t, client, &out, &errOut)
 	cmd := NewRootCommand(deps)
-	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--cloud", "hetzner", "--cloud-region", "nbg1", "--cloud-profile", "cpx22", "--yes", "--no-color"})
+	cmd.SetArgs([]string{"--json", "up", "--repo", "owner/name", "--experimental", "--cloud", "hetzner", "--cloud-region", "nbg1", "--cloud-profile", "cpx22", "--yes", "--no-color"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("expected pricing failure\nstdout=%s\nstderr=%s", out.String(), errOut.String())
