@@ -18,14 +18,14 @@ This section describes the code on `main`, which will be released as
 page install today) is **v1.3.3**; see
 [If you are on v1.3.3 or older](#if-you-are-on-v133-or-older) below.
 
-- **BYO setup (the main path).** Repaired in v1.3.4 for fresh Ubuntu 24.04
-  x86_64 hosts prepared by the v1.3.4 `install.sh`. So far this was
-  validated only on a local password-sudo Ubuntu 24.04 container against a
-  fake GitHub API; a run of a real GitHub job is required before v1.3.4 is
-  tagged. If that run fails, v1.3.4 will ship with BYO marked as not
-  supported. Hosts prepared by an older `install.sh` must re-run the new
-  one. The sudoers fragment `install.sh` installs is **root-equivalent**;
-  see [docs/security-posture.md](docs/security-posture.md).
+- **BYO setup (the main path).** BYO is not supported in this release.
+  v1.3.4 contains a repair of the setup path, but it was validated only on
+  a local password-sudo Ubuntu 24.04 container against a fake GitHub API,
+  not with a real GitHub job. `runnerkit up` and `register` refuse a BYO
+  host (`byo_unsupported_release`) unless you pass `--accept-known-issues`.
+  Hosts prepared by an older `install.sh` must re-run the new one. The
+  sudoers fragment `install.sh` installs is **root-equivalent**; see
+  [docs/security-posture.md](docs/security-posture.md).
 - **Docker.** The runner user (`runnerkit-runner`) is in the `docker` group,
   which is **root-equivalent** for every job on the host. Existing hosts get
   the group on their next `runnerkit up --repo owner/name --host user@host
