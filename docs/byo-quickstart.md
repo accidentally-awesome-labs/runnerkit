@@ -27,7 +27,7 @@ For full guidance see the [Self-hosted Runner Safety Guide](safety.md).
 
 ## Sudo setup (one-time on the host)
 
-Bootstrap runs over SSH without a TTY, so the SSH user must already have **passwordless sudo** for RunnerKit’s commands. Run the **one-time install on the runner machine** (interactive sudo once), then use `runnerkit register` or `runnerkit up` from your workstation forever after.
+Bootstrap runs over SSH without a TTY, so the SSH user must already have **passwordless sudo** for RunnerKit’s commands. Run the **one-time install on the runner machine** (interactive sudo once), then use `runnerkit up` from your workstation. `runnerkit register` adds more repositories to a host that `up` has set up; on a host without the shared `runnerkit-runner` user it refuses with `lifecycle_foundation_missing` and names the `up` command to run.
 
 1. Print the install command from your workstation:
 
@@ -54,7 +54,7 @@ For the full list of what to revoke, see [If you already installed RunnerKit](se
 
 | Scenario | Path |
 | --- | --- |
-| First-time BYO host | `runnerkit init --print-install-command` → run on host → `runnerkit up` or `runnerkit register` |
+| First-time BYO host | `runnerkit init --print-install-command` → run on host → `runnerkit up` (then `runnerkit register` for more repositories) |
 | CI / automation / `--json` | Host must already have install applied; otherwise RunnerKit exits with `host_install_required` and a boxed install command |
 | Manual NOPASSWD ALL for the SSH user | Works; equivalent in effect to install.sh, which is also root-equivalent |
 

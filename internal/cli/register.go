@@ -15,7 +15,7 @@ func newRegisterCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cob
 	cmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register a GitHub Actions runner on your BYO Linux host",
-		Long:  "Same workflow as `runnerkit up` for bring-your-own SSH hosts: run `runnerkit init` for the one-time host install, then register from your workstation.",
+		Long:  "Add a repository to a BYO host that `runnerkit up` has already set up (same workflow as `runnerkit up`). For the first repository on a host, use `runnerkit up`: it prepares the host and creates the shared runnerkit-runner user, and register refuses a host without it (lifecycle_foundation_missing).",
 		// Offline --experimental gate (BYO --mode ephemeral) before any
 		// repository resolution or GitHub call; see enforceExperimentalGates.
 		PreRunE: func(_ *cobra.Command, _ []string) error {

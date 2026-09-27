@@ -7,9 +7,14 @@ tarball cache** under `/opt/actions-runner/runnerkit-shared-bin/<version>/`.
 
 ## Commands
 
-- **`runnerkit init`** — one-time host install (interactive sudo on the machine).
-- **`runnerkit register`** — add another repo after the host is prepared. Fails
-  with `lifecycle_foundation_missing` if the shared runner user is missing.
+- **`runnerkit init --print-install-command`** — prints the one-time
+  `install.sh` line to run on the host (interactive sudo on the machine).
+- **`runnerkit up`** — sets up the first repository on the host and creates
+  the shared `runnerkit-runner` user.
+- **`runnerkit register`** — adds another repository to a host that `up` has
+  set up. Without the shared runner user it fails with
+  `lifecycle_foundation_missing` and names the `runnerkit up` command to run
+  (`install.sh` alone does not create the user).
 - **`runnerkit list`** / **`runnerkit list --host user@host[:port]`** — inventory
   from local state (`--json` for automation).
 - **`runnerkit unregister`** — alias of **`runnerkit down`** (same behavior).

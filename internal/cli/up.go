@@ -235,7 +235,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 
 	if opts.registerLifecycleOnly {
-		if err := verifyBYOFoundationForRegister(ctx, deps, renderer, jsonOutput, target); err != nil {
+		if err := verifyBYOFoundationForRegister(ctx, deps, renderer, jsonOutput, target, registerFoundationUpCommand(repo.FullName, target, modeDecision.Mode, opts)); err != nil {
 			return err
 		}
 	}
@@ -1694,7 +1694,7 @@ func renderPreflightHuman(renderer *ui.Renderer, report preflight.Report) error 
 	return renderer.Step(1, 2, "ssh-preflight", lines...)
 }
 
-func verifyBYOFoundationForRegister(ctx context.Context, deps Dependencies, renderer *ui.Renderer, jsonOutput bool, target remote.Target) error {
+func verifyBYOFoundationForRegister(ctx context.Context, deps Dependencies, renderer *ui.Renderer, jsonOutput bool, target remote.Target, upCommand string) error {
 	cmd := remote.Command{
 		ID:     "verify_runnerkit_foundation",
 		Script: bootstrap.FoundationUserProbeScript(),
@@ -1702,7 +1702,7 @@ func verifyBYOFoundationForRegister(ctx context.Context, deps Dependencies, rend
 	}
 	res, err := deps.RemoteExecutor.Run(ctx, target, cmd)
 	if err != nil || res.ExitCode != 0 {
-		return RenderLifecycleFoundationMissing(renderer, jsonOutput, deps.Version)
+		return RenderLifecycleFoundationMissing(renderer, jsonOutput, upCommand)
 	}
 	return nil
 }
