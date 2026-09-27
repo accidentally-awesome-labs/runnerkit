@@ -29,6 +29,6 @@ GoReleaser (upstream only).
 ## Archiving
 
 The [archive playbook](maintainers/archive.md) is the checklist for
-shutting RunnerKit down. It is used only on a kill decision (the criteria
-are in [validation-metrics.md](validation-metrics.md)) or a failed
-capacity check.
+shutting RunnerKit down. It is used only on a kill decision or a failed
+capacity check; the triggers are listed in the playbook, and the
+2026-12-21 thresholds are in [validation-metrics.md](validation-metrics.md).

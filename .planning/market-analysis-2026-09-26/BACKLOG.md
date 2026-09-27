@@ -4,14 +4,14 @@
 
 **Status 2026-09-27**, recorded before `.planning/` moves to a private repository (H-05). `main` is at `930724e`; v1.3.4 is not tagged.
 - **Merged** (2026-09-26/27):
-  - PR #1 (`e67a324`): the v1.3.4 harm reduction and core-path repair, A-01 to A-10 and A-14 to A-19 (the §0 cut 1–3 items shipped early), with LICENSE, CONTRIBUTING, SECURITY, `docs/security-posture.md` and the CHANGELOG.
+  - PR #1 (`e67a324`): the v1.3.4 harm reduction and core-path repair, A-01 to A-10 and A-14 to A-19 (the §0 cut 1–3 items shipped early, except C-02's CI guard, which is in PR #3), with LICENSE, CONTRIBUTING, SECURITY, `docs/security-posture.md` and the CHANGELOG.
   - PR #2 (`f652142`): `docs/testkit/` and `scripts/testkit/`: the A-20 runbook with `gate.sh`, and the V-1 to V-4 scripts.
   - PR #3 (`60e00df`): the C-02 guard in `go-test`; a DCO job for fork pull requests (H-02's code half); IPv4-only `--ssh-allowed-cidr`; the cloud Known issues (§A.6); the RELEASE-NOTES content in the CHANGELOG (the files are still tracked); the wording sweep (N-02); `TestRenderSudoersEntryGolden`.
   - PR #4 (`80e1837`): `register`'s `lifecycle_foundation_missing` points at `runnerkit up`.
   - PR #5 (`03c6e00`): the V-3 probe fix; `gate.sh` G9 checks A-16's acceptance; identical README and CHANGELOG Known issues (`TestChangelogKnownIssuesMatchReadme`).
   - PR #8 (`930724e`): `gate.sh` writes its CHANGELOG evidence line only on a clean PASS, with `install.sh`'s SHA-256.
 - **Held:** draft PR #6 (A-21) and draft PR #7 (H-08's "Fixed in v1.3.4" wording and `TestBYOClaimNeedsRealJobEvidence`). Exactly one merges after the A-20 gate session.
-- **Open:** A-20, A-21, H-04a, H-05 and the §A.7 checklist. Boxes are ticked only where the item's acceptance is met on `main`: A-16 and A-18 are merged, but their acceptance runs in A-20, and A-17a's needs the govulncheck link for the tagged SHA. On 2026-09-27, 2.337.0 was still the latest actions/runner release (A-16).
+- **Open:** A-20, A-21, H-04a, H-05, the V-1 to V-4 runs (only their scripts merged; V-1 starts by C3) and the §A.7 checklist. Boxes are ticked only where the item's acceptance is met on `main`: A-16 and A-18 are merged, but their acceptance runs in A-20, and A-17a's needs the govulncheck link for the tagged SHA. On 2026-09-27, 2.337.0 was still the latest actions/runner release (A-16).
 - **Next:** G-0 and G-1 by C1 (2026-10-03), the A-20 gate session around 2026-10-05, and the v1.3.4 tag by C2 (2026-10-10).
 - Where the text below puts A-01..A-03, C-02, A-06b or A-17b in v1.3.5 or in the post-launch ledger, read v1.3.4; §0 counts their hours as provisional Stage 0 spend. File:line references are to `64c3003`; PR #1 moved many of them.
 
@@ -130,7 +130,7 @@ Stage 0 has zero slack. The likeliest overrun is 0.3b, and its fallback (A-21) i
 
 **W2 does not fit before launch** (54.5 + 12 = 66.5 h > 55 h). If W2 gets a go at C7 or C9, build it **after** launch and ship it by 2026-12-07, as STRATEGY C7 now says. (An earlier STRATEGY draft said "if go, W2 by 2026-11-16"; with these estimates that date and the ≤55 h cap cannot both hold, and the cap is a kill criterion.) Build W2 before launch only if the C7 re-baseline shows the logged hours plus W2 still fit under 55 h.
 
-*Stage 1 after launch (C8 → C10; 30.5 h available under the ≤85 h cap)*
+*Stage 1 after launch (C8 → C10; 30.5 h available under the ≤85 h cap, 22.0 h once the provisional Stage 0 spend in §0 is counted)*
 
 | Block | W2 no-go | W2 go |
 |---|---:|---:|
@@ -971,7 +971,7 @@ Until then each item stays documented as a known issue in the README (H-08). The
 - [ ] 0.3b outcome recorded: either A-20 is green (run URL in the CHANGELOG), or A-21 ships and the banner says BYO is not supported in this release.
 - [ ] The CHANGELOG `v1.3.4` section:
   - lists every shipped A-item;
-  - includes the "Known issues" block that mirrors the README banner (H-08), including the v1.3.5 items (P1-1..P1-3, A-06b);
+  - includes the "Known issues" block that mirrors the README banner (H-08), including the v1.3.5 items (P1-1..P1-3, A-06b) (overtaken 2026-09-27: P1-1..P1-3 and A-06b are fixed in v1.3.4 and are not known issues);
   - includes the erratum for the v1.3.3 notes (H-10);
   - says BYO works on password-sudo hosts **only** if A-20 is green.
 - [ ] README banner (H-08), security page with its revocation section (H-09), and LICENSE (H-01) merged before the tag.

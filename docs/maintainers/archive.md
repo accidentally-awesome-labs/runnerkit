@@ -64,11 +64,12 @@ behind a release that refuses its known-destructive commands and docs that
 say what it really does. Do only this work, then run the
 [checklist](#checklist) with an honest notice.
 
-- [ ] **License, hygiene and honesty work is on `main`.** Most of these were
-  merged before this playbook was written; check each one:
+- [ ] **License, hygiene and honesty work is on `main`.** Some of these were
+  done before this playbook was written; check each one:
   - `LICENSE` (Apache-2.0), `CONTRIBUTING.md`, `SECURITY.md` with private
     vulnerability reporting turned on in the repository settings, and
-    `CHANGELOG.md` with the old `RELEASE-NOTES-*.md` files folded into it;
+    `CHANGELOG.md` with the old `RELEASE-NOTES-*.md` files folded into it
+    and the files removed from the tree;
   - the internal planning files (`.planning/`), `smoke-output.log` and
     `GEMINI.md` removed from the tree, with `.planning/` kept in a private
     repository;
@@ -93,11 +94,11 @@ say what it really does. Do only this work, then run the
   With it, BYO `up` and `register` refuse with `byo_unsupported_release`
   (exit 2) unless `--accept-known-issues` is passed, and the README and
   CHANGELOG say "BYO is not supported in this release." A release may say
-  BYO works only after a real GitHub job has passed on a fresh host
-  prepared by its `install.sh`; that check is not part of this minimal
-  path, and an archived repository must not claim BYO works. The banner
-  keeps its line that the `install.sh` sudoers fragment is
-  root-equivalent, with the link to the security page.
+  BYO works only after a real GitHub job has passed on a fresh
+  password-sudo host prepared only by that release's `install.sh`; that
+  check is not part of this minimal path, and an archived repository must
+  not claim BYO works. The banner keeps its line that the `install.sh`
+  sudoers fragment is root-equivalent, with the link to the security page.
 - [ ] **Tag v1.3.4.** Follow the
   [pre-tag checklist](../release-process.md#pre-tag-checklist), taking its
   "BYO is not supported" branch at the real-job step, so that Homebrew and

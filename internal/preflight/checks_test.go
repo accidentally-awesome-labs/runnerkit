@@ -251,7 +251,8 @@ func TestCheckPrivilege_SudoMissing(t *testing.T) {
 //  1. Behavioral: a fake executor returning ExitCode=0 + the
 //     live-smoke-confirmed install --version stdout classifies as
 //     SeverityPass (passwordless sudo). On the Bug 31 smoke host,
-//     with the fragment installed, `sudo -n true` exited 1 with
+//     with the byo-prepare fragment of that time installed,
+//     `sudo -n true` exited 1 with
 //     `sudo: a password is required` while `sudo -n install
 //     --version` exited 0 and printed `install (GNU coreutils)
 //     9.4`. This branch alone passes pre+post fix because the
