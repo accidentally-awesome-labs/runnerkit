@@ -250,17 +250,17 @@ func TestCheckPrivilege_SudoMissing(t *testing.T) {
 // Test has two assertions:
 //  1. Behavioral: a fake executor returning ExitCode=0 + the
 //     live-smoke-confirmed install --version stdout classifies as
-//     SeverityPass (passwordless sudo). (See gap doc Bug 31
-//     lines 1465-1467 for the exact `install (GNU coreutils)
-//     9.4` evidence.) This branch alone passes pre+post fix
-//     because the fake keys on Command.ID rather than Script.
+//     SeverityPass (passwordless sudo). On the Bug 31 smoke host,
+//     with the byo-prepare fragment of that time installed,
+//     `sudo -n true` exited 1 with
+//     `sudo: a password is required` while `sudo -n install
+//     --version` exited 0 and printed `install (GNU coreutils)
+//     9.4`. This branch alone passes pre+post fix because the
+//     fake keys on Command.ID rather than Script.
 //  2. Source-code binding: the checks.go source contains the new
 //     literal `sudo -n install --version` AND does NOT contain
 //     the old literal `Script: "sudo -n true"`. This is the RED
 //     gate that fails on the pre-fix code and passes after Task 2.
-//
-// See: .planning/phases/06-release-upgrade-docs-and-v1-validation/06-GAP-byo-sudo-handling.md
-// (Bug 31 lines 1433-1554) and Plan 06-13.
 func TestCheckPrivilege_AllowsInstallerSudoers(t *testing.T) {
 	// Sub-assertion 1: behavioral (independent of Script literal)
 	probe := passingProbe("ubuntu", "x86_64")

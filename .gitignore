@@ -27,3 +27,8 @@ bin/
 # Stray checklist/session JSON at repo root (sessions belong under state dir).
 /sessions/
 internal/cli/sessions/
+
+# Planning notes, agent notes, smoke log: archived privately, local-only.
+.planning/
+/GEMINI.md
+/smoke-output.log

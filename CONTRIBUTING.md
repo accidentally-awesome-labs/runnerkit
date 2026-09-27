@@ -20,6 +20,10 @@ in total:
   requested);
 - **W3** runner hygiene recipes.
 
+The metric definitions and the thresholds for the published go/kill
+decision on 2026-12-21 are in
+[docs/validation-metrics.md](docs/validation-metrics.md).
+
 The project is also explicitly **not** doing, unless the evidence changes:
 
 - headline claims about setup time or about saving money compared with

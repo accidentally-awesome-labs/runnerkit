@@ -541,8 +541,8 @@ func needsAnyRemoteSudo(selected map[ops.CleanupArtifact]bool) bool {
 // REGARDLESS of err. See internal/remote/system.go:81-89 for the
 // err+ExitCode contract — exec.ExitError populates result.ExitCode;
 // other err sets result.ExitCode = -1 (treated as "unknown, fall
-// through" via the default branch below). Plan 06-07 attempt-17
-// smoke-output.log showed `probe-direct: rc=1 err=exit status 1`
+// through" via the default branch below). The Plan 06-07 attempt-17
+// live smoke log showed `probe-direct: rc=1 err=exit status 1`
 // followed by `probe: needs=false` — Bug 28 closes that cascade.
 func probeSudoNeedsPassword(ctx context.Context, executor remote.Executor, target remote.Target) (bool, error) {
 	if executor == nil {

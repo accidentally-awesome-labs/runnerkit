@@ -5,7 +5,7 @@ All notable changes to RunnerKit are recorded here. The format follows
 [Semantic Versioning](https://semver.org/).
 
 Releases before v1.3.4 were described in `RELEASE-NOTES-v*.md` files, which
-are also in each release tag (for example
+are in each release tag (for example
 `git show v1.3.3:RELEASE-NOTES-v1.3.3.md`); they are summarized below.
 
 ## [Unreleased] — v1.3.4
