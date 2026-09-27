@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -58,8 +59,7 @@ func TestBYOQuickstartDocsContainRequiredCopy(t *testing.T) {
 		"root-equivalent",
 		"`docker` group",
 		"run the current one again",
-		"fake GitHub API",
-		"a real GitHub job run is still required",
+		"verified with a real GitHub job",
 		"`recover --reinstall-service` and `recover --reregister` are disabled",
 		"`runnerkit upgrade-runner` is disabled",
 		"security-posture.md#if-you-already-installed-runnerkit",
@@ -449,7 +449,7 @@ func TestReadmeHonestyBanner(t *testing.T) {
 		"### If you are on v1.3.3 or older",
 		"## When NOT to use RunnerKit",
 		"## What BYO setup installs on the host",
-		"fake GitHub API",
+		"Fixed in v1.3.4 for fresh Ubuntu 24.04",
 		"**root-equivalent**",
 		"`RUNNERKIT_GRANT_CI_SUDO=1`",
 		"requires\n  `--experimental` and an explicit `--cloud-region`",
@@ -530,6 +530,25 @@ func knownIssuesList(t *testing.T, name, doc, heading, end string) string {
 	return strings.Join(strings.Fields(section[first:]), " ")
 }
 
+// TestBYOClaimNeedsRealJobEvidence: CLAUDE.md never lets a release claim
+// BYO works without a real GitHub job on a fresh password-sudo host (A-20).
+// Once the README says the BYO path is fixed, the CHANGELOG must carry the
+// evidence line gate.sh writes: "Real-job gate (<date>): <run URL>; ...".
+func TestBYOClaimNeedsRealJobEvidence(t *testing.T) {
+	readme := mustReadDocFile(t, "../../README.md")
+	changelog := mustReadDocFile(t, "../../CHANGELOG.md")
+	if !strings.Contains(readme, "**BYO setup (the main path).** Fixed in") {
+		return
+	}
+	evidence := regexp.MustCompile(`(?m)^Real-job gate \(\d{4}-\d{2}-\d{2}\): https://github\.com/[^/\s]+/[^/\s]+/actions/runs/\d+; runner \d+\.\d+\.\d+ on Ubuntu 24\.04 x86_64`)
+	if !evidence.MatchString(changelog) {
+		t.Fatal("README.md says the BYO path is fixed, but CHANGELOG.md has no gate.sh evidence line (\"Real-job gate (<date>): https://github.com/<owner>/<repo>/actions/runs/<id>; runner <version> on Ubuntu 24.04 x86_64, ...\"); paste it from EVIDENCE.md or do not claim BYO works")
+	}
+	if strings.Contains(changelog, "PASTE-GATE-LINE-HERE") {
+		t.Fatal("CHANGELOG.md still has the PASTE-GATE-LINE-HERE placeholder")
+	}
+}
+
 // TestLicensingAndPolicyDocs pins H-01..H-04a and H-09.
 func TestLicensingAndPolicyDocs(t *testing.T) {
 	license := mustReadDocFile(t, "../../LICENSE")
@@ -597,7 +616,7 @@ func TestLicensingAndPolicyDocs(t *testing.T) {
 		"keepachangelog.com",
 		"## [Unreleased] — v1.3.4",
 		"### Added", "### Changed", "### Fixed", "### Security", "### Known issues",
-		"fake GitHub API",
+		"**BYO real-job gate (A-20):**",
 		"(A-20)",
 		"### Erratum for v1.3.3",
 		"it was removed in v1.0.8",
