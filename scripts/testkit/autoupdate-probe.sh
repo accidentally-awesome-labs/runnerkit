@@ -13,7 +13,7 @@
 #            U1 the probe registered at 2.334.0;
 #            U2 the probe job succeeded;
 #            U3 the runner now reports RunnerKit's pinned version (what
-#               this checkout installs, 2.337.0 in v1.3.4) or newer;
+#               this checkout installs) or newer;
 #            U4 bin and externals point at the new version and the
 #               self-update log ends in .succeed;
 #            U5 runsvc.sh is not empty and matches bin/runsvc.sh (runner

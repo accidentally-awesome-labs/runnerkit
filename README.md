@@ -71,19 +71,24 @@ page install today) is **v1.3.3**; see
   (exit 2) and print manual steps. The GitHub runner updates itself;
   to re-register, run `runnerkit down` and then `runnerkit up`.
 - **Platforms.** Only **Ubuntu x86_64** runner hosts are supported. On arm64
-  hosts preflight warns and setup then fails; other Linux distributions pass
-  preflight and then fail during setup. macOS and Windows runner hosts are
-  not supported.
+  hosts preflight warns and setup then fails. Other distributions that
+  preflight recognizes (Debian, Linux Mint, Fedora, CentOS, RHEL, Rocky,
+  AlmaLinux, Arch, openSUSE) pass preflight but are unsupported; outside the
+  Debian family, setup fails because it installs Ubuntu package names. Any
+  other distribution fails preflight (`host.os_release`) unless you pass
+  `--allow-unknown-linux`. macOS and Windows runner hosts are not supported.
 - **Heavy install.** BYO `up` on Ubuntu installs a large image (Docker CE,
   Chrome, Firefox, JDK, .NET, Node 20, Go, Rust) from up to 6 third-party
   apt sources plus `rustup` and `go.dev` downloads: roughly 4.5–5 GB of disk
   (projected, not measured). The preflight disk check (2 GiB) does not
   cover this.
-- **Other defects.** Workflow package auto-detection scans
-  `.github/workflows/`, is on by default and can turn unusual
-  `apt-get install` lines into wrong package names; `logs` and the `doctor`
-  OOM hints can query the wrong systemd unit; `status` and `doctor` exit 0
-  even when they report errors.
+- **Other defects.** Workflow package auto-detection always runs when `up`
+  starts in a directory with `.github/workflows/`, and there is no switch
+  to turn it off. An unusual `apt-get install` line (for example one with a
+  trailing `# comment`) can yield wrong package names, which make the
+  install fail; run `up` from another directory to avoid it. `logs` and the
+  `doctor` OOM hints can query the wrong systemd unit; `status` and `doctor`
+  exit 0 even when they report errors.
 
 Full list: [CHANGELOG.md](CHANGELOG.md) and
 [docs/security-posture.md](docs/security-posture.md).

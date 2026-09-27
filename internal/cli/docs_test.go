@@ -483,51 +483,51 @@ func TestReadmeHonestyBanner(t *testing.T) {
 
 // TestChangelogKnownIssuesMatchReadme: CLAUDE.md requires the CHANGELOG's
 // Known-issues block to stay in sync with the README "Known issues"
-// section, so both carry the same bullets, word for word. Line wrapping may
-// differ.
+// section, so both carry the same list, word for word. Line wrapping may
+// differ; everything else, including loose-list blank lines and extra
+// paragraphs, must match.
 func TestChangelogKnownIssuesMatchReadme(t *testing.T) {
-	readme := knownIssuesBullets(t, mustReadDocFile(t, "../../README.md"), "## Known issues")
-	changelog := knownIssuesBullets(t, mustReadDocFile(t, "../../CHANGELOG.md"), "### Known issues")
-	if len(readme) < 8 {
-		t.Fatalf("README Known issues has %d bullets; the list was not found", len(readme))
+	readme := knownIssuesList(t, "README.md", mustReadDocFile(t, "../../README.md"), "## Known issues", "\nFull list:")
+	changelog := knownIssuesList(t, "CHANGELOG.md", mustReadDocFile(t, "../../CHANGELOG.md"), "### Known issues", "")
+	if n := strings.Count(readme, "- **"); n < 8 {
+		t.Fatalf("README Known issues has %d bold bullets; the list was not found", n)
 	}
-	for i := 0; i < len(readme) || i < len(changelog); i++ {
-		var r, c string
-		if i < len(readme) {
-			r = readme[i]
-		}
-		if i < len(changelog) {
-			c = changelog[i]
-		}
-		if r != c {
-			t.Fatalf("Known issues bullet %d differs:\nREADME.md:    %q\nCHANGELOG.md: %q", i+1, r, c)
-		}
+	if readme == changelog {
+		return
 	}
+	at := 0
+	for at < len(readme) && at < len(changelog) && readme[at] == changelog[at] {
+		at++
+	}
+	from := max(at-60, 0)
+	t.Fatalf("Known issues differ at character %d:\nREADME.md:    ...%s\nCHANGELOG.md: ...%s", at, readme[from:min(at+80, len(readme))], changelog[from:min(at+80, len(changelog))])
 }
 
-// knownIssuesBullets returns the first bullet list after heading, one entry
-// per bullet (nested bullets included), with wrapped lines joined.
-func knownIssuesBullets(t *testing.T, doc, heading string) []string {
+// knownIssuesList returns the section under heading from its first bullet
+// up to end (a marker that must follow the list) or, when end is empty, up
+// to the next heading, with runs of whitespace collapsed to one space.
+func knownIssuesList(t *testing.T, name, doc, heading, end string) string {
 	t.Helper()
 	at := strings.Index(doc, "\n"+heading+"\n")
 	if at < 0 {
-		t.Fatalf("no %q heading", heading)
+		t.Fatalf("%s has no %q heading", name, heading)
 	}
-	var bullets []string
-	started := false
-	for _, line := range strings.Split(doc[at+len(heading)+2:], "\n") {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmed, "- "):
-			started = true
-			bullets = append(bullets, line[:len(line)-len(strings.TrimLeft(line, " "))]+trimmed)
-		case started && trimmed != "" && strings.HasPrefix(line, " "):
-			bullets[len(bullets)-1] += " " + trimmed
-		case started:
-			return bullets
+	section := doc[at+len(heading)+2:]
+	if next := strings.Index(section, "\n#"); next >= 0 {
+		section = section[:next]
+	}
+	if end != "" {
+		stop := strings.Index(section, end)
+		if stop < 0 {
+			t.Fatalf("%s: no %q after the Known issues list", name, strings.TrimSpace(end))
 		}
+		section = section[:stop]
 	}
-	return bullets
+	first := strings.Index(section, "\n- ")
+	if first < 0 {
+		t.Fatalf("%s: no bullet list under %q", name, heading)
+	}
+	return strings.Join(strings.Fields(section[first:]), " ")
 }
 
 // TestLicensingAndPolicyDocs pins H-01..H-04a and H-09.

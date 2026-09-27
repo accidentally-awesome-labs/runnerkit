@@ -119,7 +119,7 @@ RunnerKit **auto-detects** packages your workflows need by scanning `.github/wor
 Auto-detected 5 workflow package(s): libsecret-1-dev, dbus-x11, gnome-keyring, libpango1.0-dev, libssl-dev
 ```
 
-Auto-detection is on by default and can pick up wrong package names from unusual lines, which then fail the install. Check the printed list.
+Auto-detection always runs when you start `up` in a directory with `.github/workflows/` (there is no switch to turn it off) and can pick up wrong package names from unusual lines, which then fail the install. Check the printed list, or run `up` from another directory.
 
 You can also specify packages explicitly with `--extra-packages` (they merge with auto-detected ones):
 

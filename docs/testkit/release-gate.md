@@ -42,8 +42,14 @@ does not count for a tag.
 Also check that `RunnerVersion` in `internal/bootstrap/package.go` is
 still the latest [actions/runner release](https://github.com/actions/runner/releases).
 If a newer one is out, the runner updates itself before its first job and
-G9 fails: bump the pin on `main` (the version and both SHA-256 hashes from
-the release page) and build again.
+G9 fails. Bump the pin on `main` first, then build again:
+
+- in `internal/bootstrap/package.go`: `RunnerVersion`, and for both
+  packages the `Filename`, the `URL` and the `SHA256` from the release page;
+- the expected file names and hashes in
+  `internal/bootstrap/package_test.go`;
+- the runner-pin entry in the CHANGELOG, and every doc that names the old
+  version: `git grep -n '<old version>' -- README.md CHANGELOG.md docs`.
 
 ### 2. Create the test repository
 
@@ -178,7 +184,7 @@ dispatches `rk-gate.yml` on those labels, waits for the job and checks:
 | G5 | Docker group (SEC-5) | `id -nG runnerkit-runner` on the host contains `docker` |
 | G6 | Platform | The host is Ubuntu 24.04 x86_64 |
 | G7 | Password-sudo host prepared only by install.sh | `/etc/sudoers.d/runnerkit-installer` is byte-identical to what the candidate `install.sh` writes, and `sudo -l` shows no `NOPASSWD: ALL` |
-| G9 | The runner took the job at RunnerKit's pin | GitHub and the job log report the version in `internal/bootstrap/package.go` (2.337.0), `bin` is still the installed directory and `_diag` has no `SelfUpdate` log |
+| G9 | The runner took the job at RunnerKit's pin | GitHub and the job log report `RunnerVersion` from `internal/bootstrap/package.go`, `bin` is still the installed directory and `_diag` has no `SelfUpdate` log |
 
 It also runs `runnerkit status`, `doctor` and `list` with `--json`,
 records host facts (install directory owners, the image-setup marker, disk
