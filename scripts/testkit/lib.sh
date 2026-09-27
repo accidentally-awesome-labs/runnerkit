@@ -362,6 +362,16 @@ rk_runner_pin() {
 		"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/internal/bootstrap/package.go"
 }
 
+# rk_sha256 FILE: the file's SHA-256 in hex (sha256sum on Linux, shasum on
+# macOS).
+rk_sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | cut -d' ' -f1
+	else
+		shasum -a 256 "$1" | cut -d' ' -f1
+	fi
+}
+
 # rk_version_lt A B: true when version A sorts before version B.
 rk_version_lt() {
 	[ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = "$1" ]
