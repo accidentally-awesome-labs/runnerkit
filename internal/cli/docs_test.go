@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"go/version"
 	"io/fs"
 	"os"
@@ -531,21 +533,104 @@ func knownIssuesList(t *testing.T, name, doc, heading, end string) string {
 }
 
 // TestBYOClaimNeedsRealJobEvidence: CLAUDE.md never lets a release claim
-// BYO works without a real GitHub job on a fresh password-sudo host (A-20).
-// Once the README says the BYO path is fixed, the CHANGELOG must carry the
-// evidence line gate.sh writes: "Real-job gate (<date>): <run URL>; ...".
+// BYO works without a real GitHub job on a fresh password-sudo host prepared
+// only by that release's install.sh (A-20). Unless the README says BYO is
+// not supported, the CHANGELOG must carry the evidence line gate.sh writes
+// for a clean, all-PASS run, and its install.sh SHA-256 must match the
+// install.sh in this tree.
 func TestBYOClaimNeedsRealJobEvidence(t *testing.T) {
-	readme := mustReadDocFile(t, "../../README.md")
-	changelog := mustReadDocFile(t, "../../CHANGELOG.md")
-	if !strings.Contains(readme, "**BYO setup (the main path).** Fixed in") {
-		return
+	installSH, err := os.ReadFile("../../install.sh")
+	if err != nil {
+		t.Fatal(err)
 	}
-	evidence := regexp.MustCompile(`(?m)^Real-job gate \(\d{4}-\d{2}-\d{2}\): https://github\.com/[^/\s]+/[^/\s]+/actions/runs/\d+; runner \d+\.\d+\.\d+ on Ubuntu 24\.04 x86_64`)
-	if !evidence.MatchString(changelog) {
-		t.Fatal("README.md says the BYO path is fixed, but CHANGELOG.md has no gate.sh evidence line (\"Real-job gate (<date>): https://github.com/<owner>/<repo>/actions/runs/<id>; runner <version> on Ubuntu 24.04 x86_64, ...\"); paste it from EVIDENCE.md or do not claim BYO works")
+	sum := sha256.Sum256(installSH)
+	if problem := byoClaimEvidenceProblem(mustReadDocFile(t, "../../README.md"), mustReadDocFile(t, "../../CHANGELOG.md"), hex.EncodeToString(sum[:])); problem != "" {
+		t.Fatal(problem)
 	}
+}
+
+// gateEvidenceLine is the whole CHANGELOG line gate.sh writes; the group is
+// the SHA-256 of the install.sh that prepared the host.
+var gateEvidenceLine = regexp.MustCompile(`(?m)^Real-job gate \(\d{4}-\d{2}-\d{2}\): https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/actions/runs/\d+; runner \d+\.\d+\.\d+ on Ubuntu 24\.04 x86_64, a password-sudo host prepared only by install\.sh at [0-9a-f]{12} \(sha256 ([0-9a-f]{64})\)\.\r?$`)
+
+// byoClaimEvidenceProblem returns why the docs may not claim BYO works, or
+// "" when they may. It fails closed: only the A-21 wording ("BYO is not
+// supported in this release") needs no evidence. The evidence must be in
+// the top CHANGELOG section, so each tagged release needs its own gate run;
+// while that section is still "[Unreleased]" for a later version, the
+// section of the version the README names ("Fixed in vX.Y.Z") counts.
+func byoClaimEvidenceProblem(readme, changelog, installSHA string) string {
 	if strings.Contains(changelog, "PASTE-GATE-LINE-HERE") {
-		t.Fatal("CHANGELOG.md still has the PASTE-GATE-LINE-HERE placeholder")
+		return "CHANGELOG.md still has the PASTE-GATE-LINE-HERE placeholder: paste gate.sh's CHANGELOG line from EVIDENCE.md"
+	}
+	flat := strings.Join(strings.Fields(readme), " ")
+	claimed := regexp.MustCompile(`Fixed in (v\d+\.\d+\.\d+)`).FindStringSubmatch(flat)
+	if claimed == nil && strings.Contains(flat, "BYO is not supported in this release") {
+		return ""
+	}
+	sections := regexp.MustCompile(`(?m)^## \[`).FindAllStringIndex(changelog, -1)
+	if len(sections) == 0 {
+		return "CHANGELOG.md has no release section"
+	}
+	sectionAt := func(i int) (string, string) {
+		end := len(changelog)
+		if i+1 < len(sections) {
+			end = sections[i+1][0]
+		}
+		body := changelog[sections[i][0]:end]
+		heading, _, _ := strings.Cut(body, "\n")
+		return heading, body
+	}
+	heading, section := sectionAt(0)
+	if claimed != nil && strings.HasPrefix(heading, "## [Unreleased]") && !strings.Contains(heading, claimed[1]) {
+		for i := 1; i < len(sections); i++ {
+			if h, body := sectionAt(i); strings.Contains(h, "["+strings.TrimPrefix(claimed[1], "v")+"]") {
+				heading, section = h, body
+				break
+			}
+		}
+	}
+	m := gateEvidenceLine.FindStringSubmatch(section)
+	if m == nil {
+		return "the docs do not say BYO is unsupported, but CHANGELOG.md section " + strconv.Quote(heading) + " has no gate.sh evidence line (\"Real-job gate (<date>): https://github.com/<owner>/<repo>/actions/runs/<id>; runner <version> on Ubuntu 24.04 x86_64, a password-sudo host prepared only by install.sh at <commit> (sha256 <hex>).\"); paste it from EVIDENCE.md of a passing run, or say BYO is not supported"
+	}
+	if m[1] != installSHA {
+		return "install.sh changed since the gate run (evidence sha256 " + m[1] + ", install.sh sha256 " + installSHA + "): re-run gate.sh on a new host"
+	}
+	return ""
+}
+
+func TestBYOClaimEvidenceProblem(t *testing.T) {
+	const sha = "302b5c712823d9ed7ff1657e49b93ec80cff201f9ebf065c398371ca90fda5f7"
+	line := "Real-job gate (2026-10-05): https://github.com/you/rk-gate/actions/runs/123; runner 2.337.0 on Ubuntu 24.04 x86_64, a password-sudo host prepared only by install.sh at 04fff6fbd201 (sha256 " + sha + ")."
+	fixed := "- **BYO setup (the main path).** Fixed in v1.3.4 for fresh Ubuntu 24.04\n  x86_64 hosts prepared by the v1.3.4 `install.sh`."
+	unreleased := func(body string) string {
+		return "# Changelog\n\n## [Unreleased] — v1.3.4\n\n" + body + "\n\n## [1.3.3] - 2026-05-18\n\n- old\n"
+	}
+	for _, tc := range []struct {
+		name, readme, changelog, want string
+	}{
+		{"evidence present", fixed, unreleased(line), ""},
+		{"evidence with CRLF", fixed, unreleased(line + "\r"), ""},
+		{"A-21 wording needs none", "- **BYO setup (the main path).** BYO is not supported in this release.", unreleased("nothing"), ""},
+		{"placeholder left", fixed, unreleased(line + "\nPASTE-GATE-LINE-HERE"), "placeholder"},
+		{"placeholder even under A-21 wording", "BYO is not supported in this release.", unreleased("PASTE-GATE-LINE-HERE"), "placeholder"},
+		{"no evidence", fixed, unreleased("nothing"), "no gate.sh evidence line"},
+		{"claim re-wrapped", "- **BYO setup (the main path).**\n  Fixed in v1.3.4 for fresh hosts.", unreleased("nothing"), "no gate.sh evidence line"},
+		{"other wording fails closed", "- **BYO setup (main path).** Repaired in v1.3.4.", unreleased("nothing"), "no gate.sh evidence line"},
+		{"evidence only in an older section", fixed, "## [Unreleased] — v1.3.4\n\nnothing\n\n## [1.3.3] - 2026-05-18\n\n" + line + "\n", "no gate.sh evidence line"},
+		{"line from an unknown commit", fixed, unreleased(strings.Replace(line, "04fff6fbd201", "unknown", 1)), "no gate.sh evidence line"},
+		{"text after the line", fixed, unreleased(strings.TrimSuffix(line, ".") + " on a fake API."), "no gate.sh evidence line"},
+		{"install.sh changed", fixed, unreleased(strings.Replace(line, sha, strings.Repeat("0", 64), 1)), "install.sh changed"},
+		{"next release in development", fixed, "## [Unreleased] — v1.3.5\n\n- new\n\n## [1.3.4] - 2026-10-10\n\n" + line + "\n", ""},
+		{"next release tagged without its own run", fixed, "## [1.3.5] - 2026-11-01\n\n- new\n\n## [1.3.4] - 2026-10-10\n\n" + line + "\n", "no gate.sh evidence line"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := byoClaimEvidenceProblem(tc.readme, tc.changelog, sha)
+			if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+				t.Fatalf("got %q, want a problem containing %q", got, tc.want)
+			}
+		})
 	}
 }
 

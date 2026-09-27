@@ -20,7 +20,8 @@ password-sudo Ubuntu 24.04 x86_64 host prepared only by this release's
 `install.sh` (runner online, job with `gcc` and `docker run hello-world`
 green, `id -nG runnerkit-runner` contains `docker`).
 PASTE-GATE-LINE-HERE: replace this with the "Real-job gate (...)" line from
-gate.sh's EVIDENCE.md; TestBYOClaimNeedsRealJobEvidence fails until you do.
+gate.sh's EVIDENCE.md (written only for a clean, all-PASS run; it records
+install.sh's SHA-256). TestBYOClaimNeedsRealJobEvidence fails until you do.
 
 **Release gates still open (do not tag until they are closed):**
 
