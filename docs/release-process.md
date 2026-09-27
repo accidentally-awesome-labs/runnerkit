@@ -129,8 +129,9 @@ Before pushing a tag, the maintainer must:
    CHANGELOG. The runbook is [testkit/release-gate.md](testkit/release-gate.md):
    `scripts/testkit/gate.sh` dispatches the job, checks each criterion
    (including that the host's passwordless sudo is exactly what the
-   candidate `install.sh` writes) and writes the evidence with the
-   CHANGELOG line. **If it does not pass** (and cannot be fixed within the time
+   candidate `install.sh` writes, and that the runner took the job at
+   RunnerKit's pinned version without updating itself) and writes the
+   evidence with the CHANGELOG line. **If it does not pass** (and cannot be fixed within the time
    box), do not tag with a BYO claim: ship the fallback that makes BYO
    `up`/`register` refuse without `--accept-known-issues`, and change the
    README and CHANGELOG Known-issues text to "BYO is not supported in this

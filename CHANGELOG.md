@@ -217,38 +217,29 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 
 ### Known issues
 
-Mirrors the README "Known issues" section.
+The same list as the README "Known issues" section, word for word.
 
-- **BYO setup:** repaired for fresh Ubuntu 24.04 x86_64 hosts prepared by the
-  v1.3.4 `install.sh`, but so far validated only on a local password-sudo
-  Ubuntu 24.04 container against a fake GitHub API; a real GitHub job run
-  (A-20) is required before tagging. Hosts prepared by an older
-  `install.sh` must re-run it. The sudoers fragment it installs is
+- **BYO setup (the main path).** Repaired in v1.3.4 for fresh Ubuntu 24.04
+  x86_64 hosts prepared by the v1.3.4 `install.sh`. So far this was
+  validated only on a local password-sudo Ubuntu 24.04 container against a
+  fake GitHub API; a run of a real GitHub job is required before v1.3.4 is
+  tagged. If that run fails, v1.3.4 will ship with BYO marked as not
+  supported. Hosts prepared by an older `install.sh` must re-run the new
+  one. The sudoers fragment `install.sh` installs is **root-equivalent**;
+  see [docs/security-posture.md](docs/security-posture.md).
+- **Docker.** The runner user (`runnerkit-runner`) is in the `docker` group,
+  which is **root-equivalent** for every job on the host. Existing hosts get
+  the group on their next `runnerkit up --repo owner/name --host user@host
+  --replace` (or type `replace owner/name` when prompted).
+- **Job sudo.** Workflow steps that run `sudo apt-get` need
+  `RUNNERKIT_GRANT_CI_SUDO=1` when you run `install.sh`. That grant is also
   root-equivalent.
-- **Docker:** the runner user is in the `docker` group, which is
-  root-equivalent for every job. Existing hosts get the group on their next
-  `up --replace`.
-- **Job sudo:** workflow `sudo apt-get` needs `RUNNERKIT_GRANT_CI_SUDO=1`
-  when running `install.sh`; that grant is root-equivalent.
-- **Cloud and ephemeral:** cloud requires `--experimental` and
-  `--cloud-region` and is unsupported; ephemeral cloud is disabled; BYO
-  ephemeral requires `--experimental`, is not isolation, and has known
+- **Cloud and ephemeral.** The Hetzner cloud path is unsupported and requires
+  `--experimental` and an explicit `--cloud-region`; the plan shows the price
+  the Hetzner API reports. Ephemeral cloud runners are disabled. BYO
+  ephemeral mode requires `--experimental`, is not isolation, and has known
   defects (the finalizer runs unprivileged and the TTL is ignored); it is
   untested in this release.
-- **Disabled commands:** `upgrade-runner`, `doctor --fix`,
-  `recover --reinstall-service`, `recover --reregister`.
-- **Platforms:** only Ubuntu x86_64 runner hosts are supported. On arm64
-  hosts preflight warns and setup then fails; non-Ubuntu distributions pass
-  preflight and then fail during setup.
-- **Heavy install:** BYO `up` on Ubuntu installs a large image (Docker CE,
-  Chrome, Firefox, JDK, .NET, Node 20, Go, Rust) from up to 6 third-party apt
-  sources plus `rustup` and `go.dev` downloads; roughly 4.5–5 GB of disk
-  (projected, not measured). The preflight disk check (2 GiB) does not
-  cover this.
-- **Package auto-detection** scans `.github/workflows/` and is on by
-  default; unusual `apt-get install` lines can produce wrong package names.
-- `runnerkit logs` and the `doctor` OOM hints can query the wrong systemd
-  unit; `status` and `doctor` exit 0 even when they report errors.
 - **Cloud defects** (not fixed while the cloud path is frozen):
   - Readiness does not fail fast: if cloud-init ends in an error, `up`
     retries silently for 15 minutes while the server bills, then fails with
@@ -276,6 +267,29 @@ Mirrors the README "Known issues" section.
   - SSH is open to every IPv4 address unless you pass `--ssh-allowed-cidr`,
     and your SSH key can log in as `root` and as `runnerkit-admin`, which
     has passwordless sudo (SEC-11).
+- **Disabled commands.** `upgrade-runner`, `doctor --fix`,
+  `recover --reinstall-service` and `recover --reregister` refuse to run
+  (exit 2) and print manual steps. The GitHub runner updates itself;
+  to re-register, run `runnerkit down` and then `runnerkit up`.
+- **Platforms.** Only **Ubuntu x86_64** runner hosts are supported. On arm64
+  hosts preflight warns and setup then fails. Other distributions that
+  preflight recognizes (Debian, Linux Mint, Fedora, CentOS, RHEL, Rocky,
+  AlmaLinux, Arch, openSUSE) pass preflight but are unsupported; outside the
+  Debian family, setup fails because it installs Ubuntu package names. Any
+  other distribution fails preflight (`host.os_release`) unless you pass
+  `--allow-unknown-linux`. macOS and Windows runner hosts are not supported.
+- **Heavy install.** BYO `up` on Ubuntu installs a large image (Docker CE,
+  Chrome, Firefox, JDK, .NET, Node 20, Go, Rust) from up to 6 third-party
+  apt sources plus `rustup` and `go.dev` downloads: roughly 4.5–5 GB of disk
+  (projected, not measured). The preflight disk check (2 GiB) does not
+  cover this.
+- **Other defects.** Workflow package auto-detection always runs when `up`
+  starts in a directory with `.github/workflows/`, and there is no switch
+  to turn it off. An unusual `apt-get install` line (for example one with a
+  trailing `# comment`) can yield wrong package names, which make the
+  install fail; run `up` from another directory to avoid it. `logs` and the
+  `doctor` OOM hints can query the wrong systemd unit; `status` and `doctor`
+  exit 0 even when they report errors.
 
 ### Erratum for v1.3.3
 

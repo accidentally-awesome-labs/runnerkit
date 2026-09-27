@@ -71,7 +71,7 @@ runnerkit up --repo owner/name --host user@host --yes
 runnerkit up --repo owner/name --host user@host:2222 --ssh-key ~/.ssh/id_ed25519 --yes
 ```
 
-RunnerKit **auto-detects** packages your workflows need by scanning `.github/workflows/*.yml` for `apt-get install` / `apt install` commands. Detected packages are merged in automatically when you run from a repo checkout. Auto-detection is on by default and can pick up wrong package names from unusual lines; check the printed list.
+RunnerKit **auto-detects** packages your workflows need by scanning `.github/workflows/*.yml` for `apt-get install` / `apt install` commands. Detected packages are merged in automatically when you run from a repo checkout. Auto-detection always runs when you start `up` in a directory with `.github/workflows/` (there is no switch to turn it off) and can pick up wrong package names from unusual lines, which then fail the install. Check the printed list, or run `up` from another directory.
 
 You can also specify packages explicitly with `--extra-packages` (they merge with auto-detected ones):
 

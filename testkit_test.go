@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/accidentally-awesome-labs/runnerkit/internal/bootstrap"
 )
 
 // The release-gate and validation kit (docs/testkit/, scripts/testkit/)
@@ -73,6 +75,26 @@ func TestTestkitNeverDisablesRunnerUpdates(t *testing.T) {
 				t.Errorf("%s passes --disableupdate to config.sh: %s", filepath.Base(f), strings.TrimSpace(line))
 			}
 		}
+	}
+}
+
+// TestTestkitReadsRunnerPin: gate.sh (G9) and autoupdate-probe.sh (U3)
+// compare the runner's version with RunnerKit's pin, which lib.sh reads
+// from internal/bootstrap/package.go. A change to that file's layout must
+// not leave the kit comparing against nothing.
+func TestTestkitReadsRunnerPin(t *testing.T) {
+	t.Parallel()
+	lib := filepath.Join(findRepoRoot(t), "scripts", "testkit", "lib.sh")
+	// From another directory: the scripts may be run from anywhere.
+	cmd := exec.Command("bash", "-c", `. "$1" && rk_runner_pin`, "bash", lib)
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(), "TMPDIR="+t.TempDir())
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("rk_runner_pin: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != bootstrap.RunnerVersion {
+		t.Fatalf("rk_runner_pin = %q, want bootstrap.RunnerVersion %q", got, bootstrap.RunnerVersion)
 	}
 }
 

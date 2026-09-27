@@ -481,6 +481,55 @@ func TestReadmeHonestyBanner(t *testing.T) {
 	}
 }
 
+// TestChangelogKnownIssuesMatchReadme: CLAUDE.md requires the CHANGELOG's
+// Known-issues block to stay in sync with the README "Known issues"
+// section, so both carry the same list, word for word. Line wrapping may
+// differ; everything else, including loose-list blank lines and extra
+// paragraphs, must match.
+func TestChangelogKnownIssuesMatchReadme(t *testing.T) {
+	readme := knownIssuesList(t, "README.md", mustReadDocFile(t, "../../README.md"), "## Known issues", "\nFull list:")
+	changelog := knownIssuesList(t, "CHANGELOG.md", mustReadDocFile(t, "../../CHANGELOG.md"), "### Known issues", "")
+	if n := strings.Count(readme, "- **"); n < 8 {
+		t.Fatalf("README Known issues has %d bold bullets; the list was not found", n)
+	}
+	if readme == changelog {
+		return
+	}
+	at := 0
+	for at < len(readme) && at < len(changelog) && readme[at] == changelog[at] {
+		at++
+	}
+	from := max(at-60, 0)
+	t.Fatalf("Known issues differ at character %d:\nREADME.md:    ...%s\nCHANGELOG.md: ...%s", at, readme[from:min(at+80, len(readme))], changelog[from:min(at+80, len(changelog))])
+}
+
+// knownIssuesList returns the section under heading from its first bullet
+// up to end (a marker that must follow the list) or, when end is empty, up
+// to the next heading, with runs of whitespace collapsed to one space.
+func knownIssuesList(t *testing.T, name, doc, heading, end string) string {
+	t.Helper()
+	at := strings.Index(doc, "\n"+heading+"\n")
+	if at < 0 {
+		t.Fatalf("%s has no %q heading", name, heading)
+	}
+	section := doc[at+len(heading)+2:]
+	if next := strings.Index(section, "\n#"); next >= 0 {
+		section = section[:next]
+	}
+	if end != "" {
+		stop := strings.Index(section, end)
+		if stop < 0 {
+			t.Fatalf("%s: no %q after the Known issues list", name, strings.TrimSpace(end))
+		}
+		section = section[:stop]
+	}
+	first := strings.Index(section, "\n- ")
+	if first < 0 {
+		t.Fatalf("%s: no bullet list under %q", name, heading)
+	}
+	return strings.Join(strings.Fields(section[first:]), " ")
+}
+
 // TestLicensingAndPolicyDocs pins H-01..H-04a and H-09.
 func TestLicensingAndPolicyDocs(t *testing.T) {
 	license := mustReadDocFile(t, "../../LICENSE")

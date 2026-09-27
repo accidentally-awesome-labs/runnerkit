@@ -16,6 +16,9 @@
 #      --after-revocation: the SSH user has no passwordless sudo at all);
 #   G8 with --after-revocation only: the job can neither rename svc.sh or
 #      bin nor create files in the install directory, which is root-owned.
+#   G9 without --after-revocation only: the runner took the job at the
+#      version this checkout installs (RunnerVersion in
+#      internal/bootstrap/package.go) without updating itself first.
 # Writes EVIDENCE.md plus the raw material to
 # ~/runnerkit-testkit/<owner>-<name>/<time>-gate-<mode>/ and exits 0 only
 # when every criterion passes.
@@ -206,6 +209,14 @@ fi
 log_version="$(grep -o "Current runner version: '[^']*'" "$ev/job.log" | head -n1 | sed "s/.*: '//; s/'\$//" || true)"
 grep -E '^[^ ]* RK-GATE' "$ev/job.log" | sed 's/^[^ ]* //' >"$ev/job-markers.txt" || true
 
+# A runner that updates itself replaces bin with a link to bin.<version>
+# and leaves a SelfUpdate log in _diag.
+rk_ssh bash -s >"$ev/host-runner-update.txt" 2>&1 <<EOF || true
+cd '/opt/actions-runner/$runner_name' || exit 1
+if [ -L bin ]; then echo "bin -> \$(readlink bin)"; else echo 'bin is a directory'; fi
+if ls _diag >/dev/null; then ls _diag | grep '^SelfUpdate' || echo 'no self-update logs'; fi
+EOF
+
 # --- G2..G8 --------------------------------------------------------------------
 if [ "$job_conclusion" = success ] && [ "$job_runner" = "$runner_name" ]; then
 	record G2 PASS "rk-gate job succeeds on the RunnerKit runner" "run conclusion $conclusion; job ran on $job_runner"
@@ -287,6 +298,17 @@ else
 		record G8 PASS "The job cannot replace svc.sh or bin (revocation step 2)" "install directory, svc.sh and bin are root:root; renames refused in the job"
 	else
 		record G8 FAIL "The job cannot replace svc.sh or bin (revocation step 2)" "owners: $owners; see job-markers.txt and host-install-dir.txt"
+	fi
+fi
+
+if [ "$mode" = gate ]; then
+	pin="$(rk_runner_pin)"
+	if [ -n "$pin" ] && [ "$r_version" = "$pin" ] && [ "$log_version" = "$pin" ] &&
+		grep -qx 'bin is a directory' "$ev/host-runner-update.txt" &&
+		grep -qx 'no self-update logs' "$ev/host-runner-update.txt"; then
+		record G9 PASS "The runner took the job at RunnerKit's pin without updating itself" "$pin from the API and the job log; bin is the installed directory; no _diag/SelfUpdate log"
+	else
+		record G9 FAIL "The runner took the job at RunnerKit's pin without updating itself" "pin ${pin:-unreadable}, API ${r_version:-?}, job log ${log_version:-?}; see host-runner-update.txt. If a newer actions/runner release came out, bump RunnerVersion and rebuild the candidate"
 	fi
 fi
 

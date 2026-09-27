@@ -355,6 +355,13 @@ rk_latest_runner_version() {
 	fi
 }
 
+# rk_runner_pin: the actions/runner version this checkout's RunnerKit
+# installs (RunnerVersion in internal/bootstrap/package.go), or nothing.
+rk_runner_pin() {
+	sed -n 's/^const RunnerVersion = "\([0-9][0-9.]*\)"$/\1/p' \
+		"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/internal/bootstrap/package.go"
+}
+
 # rk_version_lt A B: true when version A sorts before version B.
 rk_version_lt() {
 	[ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = "$1" ]
