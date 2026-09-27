@@ -142,17 +142,19 @@ scripts/testkit/autoupdate-probe.sh --repo you/rk-gate --host rkadmin@<ip>
 | --- | --- | --- |
 | U1 | The probe registered at 2.334.0 | GitHub refused 2.334.0 or updated it on connect; record which |
 | U2 | The probe job succeeded | Look at the job log |
-| U3 | The runner now reports a newer version | v1.3.3 runners do not update themselves: advisory needed |
+| U3 | The runner now reports RunnerKit's pinned version (2.337.0 in v1.3.4, read from `internal/bootstrap/package.go`) or newer | v1.3.3 runners do not update themselves, or not far enough: advisory needed |
 | U4 | `bin` and `externals` point at the new version, and the self-update log ends in `.succeed` | The update failed on disk; read the `_diag/SelfUpdate-*` log |
 | U5 | `runsvc.sh` is not empty and matches `bin/runsvc.sh` | [actions/runner#4421](https://github.com/actions/runner/issues/4421) hits RunnerKit's layout |
 | U6 | After `systemctl restart` the runner is online and its unit active | The updated runner does not survive a restart or reboot |
+| U7 | The listener's `_diag/Runner_*.log` shows the update and `return code 3` (the runner's "exit for update" code) | The runner did not go through its own update path; read `diag-update.txt` |
 
 The script removes the probe runner afterwards, also when a check fails.
 To keep it for a closer look, run `install` and `run` separately and
 `remove` later.
 
 **Result to record:** the versions before and after, how long the update
-took, and U1 to U6.
+took (U7's detail gives the download time from the listener's log and the
+update script's time from `_diag/SelfUpdate-*.log`), and U1 to U7.
 
 ## V-4 hosted fallback
 

@@ -12,12 +12,16 @@
 # run      Dispatches rk-probe.yml at the probe's label and reports:
 #            U1 the probe registered at 2.334.0;
 #            U2 the probe job succeeded;
-#            U3 the runner now reports a newer version;
+#            U3 the runner now reports RunnerKit's pinned version (what
+#               this checkout installs, 2.337.0 in v1.3.4) or newer;
 #            U4 bin and externals point at the new version and the
 #               self-update log ends in .succeed;
 #            U5 runsvc.sh is not empty and matches bin/runsvc.sh (runner
 #               issue #4421);
-#            U6 after `systemctl restart` the runner is online again.
+#            U6 after `systemctl restart` the runner is online again;
+#            U7 the listener's _diag log shows the update and its exit
+#               code 3 (RunnerUpdating); records how long the download
+#               and the update script took.
 # remove   Stops and uninstalls the service, deletes the runner on GitHub
 #          and removes its directories.
 # all      install, run, remove (the default).
@@ -35,6 +39,10 @@ PROBE_NAME=runnerkit-autoupdate-probe
 PROBE_LABEL=rk-autoupdate-probe
 PROBE_DIR=/opt/actions-runner/$PROBE_NAME
 PROBE_WORK=/var/lib/runnerkit/work/$PROBE_NAME
+# The updated runner must reach at least the version this checkout's
+# RunnerKit installs.
+PIN_VERSION="$(rk_runner_pin)"
+[ -n "$PIN_VERSION" ] || rk_die "cannot read RunnerVersion from internal/bootstrap/package.go"
 
 usage() {
 	cat <<'EOF'
@@ -151,8 +159,39 @@ echo "unit: \$(cat .service) \$(systemctl is-active "\$(cat .service)")"
 EOF
 }
 
+# diag_facts FILE: the update as the runner logged it. The listener writes
+# _diag/Runner_*-utc.log (UTC timestamps): "Runner update in progress" when
+# it starts downloading, "Runner will exit shortly for update" when the
+# update script takes over, then "Runner execution has finished with return
+# code 3". The update script writes _diag/SelfUpdate-*.log (host local
+# time) and renames it to .succeed or .failed when it ends.
+diag_facts() {
+	rk_ssh bash -s >"$1" 2>&1 <<EOF || true
+cd '$PROBE_DIR/_diag' 2>/dev/null || { echo 'no _diag directory'; exit 0; }
+seconds_between() { # FIRST LAST [-u]
+	a="\$(date \$3 -d "\$1" +%s 2>/dev/null)"
+	b="\$(date \$3 -d "\$2" +%s 2>/dev/null)"
+	if [ -n "\$a" ] && [ -n "\$b" ]; then echo "\$((b - a)) s"; else echo '? s'; fi
+}
+echo "listener logs: \$(ls Runner_*.log 2>/dev/null | tr '\n' ' ')"
+grep -h -e 'Refresh message received' -e 'Runner update in progress' -e 'Runner will exit shortly for update' -e 'Runner execution has finished with return code' Runner_*.log 2>/dev/null || true
+stamp='s/^\[\([0-9-]* [0-9:]*\)Z .*/\1/p'
+start="\$(grep -h 'Runner update in progress' Runner_*.log 2>/dev/null | head -n1 | sed -n "\$stamp")"
+handoff="\$(grep -h 'Runner will exit shortly for update' Runner_*.log 2>/dev/null | head -n1 | sed -n "\$stamp")"
+if [ -n "\$start" ] && [ -n "\$handoff" ]; then
+	echo "download: \$start to \$handoff UTC (\$(seconds_between "\$start" "\$handoff" -u))"
+fi
+for f in SelfUpdate-*; do
+	[ -f "\$f" ] || continue
+	first="\$(sed -n 's/^\[\([0-9-]* [0-9:]*\)-[0-9]*\].*/\1/p' "\$f" | head -n1)"
+	last="\$(sed -n 's/^\[\([0-9-]* [0-9:]*\)-[0-9]*\].*/\1/p' "\$f" | tail -n1)"
+	echo "update script: \$f, \$first to \$last host time (\$(seconds_between "\$first" "\$last"))"
+done
+EOF
+}
+
 do_run() {
-	local installed latest nonce run_id conclusion job_id log_version after unit bytes
+	local installed latest nonce run_id conclusion job_id log_version reported after unit bytes
 	installed="$(cat "$ev/installed-version.txt" 2>/dev/null || runner_version)"
 	[ -n "$installed" ] || rk_die "no $PROBE_NAME runner in $RK_REPO; run the install action first"
 	rk_require_workflow rk-probe.yml
@@ -180,11 +219,17 @@ do_run() {
 		record U2 FAIL "The probe job succeeded" "conclusion $conclusion"
 	fi
 
-	after="$(runner_version)"
-	if [ -n "$after" ] && rk_version_lt "$OLD_VERSION" "$after"; then
-		record U3 PASS "The runner updated itself" "$OLD_VERSION -> $after (latest release ${latest:-unknown})"
+	reported="$(runner_version)"
+	case "$reported" in
+	[0-9]*.[0-9]*.[0-9]*) after="$reported" ;;
+	*) after="" ;;
+	esac
+	if [ -n "$after" ] && ! rk_version_lt "$after" "$PIN_VERSION"; then
+		record U3 PASS "The runner updated itself to $PIN_VERSION or newer" "$OLD_VERSION -> $after (latest release ${latest:-unknown})"
+	elif [ -n "$after" ] && rk_version_lt "$OLD_VERSION" "$after"; then
+		record U3 FAIL "The runner updated itself to $PIN_VERSION or newer" "$OLD_VERSION -> $after, older than RunnerKit's pin $PIN_VERSION (latest release ${latest:-unknown})"
 	else
-		record U3 FAIL "The runner updated itself" "GitHub reports ${after:-no runner}; latest release ${latest:-unknown}"
+		record U3 FAIL "The runner updated itself to $PIN_VERSION or newer" "GitHub reports ${reported:-no runner}; latest release ${latest:-unknown}"
 	fi
 
 	host_facts "$ev/host-after-job.txt"
@@ -203,6 +248,9 @@ do_run() {
 		record U5 FAIL "runsvc.sh survived the update (runner issue #4421)" "${bytes:-?} bytes; see host-after-job.txt"
 	fi
 
+	# Before the restart below, which starts another listener log.
+	diag_facts "$ev/diag-update.txt"
+
 	# A 0-byte runsvc.sh (#4421) only shows after a restart: the unit then
 	# exits at once and the runner stays offline.
 	unit="$(rk_ssh "cat '$PROBE_DIR/.service'")"
@@ -213,6 +261,13 @@ do_run() {
 		record U6 PASS "The runner is online again after systemctl restart" "version $(runner_version); unit active"
 	else
 		record U6 FAIL "The runner is online again after systemctl restart" "see host-after-restart.txt"
+	fi
+
+	if grep -Eq 'Runner execution has finished with return code 3([^0-9]|$)' "$ev/diag-update.txt" &&
+		grep -q -e 'Runner update in progress' -e 'Runner will exit shortly for update' "$ev/diag-update.txt"; then
+		record U7 PASS "The listener's _diag log shows the update and exit code 3" "$(grep -E '^(download|update script):' "$ev/diag-update.txt" | tr '\n' ' ')"
+	else
+		record U7 FAIL "The listener's _diag log shows the update and exit code 3" "see diag-update.txt"
 	fi
 }
 
@@ -253,7 +308,7 @@ if [ -s "$results" ]; then
 		echo "# V-3 runner auto-update probe: $RK_REPO"
 		echo
 		echo "- Date (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-		echo "- Probe: $PROBE_NAME on $RK_SSH_TARGET, installed at $OLD_VERSION (RunnerKit v1.3.3's pin) without --disableupdate"
+		echo "- Probe: $PROBE_NAME on $RK_SSH_TARGET, installed at $OLD_VERSION (RunnerKit v1.3.3's pin) without --disableupdate; pass bar $PIN_VERSION (this checkout's pin)"
 		echo
 		echo "| # | Check | Result | Detail |"
 		echo "| --- | --- | --- | --- |"
@@ -265,6 +320,12 @@ if [ -s "$results" ]; then
 		echo
 		echo '```text'
 		cat "$ev/host-after-job.txt" 2>/dev/null || true
+		echo '```'
+		echo
+		echo "Update as the runner logged it (_diag):"
+		echo
+		echo '```text'
+		cat "$ev/diag-update.txt" 2>/dev/null || true
 		echo '```'
 	} >"$ev/autoupdate-probe.md"
 	cat "$ev/autoupdate-probe.md"
