@@ -25,3 +25,10 @@ GoReleaser (upstream only).
 - Never pass `--disableupdate` to the runner's `config.sh`.
 - No feature without 2 distinct external requests (see
   [CONTRIBUTING.md](../CONTRIBUTING.md)).
+
+## Archiving
+
+The [archive playbook](maintainers/archive.md) is the checklist for
+shutting RunnerKit down. It is used only on a kill decision (the criteria
+are in [validation-metrics.md](validation-metrics.md)) or a failed
+capacity check.
