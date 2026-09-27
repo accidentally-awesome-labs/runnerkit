@@ -196,8 +196,11 @@ use) and the tool inventory the job printed, and writes everything with
 **Every row PASS:** fill in the manual checks at the end of `EVIDENCE.md`
 (host provider and creation time, `sudo -n true` failing before
 `install.sh`, the `install.sh` hash) and paste its CHANGELOG line into the
-v1.3.4 section of [CHANGELOG.md](../../CHANGELOG.md). Keep the host for the
-validations and the drill.
+v1.3.4 section of [CHANGELOG.md](../../CHANGELOG.md). `gate.sh` writes that
+line only when every row passes from a clean checkout. It records the
+`install.sh` SHA-256, so the docs test that guards the BYO claim fails if
+`install.sh` changes after the run. Keep the host for the validations and
+the drill.
 
 **Any row FAIL:** start with `"$RUNNERKIT_BIN" doctor --repo you/rk-gate --deep`
 and `"$RUNNERKIT_BIN" logs --repo you/rk-gate --since 30m`. Fix the cause on

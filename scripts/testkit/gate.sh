@@ -135,6 +135,7 @@ if [ -n "$(git -C "$root" status --porcelain 2>/dev/null | head -n1)" ]; then
 else
 	tree_state="clean checkout"
 fi
+install_sha="$(rk_sha256 "$install_sh")"
 rk_runnerkit --version >"$ev/runnerkit-version.txt" 2>&1 || true
 
 # --- Runner identity from RunnerKit state -----------------------------------
@@ -323,6 +324,7 @@ fi
 	echo "- Date (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	echo "- Repository: $RK_REPO (private)"
 	echo "- Candidate commit: $commit ($tree_state)"
+	echo "- install.sh: $install_sh (sha256 $install_sha)"
 	echo "- RunnerKit binary: $(head -n1 "$ev/runnerkit-version.txt")"
 	echo "- Host: $RK_SSH_TARGET${RK_SSH_PORT:+:$RK_SSH_PORT} ($os_line)"
 	echo "- Runner: $runner_name (GitHub id ${r_id:-?}; runner version ${r_version:-?} from the API, ${log_version:-?} from the job log)"
@@ -349,9 +351,16 @@ fi
 		echo "- [ ] install.sh was copied from commit $commit with scp and run once with sudo."
 		echo "- [ ] \`runnerkit up\` output is saved as up.log in $(dirname "$ev") (duration: ...)."
 		echo
-		echo "## CHANGELOG line (only when every row is PASS)"
+		echo "## CHANGELOG line"
 		echo
-		echo "Real-job gate ($(date -u +%Y-%m-%d)): $run_url; runner ${log_version:-$r_version} on Ubuntu 24.04 x86_64, a password-sudo host prepared only by install.sh at ${commit:0:12}."
+		# The release's docs test (TestBYOClaimNeedsRealJobEvidence) checks
+		# this line, including install.sh's SHA-256, before BYO may be
+		# claimed to work.
+		if [ "$overall" = PASS ] && [ "$tree_state" = "clean checkout" ] && [ "$commit" != unknown ]; then
+			echo "Real-job gate ($(date -u +%Y-%m-%d)): $run_url; runner $log_version on Ubuntu 24.04 x86_64, a password-sudo host prepared only by install.sh at ${commit:0:12} (sha256 $install_sha)."
+		else
+			echo "None: the line is written only when every row passes, from a clean checkout of a known commit."
+		fi
 	else
 		echo "- [ ] Revocation steps 1-3 of docs/security-posture.md ran exactly as written; \`sudo visudo -c\` parsed OK."
 		echo "- [ ] After step 2, \`sudo -u runnerkit-runner mv <install>/svc.sh <install>/svc.sh.orig\` and the same for bin failed with Permission denied."
