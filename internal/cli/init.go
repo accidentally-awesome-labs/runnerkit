@@ -94,7 +94,7 @@ func runInit(deps Dependencies, jsonOutput bool, noColor bool, opts *initOptions
 	body := []string{
 		"SSH to the Linux runner machine, then run:",
 		line,
-		"After that, use runnerkit register or runnerkit up from this workstation.",
+		"After that, run runnerkit up from this workstation for the first repository on the host; runnerkit register adds more repositories to it.",
 	}
 	return renderer.Warning(title, body, "")
 }

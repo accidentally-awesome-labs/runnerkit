@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
@@ -55,30 +56,57 @@ func RenderHostInstallRequired(renderer *ui.Renderer, jsonOutput bool, cliVersio
 }
 
 // RenderLifecycleFoundationMissing is returned when `runnerkit register`
-// runs against a host that has not completed the one-time install (the
-// runnerkit-runner user is missing). Remediation matches host install.
-func RenderLifecycleFoundationMissing(renderer *ui.Renderer, jsonOutput bool, cliVersion string) error {
-	line := HostInstallOneLiner(cliVersion)
+// reaches a host that has no runnerkit-runner user. install.sh only writes
+// the sudoers fragment; the user is created by the bootstrap `runnerkit up`
+// runs, so the first repository on a host needs `up` (upCommand), and
+// register adds further repositories. Before v1.3.4 this told users to
+// re-run install.sh, which never fixed it.
+func RenderLifecycleFoundationMissing(renderer *ui.Renderer, jsonOutput bool, upCommand string) error {
+	message := "This host has no runnerkit-runner user yet: register adds a repository to a host that runnerkit up has already set up."
 	remediation := []string{
-		"SSH to the runner host and run the one-liner below once so the shared runner user exists, then retry `runnerkit register`.",
-		line,
-		"From this machine you can also run `runnerkit init` for copy-paste instructions.",
+		"Set this repository up with runnerkit up instead (it prepares the host and creates the user):",
+		upCommand,
+		"Then use runnerkit register for further repositories on this host.",
 	}
 	if jsonOutput {
 		payload := map[string]any{
 			"ok": false,
 			"error": map[string]any{
 				"code":        "lifecycle_foundation_missing",
-				"message":     "RunnerKit register requires the one-time host install before adding repo runners.",
+				"message":     message,
 				"remediation": remediation,
 			},
 		}
-		nextaction.MergePayload(payload, "bootstrap_blocked", nextaction.InstallHostActions(line))
+		nextaction.MergePayload(payload, "bootstrap_blocked", []nextaction.Action{{
+			ID:       "run_up_for_first_repository",
+			Severity: nextaction.SeverityBlocking,
+			Title:    "Set up the first repository on this host with runnerkit up",
+			Command:  upCommand,
+			Kind:     "run_local",
+		}})
 		if err := renderer.JSON(payload); err != nil {
 			return err
 		}
 		return NewExitError(ExitInputRequired, fmt.Errorf("lifecycle_foundation_missing"))
 	}
-	_ = renderer.Error("lifecycle_foundation_missing", "The shared runner user is missing on this host. Complete the one-time host install, then retry register.", remediation)
+	_ = renderer.Error("lifecycle_foundation_missing", message, remediation)
 	return NewExitError(ExitInputRequired, fmt.Errorf("lifecycle_foundation_missing"))
+}
+
+// registerFoundationUpCommand is the `runnerkit up` line that sets up the
+// repository `register` was asked for, with the same SSH options.
+func registerFoundationUpCommand(repoFullName string, opts *upOptions) string {
+	parts := []string{"runnerkit", "up", "--repo", repoFullName, "--host", opts.host}
+	if opts.sshPort != 0 && opts.sshPort != 22 {
+		parts = append(parts, "--ssh-port", strconv.Itoa(opts.sshPort))
+	}
+	if strings.TrimSpace(opts.sshKey) != "" {
+		parts = append(parts, "--ssh-key", opts.sshKey)
+	}
+	for i, part := range parts {
+		if strings.ContainsAny(part, " \t'\"$`\\;&|<>()*?[]{}~!#") {
+			parts[i] = shellQuote(part)
+		}
+	}
+	return strings.Join(parts, " ")
 }

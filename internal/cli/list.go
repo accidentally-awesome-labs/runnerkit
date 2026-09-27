@@ -113,7 +113,7 @@ func runList(deps Dependencies, jsonOutput bool, noColor bool, opts *listOptions
 		if filterKey != "" {
 			msg = "No saved runners for host " + filterKey + "."
 		}
-		return renderer.Step(1, 1, "runner inventory", ui.WarningLine(msg), ui.Bullet("Run `runnerkit up --repo owner/name --host user@host` or `runnerkit register` after `runnerkit init`."))
+		return renderer.Step(1, 1, "runner inventory", ui.WarningLine(msg), ui.Bullet("Run `runnerkit up --repo owner/name --host user@host` (on a password-sudo host, first run the line `runnerkit init --print-install-command` prints there)."))
 	}
 
 	lines := []ui.Line{}

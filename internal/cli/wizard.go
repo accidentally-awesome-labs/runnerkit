@@ -54,7 +54,7 @@ func runFirstRunWizard(ctx context.Context, cmd *cobra.Command, deps Dependencie
 		return renderer.JSON(p)
 	}
 	if !deps.TTY.StdinTTY || !deps.TTY.StdoutTTY {
-		_ = renderer.Error("wizard_requires_tty", "The first-run wizard needs an interactive terminal.", []string{"Run `runnerkit up --repo owner/name --host user@host`, or set up with `runnerkit init` then `runnerkit register`."})
+		_ = renderer.Error("wizard_requires_tty", "The first-run wizard needs an interactive terminal.", []string{"Run `runnerkit up --repo owner/name --host user@host` (on a password-sudo host, first run the line `runnerkit init --print-install-command` prints there)."})
 		return NewExitError(ExitInputRequired, errors.New("wizard requires tty"))
 	}
 	if deps.Prompts == nil {
