@@ -481,6 +481,55 @@ func TestReadmeHonestyBanner(t *testing.T) {
 	}
 }
 
+// TestChangelogKnownIssuesMatchReadme: CLAUDE.md requires the CHANGELOG's
+// Known-issues block to stay in sync with the README "Known issues"
+// section, so both carry the same bullets, word for word. Line wrapping may
+// differ.
+func TestChangelogKnownIssuesMatchReadme(t *testing.T) {
+	readme := knownIssuesBullets(t, mustReadDocFile(t, "../../README.md"), "## Known issues")
+	changelog := knownIssuesBullets(t, mustReadDocFile(t, "../../CHANGELOG.md"), "### Known issues")
+	if len(readme) < 8 {
+		t.Fatalf("README Known issues has %d bullets; the list was not found", len(readme))
+	}
+	for i := 0; i < len(readme) || i < len(changelog); i++ {
+		var r, c string
+		if i < len(readme) {
+			r = readme[i]
+		}
+		if i < len(changelog) {
+			c = changelog[i]
+		}
+		if r != c {
+			t.Fatalf("Known issues bullet %d differs:\nREADME.md:    %q\nCHANGELOG.md: %q", i+1, r, c)
+		}
+	}
+}
+
+// knownIssuesBullets returns the first bullet list after heading, one entry
+// per bullet (nested bullets included), with wrapped lines joined.
+func knownIssuesBullets(t *testing.T, doc, heading string) []string {
+	t.Helper()
+	at := strings.Index(doc, "\n"+heading+"\n")
+	if at < 0 {
+		t.Fatalf("no %q heading", heading)
+	}
+	var bullets []string
+	started := false
+	for _, line := range strings.Split(doc[at+len(heading)+2:], "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "- "):
+			started = true
+			bullets = append(bullets, line[:len(line)-len(strings.TrimLeft(line, " "))]+trimmed)
+		case started && trimmed != "" && strings.HasPrefix(line, " "):
+			bullets[len(bullets)-1] += " " + trimmed
+		case started:
+			return bullets
+		}
+	}
+	return bullets
+}
+
 // TestLicensingAndPolicyDocs pins H-01..H-04a and H-09.
 func TestLicensingAndPolicyDocs(t *testing.T) {
 	license := mustReadDocFile(t, "../../LICENSE")
