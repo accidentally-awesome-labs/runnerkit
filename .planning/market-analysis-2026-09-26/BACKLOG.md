@@ -2,6 +2,19 @@
 
 *Date: 2026-09-26. Implements `STRATEGY.md` as revised after the red-team review and editorial rulings R1–R10 (made during this analysis and open to maintainer override), and is re-baselined against it the same day. All dates come from STRATEGY §10.1, the only schedule; milestone IDs C1–C13 refer to that table. Defect IDs (P0-n, P1-n, P2-n, SEC-n) and their severities are CODEBASE-ASSESSMENT §5–6. KEYFACTS labels appear only where they differ. Defect detail comes from `evidence/code-condensed.md`, `evidence/gaps.md`, `evidence/KEYFACTS.md` and `CODEBASE-ASSESSMENT.md`. Repository: `accidentally-awesome-labs/runnerkit` at HEAD `64c3003`, which is also the `v1.3.3` tag.*
 
+**Status 2026-09-27**, recorded before `.planning/` moves to a private repository (H-05). `main` is at `930724e`; v1.3.4 is not tagged.
+- **Merged** (2026-09-26/27):
+  - PR #1 (`e67a324`): the v1.3.4 harm reduction and core-path repair, A-01 to A-10 and A-14 to A-19 (the §0 cut 1–3 items shipped early), with LICENSE, CONTRIBUTING, SECURITY, `docs/security-posture.md` and the CHANGELOG.
+  - PR #2 (`f652142`): `docs/testkit/` and `scripts/testkit/`: the A-20 runbook with `gate.sh`, and the V-1 to V-4 scripts.
+  - PR #3 (`60e00df`): the C-02 guard in `go-test`; a DCO job for fork pull requests (H-02's code half); IPv4-only `--ssh-allowed-cidr`; the cloud Known issues (§A.6); the RELEASE-NOTES content in the CHANGELOG (the files are still tracked); the wording sweep (N-02); `TestRenderSudoersEntryGolden`.
+  - PR #4 (`80e1837`): `register`'s `lifecycle_foundation_missing` points at `runnerkit up`.
+  - PR #5 (`03c6e00`): the V-3 probe fix; `gate.sh` G9 checks A-16's acceptance; identical README and CHANGELOG Known issues (`TestChangelogKnownIssuesMatchReadme`).
+  - PR #8 (`930724e`): `gate.sh` writes its CHANGELOG evidence line only on a clean PASS, with `install.sh`'s SHA-256.
+- **Held:** draft PR #6 (A-21) and draft PR #7 (H-08's "Fixed in v1.3.4" wording and `TestBYOClaimNeedsRealJobEvidence`). Exactly one merges after the A-20 gate session.
+- **Open:** A-20, A-21, H-04a, H-05 and the §A.7 checklist. Boxes are ticked only where the item's acceptance is met on `main`: A-16 and A-18 are merged, but their acceptance runs in A-20, and A-17a's needs the govulncheck link for the tagged SHA. On 2026-09-27, 2.337.0 was still the latest actions/runner release (A-16).
+- **Next:** G-0 and G-1 by C1 (2026-10-03), the A-20 gate session around 2026-10-05, and the v1.3.4 tag by C2 (2026-10-10).
+- Where the text below puts A-01..A-03, C-02, A-06b or A-17b in v1.3.5 or in the post-launch ledger, read v1.3.4; §0 counts their hours as provisional Stage 0 spend. File:line references are to `64c3003`; PR #1 moved many of them.
+
 ---
 
 ## How to use this document
@@ -88,14 +101,16 @@ Only the `version` subcommand prints anything.
 | **Stage 0 total** | | **35.25** | **25.0** |
 
 **Cuts from full scope to committed.** These are decided now, not at the deadline:
-1. **P1-1, P1-2 and P1-3** (A-01, A-02, A-03, plus C-02, which fails on HEAD until A-03 lands): −4.5 h, moved to v1.3.5. This applies STRATEGY §5's own rule ("If Stage 0 projects over 25h, P1-1, P1-2 and P1-3 … move to v1.3.5"). The banner lists the workarounds.
-2. **Toolchain bump** (A-17b: supported Go, `x/*` refresh, CI pins): −3.5 h, moved to v1.3.5. **This defers an item STRATEGY R2 put in v1.3.4; STRATEGY §5 records the deferral as needing the maintainer's sign-off.** govulncheck (A-17a) stays in v1.3.4. If it reports a vulnerability reachable from shipped code, A-17b returns to v1.3.4 and cut 6 pays for it.
-3. **`recover` refusals** (A-06b, P1-10; not in STRATEGY's 0.3 table): −0.5 h, moved to v1.3.5. The banner lists both actions as known broken.
+1. **P1-1, P1-2 and P1-3** (A-01, A-02, A-03, plus C-02, which fails on HEAD until A-03 lands): −4.5 h, moved to v1.3.5. This applies STRATEGY §5's own rule ("If Stage 0 projects over 25h, P1-1, P1-2 and P1-3 … move to v1.3.5"). The banner lists the workarounds. **Overtaken 2026-09-27:** all four shipped early, on `main` for v1.3.4 (PR #1; C-02's CI guard in PR #3).
+2. **Toolchain bump** (A-17b: supported Go, `x/*` refresh, CI pins): −3.5 h, moved to v1.3.5. **This defers an item STRATEGY R2 put in v1.3.4; STRATEGY §5 records the deferral as needing the maintainer's sign-off.** govulncheck (A-17a) stays in v1.3.4. If it reports a vulnerability reachable from shipped code, A-17b returns to v1.3.4 and cut 6 pays for it. **Overtaken 2026-09-27:** A-17b shipped early (Go 1.26, `toolchain go1.26.8`; PR #1), so nothing was deferred.
+3. **`recover` refusals** (A-06b, P1-10; not in STRATEGY's 0.3 table): −0.5 h, moved to v1.3.5. The banner lists both actions as known broken. **Overtaken 2026-09-27:** A-06b shipped early (PR #1).
 4. **Name check (H-11) and git-history check (H-06):** −1.5 h, moved to Stage 1. H-06 must still finish before the first outreach, the C5 thread replies, because STRATEGY §4 requires it "before announcing". H-11 must finish before C8.
 5. **CHANGELOG reconstruction of v1.3.0–v1.3.2** (H-04b): −0.25 h, moved to Stage 1.
-6. **Contingency, if the G-1 log shows an overrun at C2 or A-17b returns:** first move A-05 (P0-5) to v1.3.5 with a banner line (−1 h; cloud is already behind `--experimental`, A-15). Then drop A-16's pin bump (−0.25 h), keeping its `--disableupdate` invariant test; auto-update keeps 2.334.0 routable [I], which V-3 tests.
+6. **Contingency, if the G-1 log shows an overrun at C2 or A-17b returns:** first move A-05 (P0-5) to v1.3.5 with a banner line (−1 h; cloud is already behind `--experimental`, A-15). Then drop A-16's pin bump (−0.25 h), keeping its `--disableupdate` invariant test; auto-update keeps 2.334.0 routable [I], which V-3 tests. **Overtaken 2026-09-27:** A-05 and A-16's pin bump both shipped (PR #1), so neither is left to cut.
 
 Stage 0 has zero slack. The likeliest overrun is 0.3b, and its fallback (A-21) is paid for inside the box.
+
+**Provisional Stage 0 spend (2026-09-27).** Cuts 1–3 were overtaken: A-01, A-02, A-03, C-02, A-06b and A-17b shipped early (§A.0 rows 7–9, 11 and 44). Their 8.5 h of backlog estimates (1.5 + 1.5 + 1 + 0.5 + 0.5 + 3.5) therefore count as Stage 0 spend, not as capacity freed after launch: on estimates, Stage 0 is 33.5 h against the ≤25 h C4 cap, and the pre-launch cumulative figures below rise by the same 8.5 h (to 63.0 h against the ≤55 h cap). The post-launch table already includes them. These are estimates, not logged hours; the G-1 log replaces them at the C2 re-baseline.
 
 *Stage 1 before launch (C4 → C8; 30 h available under the ≤55 h cap)*
 
@@ -120,15 +135,14 @@ Stage 0 has zero slack. The likeliest overrun is 0.3b, and its fallback (A-21) i
 | Block | W2 no-go | W2 go |
 |---|---:|---:|
 | W2 checkup minimum (E1.2): core 4, F-01 1.5, F-02 1, F-04 2, F-05 1.5, fixture 1.5, C-10 0.5 | — | 12.0 |
-| v1.3.5 CLI fixes checkup needs: A-01 1.5, A-03 1, C-02 0.5 | 3.0 | 3.0 |
-| A-02 1.5, A-06b 0.5 | 2.0 | after the memo |
-| A-17b toolchain bump | 3.5 | after the memo, unless govulncheck finds a reachable issue |
 | H-15 `byo-prepare` sweep 0.5, H-17 archive playbook 0.5 | 1.0 | 1.0 |
 | Discovery interviews (E1.5), second half | 2.5 | 2.5 |
 | Weekly table (H-16), 6 weeks | 1.5 | 1.5 |
 | Decision memo (E1.6, part 2) | 2.5 | 2.5 |
 | Support, fixes and thread follow-ups (72 h responses) | 14.5 | 8.0 |
-| **Block total / cumulative at C10** | 30.5 / **85.0** | 30.5 / **85.0** |
+| **Block total / cumulative at C10** | 22.0 / **85.0** | 27.5 / **90.5** |
+
+A-01, A-02, A-03, C-02, A-06b and A-17b left this table on 2026-09-27 (shipped early). The 8.5 h this frees in the no-go column (3.0 h in the go column) is **not** free capacity: the cumulative figures count it in Stage 0 (provisional, see above). The go column had A-02, A-06b and A-17b after the memo, so on estimates it now ends 5.5 h over the ≤85 h cap.
 
 **Cut from Stage 1 entirely** (after the memo, or never): C-04 lint (2 h), C-06 shellcheck (1.5 h), C-11 docs contract (1 h), the multi-fixture C-08 minimum (sized M), F-03 (3 h), F-06..F-08 (5 h), A-11 (1 h), A-12 (1.5 h), A-13 (2 h), and, inside W2, container discovery and the anonymized summary block (STRATEGY W2's own first cuts). If W2 is a no-go, F-01, F-02, F-04 and F-05 are not built either.
 
@@ -183,44 +197,44 @@ Severity is CODEBASE-ASSESSMENT's: §5 for P-IDs, and the §6.6 "Priority" colum
 | 4 | P0-4 | `down`/`unregister` has no cloud guard, so VMs are orphaned [R] | P0 | Refuse | A-04 | v1.3.4 |
 | 5 | P0-5 | `up --cloud --replace` overwrites cloud state [C] | P0 | Refuse | A-05 | v1.3.4 (first contingency cut, §0 cut 6) |
 | 6 | P0-6 | Hard-coded "approx €4.90/month" [R]; current prices [S] | P0 | Live price from the Hetzner API, labelled as such; v2 migration and availability frozen | A-07 → Z-04 | v1.3.4 |
-| 7 | P1-1 | Cobra errors swallowed; `--version` silent [R] | P1 (KEYFACTS B.6: P0) | Fix; moved by §0 cut 1 | A-01, C-03 | v1.3.5 |
-| 8 | P1-2 | Prompter has no `Input` [R] | P1 (KEYFACTS B.7: P0) | Fix; moved by §0 cut 1 | A-02 | v1.3.5 (after the memo if W2 is a go) |
-| 9 | P1-3 | `StateBaseDir` unset: `config.json` and `sessions/` land in the CWD [R] | P1 (KEYFACTS B.8: P0) | Fix; moved by §0 cut 1 | A-03, C-02 | v1.3.5 |
+| 7 | P1-1 | Cobra errors swallowed; `--version` silent [R] | P1 (KEYFACTS B.6: P0) | Fix; shipped early (§0 cut 1 overtaken) | A-01, C-03 | v1.3.4 |
+| 8 | P1-2 | Prompter has no `Input` [R] | P1 (KEYFACTS B.7: P0) | Fix; shipped early (§0 cut 1 overtaken) | A-02 | v1.3.4 |
+| 9 | P1-3 | `StateBaseDir` unset: `config.json` and `sessions/` land in the CWD [R] | P1 (KEYFACTS B.8: P0) | Fix; shipped early (§0 cut 1 overtaken) | A-03, C-02 | v1.3.4 |
 | 10 | P1-12 | Ephemeral cloud VM never destroyed; TTL ignored; finalizer unprivileged [R/C] | P1 | Block ephemeral cloud; ephemeral BYO behind `--experimental`; frozen | A-08, A-15 → Z-03 | v1.3.4 |
-| 11 | P1-10 | `recover` reinstall/reregister miswired [C/I] | P1 | Refuse both actions (§0 cut 3); fix with the units | A-06b → R-05 | v1.3.5 / Stage 2 item 0 |
+| 11 | P1-10 | `recover` reinstall/reregister miswired [C/I] | P1 | Refuse both actions (shipped early; §0 cut 3 overtaken); fix with the units | A-06b → R-05 | v1.3.4 / Stage 2 item 0 |
 | 12 | P1-5 | Auto-detection on by default turns comment words into packages [R] | P1 | Off by default; parser frozen | A-11 → Z-07 | after the memo (cut) |
-| 13 | P1-6 | arm64 advertised but broken [C] | P1 | Withdraw the docs claim now; preflight refusal later | H-09, A-12 → Z-05 | v1.3.4 (docs) / after the memo |
+| 13 | P1-6 | arm64 advertised but broken [C] | P1 | Withdraw the docs claim now; preflight refusal later. v1.3.4 progress: docs claim withdrawn; preflight warns on arm64 but does not refuse (PR #1) | H-09, A-12 → Z-05 | v1.3.4 (docs) / after the memo |
 | 14 | P1-7 | Non-Ubuntu passes preflight, then fails [C] | P1 | Banner says Ubuntu x86_64 only; preflight refusal later | H-08, A-12 → Z-06 | v1.3.4 (docs) / after the memo |
 | 15 | P1-9 | `logs` and OOM hints query the wrong unit [R] | P1 | Fix if W2 gets a go; checkup reuses it | F-01 | v1.3.5 |
 | 16 | P1-19 | Health commands exit 0 on ERROR; `ok:true` hard-coded [R] | P1 | `--fail-on` for checkup if W2 gets a go; doctor and status later; no JSON unification (N-13) | F-02 | v1.3.5 |
-| 17 | P1-20 | Doctor false positives when facts are missing; blind to sudoers drift [R] | P1 | Tri-state facts (cut from Stage 1); content check later | F-03 → R-17 | after the memo / v1.4.0 |
+| 17 | P1-20 | Doctor false positives when facts are missing; blind to sudoers drift [R] | P1 | Tri-state facts (cut from Stage 1); content check later. v1.3.4 progress: with GitHub or SSH facts missing, doctor and recover report `github_unavailable` or the SSH problem instead of teardown advice (PR #1); no tri-state stage or drift check yet | F-03 → R-17 | after the memo / v1.4.0 |
 | 18 | SEC-4 | Host-key pin not bound to the session; non-standard fingerprint [R] | P1 | Strict `known_hosts` in checkup (W2); every command later | F-05 → R-06 | v1.3.5 / v1.4.0 |
 | 19 | P1-25 | No state lock; no signal handling [R] | P1 | Stretch (cut from Stage 1) | F-06 | after the memo |
 | 20 | P1-13 | Cleanup cannot converge on a dead host; partial cleanup exits 0 [R] | P1 | `state forget` plus an exit code (cut); cloud part frozen | F-07 → Z-09 | after the memo |
 | 21 | P1-23 | Mutating day-2 commands ignore `busy` [C] | P1 | Busy gate (cut); upgrade later | F-08 → R-03 | after the memo / v1.4.0 |
-| 22 | SEC-1 | "Scoped" sudoers is root-equivalent [C] | P1 | Honest comment and security page now; helper in item 0 | A-09, H-09 → R-01 | v1.3.4 / Stage 2 item 0 |
+| 22 | SEC-1 | "Scoped" sudoers is root-equivalent [C] | P1 | Honest comment and security page now; helper in item 0. v1.3.4 progress: both merged (PR #1); `TestRenderSudoersEntryGolden` pins the list (PR #3) | A-09, H-09 → R-01 | v1.3.4 / Stage 2 item 0 |
 | 23 | SEC-2, SEC-3 | Runner-writable `svc.sh` run by root; `/var/lib/runnerkit` runner-owned [C] | P1 | Disclose, with revocation steps, now; root-owned units in item 0 | H-09 → R-05 | v1.3.4 (disclose) / Stage 2 item 0 |
 | 24 | SEC-5 | Docker group is root-equivalent, silently [C] | P1 (decide with P0-2) | A-18 makes the group work, so disclosure in the same release is mandatory; opt-in later | H-08, H-09 → R-02 | v1.3.4 / v1.4.0 |
 | 25 | SEC-6 | Registration tokens in argv and sudo logs [C] | P2 (medium/low; verifier byo-bootstrap-15 confirmed/low) | Disclose; fix with the helper | H-09 → R-07 | Stage 2 |
 | 26 | SEC-7 | All repos on a host share one Unix user [C] | P2 (P1 with mixed trust tiers) | Disclose; per-repo users | H-09 → R-08 | Stage 2 |
-| 27 | SEC-8, SEC-9, SEC-10 | Trust gate not rechecked; auth precedence inverted and docs push the `workflow` scope; split redaction and 0644 logs [C] | P2 | Remove the `workflow`-scope advice now (H-09); the rest in the rebuild | H-09 → R-18 | v1.3.4 (docs) / Stage 2 |
-| 28 | SEC-11 | Cloud SSH open to 0.0.0.0/0; cloud admin `NOPASSWD:ALL` (intentional, assessment §6.1) [C] | P2 (SEC-11 low) | Disclose; cloud frozen; fixed only if cloud is revived | H-09 → Z-10 | Stage 3 trigger |
+| 27 | SEC-8, SEC-9, SEC-10 | Trust gate not rechecked; auth precedence inverted and docs push the `workflow` scope; split redaction and 0644 logs [C] | P2 | Remove the `workflow`-scope advice now (H-09); the rest in the rebuild. v1.3.4 progress: advice removed; token remediation says a logged-in `gh` wins over `RUNNERKIT_GITHUB_TOKEN` (SEC-9), precedence unchanged (PR #1) | H-09 → R-18 | v1.3.4 (docs) / Stage 2 |
+| 28 | SEC-11 | Cloud SSH open to 0.0.0.0/0; cloud admin `NOPASSWD:ALL` (intentional, assessment §6.1) [C] | P2 (SEC-11 low) | Disclose; cloud frozen; fixed only if cloud is revived. v1.3.4 progress: disclosed in Known issues; `--ssh-allowed-cidr` accepts only an IPv4 CIDR (a bare address opened 0.0.0.0/0; PR #3); the default is unchanged | H-09 → Z-10 | Stage 3 trigger |
 | 29 | SEC-12 | Opt-in CI apt sudo is root-equivalent, undocumented [C] | P2 | Disclose in banner and security page; `--ci-sudo` profiles later | H-08, H-09 → R-09 | v1.3.4 / v1.4.0 |
 | 30 | SEC-13 | Release workflow on mutable action tags, no repo guard, no test gate [C] | P2 | Test gate and repo guard in v1.3.4; SHA pinning in Stage 1 (STRATEGY 0.2) | A-10 (C-01), C-01b | v1.3.4 / Stage 1 |
 | 31 | P1-11 | Job user has no sudo (cloud) or only opt-in apt (BYO) [R] | P1 | `--ci-sudo` profiles; cloud frozen | R-09, Z-08 | v1.4.0 |
-| 32 | P1-14 | BYO plan not disclosed; heavy image forced; 2 GiB disk check against a 4.5–5 GB need [R] | P1 | Disclose in the README now; minimal profile later | H-08 → R-10 | v1.4.0 |
+| 32 | P1-14 | BYO plan not disclosed; heavy image forced; 2 GiB disk check against a 4.5–5 GB need [R] | P1 | Disclose in the README now; minimal profile later. v1.3.4 progress: README Known issues disclose the footprint; the BYO plan lists `setup_runner_image`, its apt sources and the docker grant (PR #1); the image and the 2 GiB check are unchanged | H-08 → R-10 | v1.4.0 |
 | 33 | P1-15 | Failures lose the failing step ("(unknown)") [R] | P1 | Fix (0.3b) | A-19 | v1.3.4 |
-| 34 | P1-16 | Image marker freezes partial failures; fetch failures abort [R] | P1 | Fix | R-12 | v1.4.0 |
+| 34 | P1-16 | Image marker freezes partial failures; fetch failures abort [R] | P1 | Fix. v1.3.4 progress: a failed Geckodriver lookup no longer aborts the step (PR #1); the Go lookup and the single marker remain | R-12 | v1.4.0 |
 | 35 | P1-17 | Tarball cache verified only on first download; duplicate 225 MB download [R] | P1 | Fix | R-13 | v1.4.0 |
-| 36 | P1-18 | `register` dead end after install.sh [C] | P1 | Fix | R-14 | v1.4.0 |
-| 37 | P1-21 | BYO rerun mutates the host before the state-replace gate [C] | P1 | Fix | R-15 | v1.4.0 |
+| 36 | P1-18 | `register` dead end after install.sh [C] | P1 | Fix. v1.3.4 progress: `lifecycle_foundation_missing` names the `runnerkit up` command to run first, not install.sh (PR #4); install.sh still does not create the runner user | R-14 | v1.4.0 |
+| 37 | P1-21 | BYO rerun mutates the host before the state-replace gate [C] | P1 | **Closed.** Fixed early: the replace check runs before host-key, preflight and bootstrap (PR #1; `TestUpExistingStateRefusesBeforeBootstrapWithoutReplace`) | R-15 | v1.3.4 |
 | 38 | P1-24 | apt: no lock timeout; `DEBIAN_FRONTEND` dropped [C] | P1 | Fix | R-16 | v1.4.0 |
 | 39 | P1-4 | cloud-init `set -e` makes the tolerance dead code; 15-min retry-all [R] | P1 | Frozen | Z-01 | Stage 3 trigger |
 | 40 | P1-8 | Hetzner SSH key re-uploaded on every provision [I] | P1 | Frozen. STRATEGY §5 allows it in v1.3.4 "only if hours remain"; §0 shows none | Z-02 | Stage 3 trigger |
 | 41 | P1-22 | One runner per repo, so matrix legs serialize [C] | P1 | Stage 3 bet | E3.1 | Stage 3 trigger |
 | 42 | P2-9 (with P2-8) | Runner version model not grounded in the host; pin 2.334.0; version-stale finding never armed | P2 | Pin bump and `--disableupdate` test now; host-read version in checkup; resolve-latest in the rebuild | A-16, F-04, R-04 | v1.3.4 / v1.3.5 / v1.4.0 |
 | 43 | — | hcloud-go v1.59.2; the API dropped `server.datacenter` (reads are nil-guarded at `provision.go:224,519-522`; no code calls `/v1/datacenters`) [C] | No P-ID; assessment §8.3 rates the impact low (KEYFACTS: P1; verifier cloud-ephemeral-14: partially true/low) | Frozen | Z-04 | Stage 3 trigger |
-| 44 | — | Go 1.22 out of support; x/net from 2023; no lint, vuln or shellcheck gates [C] | No P-ID (assessment §8.2–8.3) | govulncheck in v1.3.4; toolchain bump in v1.3.5 (§0 cut 2); lint and shellcheck after the memo | A-17a, A-17b, C-04, C-05, C-06 | v1.3.4 → Stage 2 |
+| 44 | — | Go 1.22 out of support; x/net from 2023; no lint, vuln or shellcheck gates [C] | No P-ID (assessment §8.2–8.3) | govulncheck and the toolchain bump (Go 1.26; §0 cut 2 overtaken) in v1.3.4; lint and shellcheck after the memo | A-17a, A-17b, C-04, C-05, C-06 | v1.3.4 (A-17a, A-17b) → Stage 2 (C-04..C-06) |
 | 45 | — | Tests never execute the rendered shell; no smoke ever runs a job [C] | No P-ID (assessment §8.1) | One real job before v1.3.4; fixtures and a CI canary later | A-20, C-08, C-09 | v1.3.4 → Stage 2 |
 
 The remaining P2 items are N-10 (P2-1, P2-2, P2-7), Z-08 (P2-13) and N-22 (the rest).
@@ -229,7 +243,7 @@ The remaining P2 items are N-10 (P2-1, P2-2, P2-7), Z-08 (P2-13) and N-22 (the r
 
 Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05, A-06a, A-08 and A-15 (the billing and credential guards), then A-07, A-16, A-17a and A-09. A-01..A-03 were in this section before the re-baseline; they now sit in §A.3 (§0 cut 1).
 
-- [ ] **A-04 `down`/`unregister` refuses cloud state** (P0-4; KEYFACTS B.4) [R]
+- [x] **A-04 `down`/`unregister` refuses cloud state** (P0-4; KEYFACTS B.4) [R]
   - **Files:**
     - `internal/cli/down.go:61-69`: guard goes after `GetRepository` and before `BuildCleanupPlan`. A grep of `down.go` for `provider|cloud|hetzner` finds nothing.
     - Mirror of `internal/cli/destroy.go:77-81`.
@@ -250,7 +264,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
     The dossier's scratch repro becomes the fixture: `down --yes --json` on seeded Hetzner state returned `ok:true, state_removed:true` with no provider call.
   - **Effort:** S (1 h).
 
-- [ ] **A-05 `up --replace` refuses live cloud state** (P0-5; KEYFACTS B.4) [C]
+- [x] **A-05 `up --replace` refuses live cloud state** (P0-5; KEYFACTS B.4) [C]
   - **Files:**
     - `internal/cli/up.go:1199-1210`: `confirmCloudStateReplaceBeforeProvision` returns `true` on `--replace` with no provider check.
     - `up.go:721-746`: provisioning and save.
@@ -266,7 +280,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
   - **Test that would have caught it:** `TestUpCloudReplace_RefusesLiveCloudState` asserts `FakeProvider.Provision` calls == 0 and `state.json` unchanged. `TestUpBYOReplace_RefusesLiveCloudState` asserts recording-executor calls == 0.
   - **Effort:** S (1 h).
 
-- [ ] **A-06 Disable the broken lifecycle mutators.** A-06a (v1.3.4) covers `upgrade-runner` and `doctor --fix` (P0-3). A-06b (v1.3.5, §0 cut 3) covers `recover --reinstall-service` and `recover --reregister` (P1-10). [R/C/I]
+- [x] **A-06 Disable the broken lifecycle mutators.** A-06a (v1.3.4) covers `upgrade-runner` and `doctor --fix` (P0-3). A-06b (v1.3.5, §0 cut 3) covers `recover --reinstall-service` and `recover --reregister` (P1-10). [R/C/I]
   - **Files and why:**
 
     | Command | Files | Problem | Part |
@@ -288,7 +302,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
   - **Test that would have caught it:** an invariant test in `internal/cli/lifecycle_invariants_test.go`. It runs every subcommand except `up`/`register` against seeded BYO state with a recording executor, and fails if any issued script matches `config\.sh --unattended|rm -f [^\n]*\.credentials|svc\.sh install`. A bare `config\.sh` pattern would wrongly fail `down`/`destroy`. On HEAD it fails for `upgrade-runner` and `recover`. In v1.3.4 the test carries an explicit, commented exemption for `recover`, which A-06b removes. Also add `TestUpgradeRunner_Disabled_NoRemoteCalls` and `TestDoctorFix_Disabled`.
   - **Effort:** S. A-06a 1 h; A-06b 0.5 h. The real fixes are R-03 and R-05.
 
-- [ ] **A-07 Show the live Hetzner API price instead of the hard-coded cost** (P0-6) [R]; current prices [S]
+- [x] **A-07 Show the live Hetzner API price instead of the hard-coded cost** (P0-6) [R]; current prices [S]
   - **Files:**
     - `internal/provider/profile.go:27-28` and `:113-118`: "approx €0.0081/hour" and "approx €4.90/month", applied to every type and region.
     - `internal/provider/hetzner/provision.go:300-301,496`.
@@ -307,7 +321,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
     - `TestNoHardcodedCost`: a grep of non-test Go for `4\.90|0\.0081|approx €`.
   - **Effort:** S (2 h). Availability (`Locations[].Available`), which needs hcloud-go v2, stays in Z-04.
 
-- [ ] **A-08 Block ephemeral cloud, and stop recommending it for untrusted code** (P1-12) [R/C]
+- [x] **A-08 Block ephemeral cloud, and stop recommending it for untrusted code** (P1-12) [R/C]
   - **Files:**
     - `internal/cli/up.go:115` (`resolveModeDecision`); `runmode.ProfileEphemeralCloud` branches at `:479,:1139`.
     - Copy at `internal/github/safety.go:22`, `internal/cli/status.go:102`, `up.go:2019` and `up.go:2130`.
@@ -321,7 +335,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
   - **Test that would have caught it:** `TestUp_EphemeralCloudDisabled` asserts `FakeProvider.Validate` calls == 0. `TestNoCopyRecommendsEphemeralCloud` greps Go string literals and `docs/**/*.md` for `--mode ephemeral --cloud`.
   - **Effort:** S (1 h).
 
-- [ ] **A-15 `--cloud` and ephemeral BYO behind `--experimental`; explicit `--cloud-region`** (STRATEGY 0.3 and §4 de-emphasis; P0-6 defaults; P1-12) [C]
+- [x] **A-15 `--cloud` and ephemeral BYO behind `--experimental`; explicit `--cloud-region`** (STRATEGY 0.3 and §4 de-emphasis; P0-6 defaults; P1-12) [C]
   - **Files:**
     - `internal/cli/up.go:87-88`: `--cloud` help ("recommended cloud provider; only hetzner is supported in Phase 4"), and `--cloud-region`, which defaults to `provider.HetznerDefaultRegion`.
     - `internal/provider/profile.go:10-11`: `fsn1` and `cpx22`. fsn1 reportedly had no orderable types on 2026-08-25 [S].
@@ -342,7 +356,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
   - **Test:** `TestUp_CloudRequiresExperimental`, `TestUp_CloudRequiresRegion` and `TestUp_EphemeralBYORequiresExperimental`, with recording fakes that assert zero calls.
   - **Effort:** S (0.5 h, sharing A-08's gate code).
 
-- [ ] **A-09 Correct misleading strings (STRATEGY §4 stop-list)** [C]
+- [x] **A-09 Correct misleading strings (STRATEGY §4 stop-list)** [C]
   - **Files:**
     - `internal/cli/wizard.go:67`: "Hetzner cloud (recommended default)" becomes "Hetzner cloud (experimental; billed by Hetzner)".
     - The other "recommended cloud" strings, found in the repo during fact-check: `internal/cli/up.go:87` (the `--cloud` flag help, "recommended cloud provider"), `:644` ("Provision recommended cloud runner (Hetzner)") and `:655` ("…to provision the recommended cloud runner."). Drop "recommended" from each.
@@ -352,7 +366,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
   - **Test:** in v1.3.4, a small Go test over non-test string literals and `.goreleaser.yaml` fails on `recommended default`, `recommended cloud` and `NOT a blanket`. The full docs and copy contract (C-11) comes after the memo.
   - **Effort:** S (0.5 h).
 
-- [ ] **A-10 The release workflow runs tests before GoReleaser, with a repository guard** (SEC-13, test-gate part). This is C-01's v1.3.4 half. SHA-pinning the actions is C-01b in Stage 1, as STRATEGY 0.2 schedules it. **Effort:** S (0.5 h).
+- [x] **A-10 The release workflow runs tests before GoReleaser, with a repository guard** (SEC-13, test-gate part). This is C-01's v1.3.4 half. SHA-pinning the actions is C-01b in Stage 1, as STRATEGY 0.2 schedules it. **Effort:** S (0.5 h).
 
 - [ ] **A-16 Bump the runner pin to 2.337.0, and test that `--disableupdate` is never passed** (P2-9; gaps.md runner-version-enforcement) [C]
   - **Files:**
@@ -381,7 +395,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
 
 **Box rule.** Log the hours for A-14, A-18, A-19 and A-20 as they are spent. If A-20 is not green by **5.5 logged hours**, stop and ship A-21 (option A) from the remaining 0.5 h. Ship whichever of A-14, A-18 and A-19 passed their own tests: without the BYO claim they are harmless, and the banner discloses what they change (SEC-5 for A-18). Neither path narrows the root-equivalent sudoers.
 
-- [ ] **A-14 Generate `install.sh`'s sudoers block from `RenderSudoersEntry`, with a full-body equality test** (P0-1; this is C-07(a), pulled forward from Stage 2) [R]
+- [x] **A-14 Generate `install.sh`'s sudoers block from `RenderSudoersEntry`, with a full-body equality test** (P0-1; this is C-07(a), pulled forward from Stage 2) [R]
   - **Files:**
     - `install.sh:30-46`: `render_sudoers()`, a heredoc with 11 command groups. It is validated with `visudo -cf` at `:55`.
     - `internal/bootstrap/sudoers.go:70-91`: `RenderSudoersEntry`, which additionally grants tee, gpg, mkdir, unzip, usermod, dpkg, add-apt-repository, chmod, cp, cat and ln (16 paths).
@@ -414,7 +428,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
   - **Acceptance:** in A-20, `id -nG runnerkit-runner` includes `docker`, and `docker run hello-world` succeeds as the runner user.
   - **Effort:** S (1 h).
 
-- [ ] **A-19 Failures name the failing step** (P1-15; formerly R-11, pulled forward) [R]
+- [x] **A-19 Failures name the failing step** (P1-15; formerly R-11, pulled forward) [R]
   - **Files:**
     - `internal/bootstrap/install.go:133-141` and `:186-194`: when `exec.Run` returns an error, the raw `*exec.ExitError` is returned.
     - `internal/cli/up.go:2314-2327`: prints "(unknown)".
@@ -461,7 +475,7 @@ Order of work: A-10 first (so every later commit is test-gated), then A-04, A-05
 
 A-11..A-13 were "should-ship" and are outside the Stage 1 ledger (§0 "cut from Stage 1 entirely"). Build them after the memo, or earlier only from the support hours.
 
-- [ ] **A-01 Print CLI errors, wire `--version`, and make `byo-prepare` a clear tombstone** (P1-1; KEYFACTS B.6 labels it P0) [R]. **v1.3.5 (§0 cut 1).**
+- [x] **A-01 Print CLI errors, wire `--version`, and make `byo-prepare` a clear tombstone** (P1-1; KEYFACTS B.6 labels it P0) [R]. **v1.3.5 (§0 cut 1).**
   - **Files:**
     - `cmd/runnerkit/main.go:41-45`: only `os.Exit(cli.ExitCode(err))`.
     - `internal/cli/root.go:126-127`: `SilenceUsage`/`SilenceErrors`.
@@ -485,7 +499,7 @@ A-11..A-13 were "should-ship" and are outside the Stage 1 ledger (§0 "cut from 
     It asserts `stderr != ""` whenever the exit code is non-zero, and that `--version` prints exactly `runnerkit 9.9.9-test`. Every row fails on HEAD (re-verified 2026-09-26).
   - **Effort:** S (1.5 h).
 
-- [ ] **A-02 Implement `Input` on the production prompter** (P1-2; KEYFACTS B.7 labels it P0) [R]. **v1.3.5 (§0 cut 1); after the memo if W2 is a go.**
+- [x] **A-02 Implement `Input` on the production prompter** (P1-2; KEYFACTS B.7 labels it P0) [R]. **v1.3.5 (§0 cut 1); after the memo if W2 is a go.**
   - **Files:**
     - `internal/ui/cli_prompter.go:35-124`: implements Confirm (:44), Select (:70) and Password (:106), but not Input.
     - `internal/ui/prompt.go:17,30`: interface declarations.
@@ -506,7 +520,7 @@ A-11..A-13 were "should-ship" and are outside the Stage 1 ledger (§0 "cut from 
     Why the old tests missed it: they always injected a fake prompter that happened to implement `Input`.
   - **Effort:** S (1.5 h).
 
-- [ ] **A-03 Default `StateBaseDir`** (P1-3; KEYFACTS B.8 labels it P0) [R]. **v1.3.5 (§0 cut 1).**
+- [x] **A-03 Default `StateBaseDir`** (P1-3; KEYFACTS B.8 labels it P0) [R]. **v1.3.5 (§0 cut 1).**
   - **Files:**
     - `internal/cli/root.go:52-113` (`normalizeDependencies` never sets it);
     - `cmd/runnerkit/main.go:23-38`;
@@ -524,9 +538,9 @@ A-11..A-13 were "should-ship" and are outside the Stage 1 ledger (§0 "cut from 
     3. A C-03 binary row: CWD is `t.TempDir()`, run `doctor --repo o/r --ignore host_mem_low` against seeded state, then assert the CWD is still empty.
   - **Effort:** S (1 h).
 
-- [ ] **A-06b Refuse `recover --reinstall-service` and `recover --reregister`** (P1-10). The specification is in A-06 (§A.1). It moved here by §0 cut 3. **Effort:** S (0.5 h).
+- [x] **A-06b Refuse `recover --reinstall-service` and `recover --reregister`** (P1-10). The specification is in A-06 (§A.1). It moved here by §0 cut 3. **Effort:** S (0.5 h).
 
-- [ ] **A-17b Move to a supported Go toolchain** (assessment §8.3; formerly C-13). §0 cut 2 moved it from v1.3.4.
+- [x] **A-17b Move to a supported Go toolchain** (assessment §8.3; formerly C-13). §0 cut 2 moved it from v1.3.4.
   - **Files:**
     - `go.mod:3` (`go 1.22`) and its `x/*` requirements (x/net v0.12.0, x/sys v0.10.0, x/term v0.10.0, x/text v0.11.0);
     - `go-version: '1.22'` at `.github/workflows/pr-checks.yml:20,46` and `release.yml:19`.
@@ -849,7 +863,7 @@ Every item is gated by C-07(b) and C-08 on PRs, and by C-09 (a real job) before 
   - **Test:** in C-08, `register` on a fresh install.sh host succeeds.
   - **Effort:** S.
 
-- [ ] **R-15 The state-replace gate comes before any remote mutation** (P1-21) [C]
+- [x] **R-15 The state-replace gate comes before any remote mutation** (P1-21) [C]
   - **Files:** `up.go:235-296` (token, Apply and online wait) happen before `saveRepositoryState`/`confirmStateReplace` (`:1707-1717`).
   - **Fix:** check at `up.go:159`. A same-host rerun is an idempotent update.
   - **Test:** a recording executor sees zero mutations before the gate.
@@ -1124,7 +1138,7 @@ Capacity-fail path (G-0): ship the §A.1 items and A-21, publish the banner and 
   - **Acceptance:** pushing a tag on a commit with a failing test produces no release. Show this with a dry run on a fork, with the guard temporarily pointed at the fork.
   - **Test:** the workflow itself; `actionlint` once C-06 exists.
 
-- [ ] **C-02 Test hermeticity guard**
+- [x] **C-02 Test hermeticity guard**
   - **Files:** `.github/workflows/pr-checks.yml` (the `go-test` job).
   - **Change:**
     - After `go test`, run `git status --porcelain --ignored -- . ':!dist'` and fail if the output is non-empty.
@@ -1132,7 +1146,7 @@ Capacity-fail path (G-0): ship the §A.1 items and A-21, publish the banner and 
     - Tests that hit the live GitHub releases API take an injected client.
   - **Acceptance:** on HEAD the guard fails, because of `internal/cli/sessions/byo-owner_repo__alice_example_com.json`. After A-03 it passes.
 
-- [ ] **C-03 Binary CLI contract tests** (`cmd/runnerkit/cli_contract_test.go`)
+- [x] **C-03 Binary CLI contract tests** (`cmd/runnerkit/cli_contract_test.go`)
   - A `TestMain` builds the binary once with `-ldflags "-X main.version=9.9.9-test"`.
   - Table rows as in A-01, plus:
     - **Invariant:** for every row with a non-zero exit, `stderr` is non-empty.
@@ -1229,7 +1243,7 @@ Capacity-fail path (G-0): ship the §A.1 items and A-21, publish the banner and 
   - Every `runnerkit <sub> [--flag]` mention must resolve in the Cobra tree. This would have caught `byo-prepare` in the v1.3.3 notes.
   - Banned phrases fail the test: `recommended default`, `recommended cloud`, `NOT a blanket`, `10 minutes`, `10-minute`, `cheaper than`, `cleaned up automatically`, `--mode ephemeral --cloud` (as a recommendation), `approx €`.
 - [ ] **C-12 Dependabot:** `.github/dependabot.yml` for `gomod` and `github-actions`, weekly. Group minor and patch updates.
-- [ ] **C-13 Go toolchain bump:** now **A-17b** (§A.3), which has the files, fix and acceptance. gaps.md: a scratch bump to 1.26.3 built and passed every test.
+- [x] **C-13 Go toolchain bump:** now **A-17b** (§A.3), which has the files, fix and acceptance. gaps.md: a scratch bump to 1.26.3 built and passed every test.
 
 ---
 
