@@ -59,9 +59,12 @@ func ManualReregisterSteps(repo string, cloud bool) []string {
 			"Then run runnerkit up --repo " + repo + " --experimental --cloud hetzner --cloud-region <location> to create and register a fresh runner.",
 		}
 	}
+	// v1.3.4 ships without a passing real-job BYO gate (A-21): say so
+	// before the step that removes a working runner.
 	return []string{
+		"BYO setup is not supported in this release: runnerkit down removes the runner, and setting it up again needs runnerkit up --accept-known-issues. If the runner still runs jobs, you can leave it as it is.",
 		"Re-register by hand: run runnerkit down --repo " + repo + " --dry-run to review, then runnerkit down --repo " + repo + " (removes the GitHub registration and the service).",
-		"Then run runnerkit up --repo " + repo + " --host user@host to install and register a fresh runner.",
+		"Then run runnerkit up --repo " + repo + " --host user@host --accept-known-issues to install and register a fresh runner.",
 	}
 }
 

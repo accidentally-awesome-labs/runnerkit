@@ -68,10 +68,14 @@ func runInit(deps Dependencies, jsonOutput bool, noColor bool, opts *initOptions
 				"install_script_url":   url,
 				"host_install_command": line,
 			}
-			nextaction.MergePayload(p, "info", []nextaction.Action{
-				{ID: "host_install", Severity: nextaction.SeverityInfo, Title: "Run on the runner host once", Command: line, Kind: "run_on_host"},
-			})
+			nextaction.MergePayload(p, "info", append(byoUnsupportedInitActions(deps), nextaction.Action{
+				ID: "host_install", Severity: nextaction.SeverityInfo, Title: "Run on the runner host once", Command: line, Kind: "run_on_host",
+			}))
 			return renderer.JSON(p)
+		}
+		// stdout carries only the install line, so it can be captured.
+		if deps.BYOUnsupportedRelease {
+			_, _ = fmt.Fprintln(deps.Err, byoUnsupportedInitWarning)
 		}
 		_, err := fmt.Fprintln(out, line)
 		return err
@@ -84,17 +88,32 @@ func runInit(deps Dependencies, jsonOutput bool, noColor bool, opts *initOptions
 			"install_script_url":   url,
 			"host_install_command": line,
 		}
-		nextaction.MergePayload(p, "info", []nextaction.Action{
-			{ID: "host_install", Severity: nextaction.SeverityInfo, Title: "Run on the runner host once", Command: line, Kind: "run_on_host"},
-		})
+		nextaction.MergePayload(p, "info", append(byoUnsupportedInitActions(deps), nextaction.Action{
+			ID: "host_install", Severity: nextaction.SeverityInfo, Title: "Run on the runner host once", Command: line, Kind: "run_on_host",
+		}))
 		return renderer.JSON(p)
 	}
 
 	title := "BYO host one-time install"
-	body := []string{
+	var body []string
+	if deps.BYOUnsupportedRelease {
+		body = append(body, byoUnsupportedInitWarning)
+	}
+	body = append(body,
 		"SSH to the Linux runner machine, then run:",
 		line,
 		"After that, run runnerkit up from this workstation for the first repository on the host; runnerkit register adds more repositories to it.",
-	}
+	)
 	return renderer.Warning(title, body, "")
+}
+
+// byoUnsupportedInitWarning: in a release without a passing real-job BYO
+// gate (A-21), say so before the user changes the host's sudo rules.
+const byoUnsupportedInitWarning = byoUnsupportedReleaseMessage + " runnerkit up and register refuse a BYO host unless you pass --accept-known-issues, and the install below gives your SSH user root-equivalent sudo."
+
+func byoUnsupportedInitActions(deps Dependencies) []nextaction.Action {
+	if !deps.BYOUnsupportedRelease {
+		return nil
+	}
+	return []nextaction.Action{{ID: "byo_unsupported_release", Severity: nextaction.SeverityWarning, Title: byoUnsupportedInitWarning}}
 }

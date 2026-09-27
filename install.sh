@@ -69,7 +69,7 @@ install -m 0440 -o root -g root "${TMP}" "${SUDOERS_PATH}"
 trap - EXIT
 rm -f "${TMP}"
 
-echo "runnerkit install: wrote ${SUDOERS_PATH} for user ${RK_USER}. You can now run runnerkit up from your workstation; runnerkit register adds more repositories to this host after that."
+echo "runnerkit install: wrote ${SUDOERS_PATH} for user ${RK_USER}. You can now run runnerkit up from your workstation; runnerkit register adds more repositories to this host after that. BYO setup is not supported in RunnerKit v1.3.4: up and register need --accept-known-issues (see https://github.com/accidentally-awesome-labs/runnerkit#known-issues)."
 
 # Optional: NOPASSWD for package managers as the Actions runner service user (RKD-GH-008).
 #   sudo RUNNERKIT_GRANT_CI_SUDO=1 RUNNERKIT_SERVICE_USER=runnerkit-runner bash install.sh

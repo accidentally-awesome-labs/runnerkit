@@ -29,7 +29,8 @@ page install today) is **v1.3.3**; see
 - **Docker.** The runner user (`runnerkit-runner`) is in the `docker` group,
   which is **root-equivalent** for every job on the host. Existing hosts get
   the group on their next `runnerkit up --repo owner/name --host user@host
-  --replace` (or type `replace owner/name` when prompted).
+  --replace --accept-known-issues` (or type `replace owner/name` when
+  prompted).
 - **Job sudo.** Workflow steps that run `sudo apt-get` need
   `RUNNERKIT_GRANT_CI_SUDO=1` when you run `install.sh`. That grant is also
   root-equivalent.
@@ -222,6 +223,11 @@ runnerkit --version
 Verification problems: [docs/troubleshooting/README.md](docs/troubleshooting/README.md).
 
 ## BYO persistent runner quickstart
+
+**BYO setup is not supported in v1.3.4** (see [Known issues](#known-issues)):
+`runnerkit up` and `register` refuse a BYO host unless you add
+`--accept-known-issues`. Read Known issues before step 1, which gives your
+SSH user root-equivalent sudo.
 
 For a trusted private repository and an Ubuntu x86_64 host you can SSH into:
 

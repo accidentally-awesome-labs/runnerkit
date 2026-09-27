@@ -165,7 +165,7 @@ runnerkit recover --repo owner/name --dry-run
 runnerkit recover --repo owner/name --restart-service --yes
 ```
 
-`recover --reinstall-service` and `recover --reregister` are disabled in v1.3.4 (`command_disabled`, exit 2) because they could leave the runner without a service. When the service or registration is gone, `recover --dry-run` and `doctor` print the manual steps: `runnerkit down --repo owner/name`, then `runnerkit up --repo owner/name --host user@host`.
+`recover --reinstall-service` and `recover --reregister` are disabled in v1.3.4 (`command_disabled`, exit 2) because they could leave the runner without a service. When the service or registration is gone, `recover --dry-run` and `doctor` print the manual steps: `runnerkit down --repo owner/name`, then `runnerkit up --repo owner/name --host user@host --accept-known-issues`. BYO setup is not supported in this release, and `down` removes the runner, so if it still runs jobs you can leave it as it is.
 
 `runnerkit upgrade-runner` is disabled too; the runner updates itself. See [upgrade.md](upgrade.md).
 

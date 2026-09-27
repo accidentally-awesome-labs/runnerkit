@@ -232,7 +232,8 @@ The same list as the README "Known issues" section, word for word.
 - **Docker.** The runner user (`runnerkit-runner`) is in the `docker` group,
   which is **root-equivalent** for every job on the host. Existing hosts get
   the group on their next `runnerkit up --repo owner/name --host user@host
-  --replace` (or type `replace owner/name` when prompted).
+  --replace --accept-known-issues` (or type `replace owner/name` when
+  prompted).
 - **Job sudo.** Workflow steps that run `sudo apt-get` need
   `RUNNERKIT_GRANT_CI_SUDO=1` when you run `install.sh`. That grant is also
   root-equivalent.

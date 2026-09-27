@@ -136,6 +136,9 @@ func registerFoundationUpCommand(repoFullName string, target remote.Target, mode
 	if opts.allowUnknownLinux {
 		parts = append(parts, "--allow-unknown-linux")
 	}
+	if opts.acceptKnownIssues {
+		parts = append(parts, "--accept-known-issues")
+	}
 	if opts.dryRun {
 		parts = append(parts, "--dry-run")
 	}
