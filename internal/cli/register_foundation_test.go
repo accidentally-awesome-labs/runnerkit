@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/runmode"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 )
 
@@ -85,9 +87,46 @@ func TestRegister_FoundationMissingJSONNextAction(t *testing.T) {
 }
 
 func TestRegisterFoundationUpCommandKeepsSSHOptions(t *testing.T) {
-	got := registerFoundationUpCommand("owner/repo", &upOptions{host: "alice@example.com", sshPort: 2222, sshKey: "/home/a b/.ssh/id_ed25519"})
+	target := remote.Target{User: "alice", Host: "example.com", Port: 2222, Raw: "alice@example.com"}
+	got := registerFoundationUpCommand("owner/repo", target, runmode.ModePersistent, &upOptions{host: "alice@example.com", sshPort: 2222, sshKey: "/home/a b/.ssh/id_ed25519"})
 	want := "runnerkit up --repo owner/repo --host alice@example.com --ssh-port 2222 --ssh-key '/home/a b/.ssh/id_ed25519'"
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// A host typed at the prompt is not in opts.host; the command must still
+// name it.
+func TestRegisterFoundationUpCommandUsesPromptedHost(t *testing.T) {
+	target := remote.Target{User: "alice", Host: "example.com", Port: 2200, Raw: "alice@example.com:2200"}
+	got := registerFoundationUpCommand("owner/repo", target, runmode.ModePersistent, &upOptions{sshPort: 22})
+	if want := "runnerkit up --repo owner/repo --host alice@example.com:2200"; got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// Following the advice must not turn an ephemeral request into a persistent
+// runner, or a dry run into a real install.
+func TestRegisterFoundationUpCommandKeepsModeAndRiskFlags(t *testing.T) {
+	target := remote.Target{User: "alice", Host: "example.com", Port: 22, Raw: "alice@example.com"}
+	opts := &upOptions{host: "alice@example.com", sshPort: 22, allowEphemeralBYORisk: true, ephemeralTTL: 2 * time.Hour, extraPackages: "libfoo-dev", allowUnknownLinux: true, allowPublicRepoRisk: true, dryRun: true}
+	got := registerFoundationUpCommand("owner/repo", target, runmode.ModeEphemeral, opts)
+	want := "runnerkit up --repo owner/repo --host alice@example.com --mode ephemeral --experimental --allow-ephemeral-byo-risk --ephemeral-ttl 2h0m0s --extra-packages libfoo-dev --allow-public-repo-risk --allow-unknown-linux --dry-run"
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	opts.ephemeralTTL = runmode.DefaultEphemeralTTL
+	if got := registerFoundationUpCommand("owner/repo", target, runmode.ModeEphemeral, opts); strings.Contains(got, "--ephemeral-ttl") {
+		t.Fatalf("default TTL must not be spelled out: %s", got)
+	}
+}
+
+func TestRegister_FoundationMissingKeepsEphemeralMode(t *testing.T) {
+	output, err := runRegisterWithoutFoundation(t, "--json", "register", "--repo", "owner/repo", "--host", "alice@example.com", "--mode", "ephemeral", "--experimental", "--allow-ephemeral-byo-risk", "--non-interactive", "--yes", "--no-color")
+	if err == nil || ExitCode(err) != ExitInputRequired {
+		t.Fatalf("want exit %d, got %v\n%s", ExitInputRequired, err, output)
+	}
+	if want := "runnerkit up --repo owner/repo --host alice@example.com --mode ephemeral --experimental --allow-ephemeral-byo-risk"; !strings.Contains(output, want) {
+		t.Fatalf("next action must keep the ephemeral mode (%q):\n%s", want, output)
 	}
 }

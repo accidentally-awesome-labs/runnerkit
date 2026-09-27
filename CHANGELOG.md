@@ -157,7 +157,9 @@ cloud path and BYO ephemeral mode behind `--experimental`.
   (it used to exit 1 with no output).
 - `register` on a host without the shared `runnerkit-runner` user
   (`lifecycle_foundation_missing`) names the `runnerkit up` command to run
-  for the first repository, with your SSH options. It used to say to re-run
+  for the first repository, with the same SSH target and the options that
+  change the install (`--mode ephemeral`, extra packages, risk
+  acknowledgements, `--dry-run`). It used to say to re-run
   `install.sh`, which only writes sudoers and never creates that user.
   `install.sh`, `runnerkit init`, `register --help`, the wizard and `list`
   no longer suggest `register` for a host's first repository.

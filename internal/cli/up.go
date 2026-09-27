@@ -235,7 +235,7 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 
 	if opts.registerLifecycleOnly {
-		if err := verifyBYOFoundationForRegister(ctx, deps, renderer, jsonOutput, target, registerFoundationUpCommand(repo.FullName, opts)); err != nil {
+		if err := verifyBYOFoundationForRegister(ctx, deps, renderer, jsonOutput, target, registerFoundationUpCommand(repo.FullName, target, modeDecision.Mode, opts)); err != nil {
 			return err
 		}
 	}

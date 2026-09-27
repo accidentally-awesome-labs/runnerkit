@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/accidentally-awesome-labs/runnerkit/internal/remote"
+	"github.com/accidentally-awesome-labs/runnerkit/internal/runmode"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ui"
 	"github.com/accidentally-awesome-labs/runnerkit/internal/ux/nextaction"
 )
@@ -94,14 +96,48 @@ func RenderLifecycleFoundationMissing(renderer *ui.Renderer, jsonOutput bool, up
 }
 
 // registerFoundationUpCommand is the `runnerkit up` line that sets up the
-// repository `register` was asked for, with the same SSH options.
-func registerFoundationUpCommand(repoFullName string, opts *upOptions) string {
-	parts := []string{"runnerkit", "up", "--repo", repoFullName, "--host", opts.host}
+// repository `register` was asked for, carrying over the SSH target (flag
+// or prompt answer) and every option that changes what gets installed, so
+// following it never silently turns an ephemeral request into a
+// persistent runner.
+func registerFoundationUpCommand(repoFullName string, target remote.Target, mode string, opts *upOptions) string {
+	host := strings.TrimSpace(opts.host)
+	if host == "" {
+		host = strings.TrimSpace(target.Raw)
+	}
+	if host == "" && target.Host != "" {
+		host = target.User + "@" + target.Host
+		if target.Port != 0 && target.Port != 22 {
+			host += ":" + strconv.Itoa(target.Port)
+		}
+	}
+	parts := []string{"runnerkit", "up", "--repo", repoFullName, "--host", host}
 	if opts.sshPort != 0 && opts.sshPort != 22 {
 		parts = append(parts, "--ssh-port", strconv.Itoa(opts.sshPort))
 	}
 	if strings.TrimSpace(opts.sshKey) != "" {
 		parts = append(parts, "--ssh-key", opts.sshKey)
+	}
+	if mode == runmode.ModeEphemeral {
+		parts = append(parts, "--mode", runmode.ModeEphemeral, "--experimental")
+		if opts.allowEphemeralBYORisk {
+			parts = append(parts, "--allow-ephemeral-byo-risk")
+		}
+		if opts.ephemeralTTL != 0 && opts.ephemeralTTL != runmode.DefaultEphemeralTTL {
+			parts = append(parts, "--ephemeral-ttl", opts.ephemeralTTL.String())
+		}
+	}
+	if strings.TrimSpace(opts.extraPackages) != "" {
+		parts = append(parts, "--extra-packages", opts.extraPackages)
+	}
+	if opts.allowPublicRepoRisk {
+		parts = append(parts, "--allow-public-repo-risk")
+	}
+	if opts.allowUnknownLinux {
+		parts = append(parts, "--allow-unknown-linux")
+	}
+	if opts.dryRun {
+		parts = append(parts, "--dry-run")
 	}
 	for i, part := range parts {
 		if strings.ContainsAny(part, " \t'\"$`\\;&|<>()*?[]{}~!#") {
