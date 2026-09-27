@@ -245,8 +245,9 @@ A `Verified OK` confirms the release is signed by the upstream workflow.
 
 From v1.3.4, release notes live in [CHANGELOG.md](../CHANGELOG.md)
 (Keep a Changelog). Move the `Unreleased` section under the new version
-heading when you tag, and paste it into the GitHub Release body. The older
-`RELEASE-NOTES-v*.md` files in the repository root are historical and are
+heading when you tag, and paste it into the GitHub Release body. Older
+releases were described in `RELEASE-NOTES-vX.Y.Z.md` files. Each one is
+in its release tag (`git show vX.Y.Z:RELEASE-NOTES-vX.Y.Z.md`) and is
 summarized in the CHANGELOG.
 
 ## Setup timing (optional)
