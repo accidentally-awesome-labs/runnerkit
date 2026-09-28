@@ -33,9 +33,9 @@ func TestFingerprintSHA256Shape(t *testing.T) {
 // the same chosen line, and FingerprintSHA256 of that line is byte-equal
 // across calls — host_key_match property restored.
 func TestSelectHostKeyLineIsDeterministicAcrossKeyOrders(t *testing.T) {
-	rsaLine := "[mckee-small-desktop]:22 ssh-rsa AAAARSA-fake-key-bytes"
-	ecdsaLine := "[mckee-small-desktop]:22 ecdsa-sha2-nistp256 AAAAECDSA-fake-key-bytes"
-	ed25519Line := "[mckee-small-desktop]:22 ssh-ed25519 AAAAED25519-fake-key-bytes"
+	rsaLine := "[byo.example.com]:22 ssh-rsa AAAARSA-fake-key-bytes"
+	ecdsaLine := "[byo.example.com]:22 ecdsa-sha2-nistp256 AAAAECDSA-fake-key-bytes"
+	ed25519Line := "[byo.example.com]:22 ssh-ed25519 AAAAED25519-fake-key-bytes"
 
 	// Order A: as `up` saw it.
 	orderA := strings.Join([]string{rsaLine, ecdsaLine, ed25519Line}, "\n") + "\n"

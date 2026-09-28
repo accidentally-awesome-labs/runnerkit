@@ -8,7 +8,7 @@ import (
 
 // Bug 16 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
-// Plan 06-07 attempt-13 against salar@mckee-small-desktop completed
+// Plan 06-07 attempt-13 against the maintainer's BYO test host completed
 // bootstrap end-to-end (Bugs 4-15 closed) but waitForRunnerOnline
 // timed out after 6 minutes:
 //
@@ -17,7 +17,7 @@ import (
 // `gh api repos/.../actions/runners` confirmed the runner was online
 // with labels:
 //   ["self-hosted", "Linux", "X64", "runnerkit",
-//    "runnerkit-accidentally-awesome-labs-dat0", "persistent"]
+//    "runnerkit-owner-private-repo", "persistent"]
 // — exactly what RunnerKit registered, plus GitHub's auto-added
 // "Linux" + "X64" (capitalized). RunnerKit's expected label set
 // included lowercase "linux" + "x64" (from labels.Build, which slugs
@@ -37,7 +37,7 @@ import (
 // runner-name pre-check:
 //
 //   ERROR RunnerKit can't continue because a GitHub runner named
-//         runnerkit-accidentally-awesome-labs-dat0-local already exists.
+//         runnerkit-owner-private-repo-local already exists.
 //
 // The runner name is deterministic per (repo, host, mode), so a
 // second `runnerkit up` against the same target ALWAYS sees its own

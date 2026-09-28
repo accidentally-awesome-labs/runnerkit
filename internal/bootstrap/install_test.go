@@ -158,7 +158,7 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 // for the NOPASSWD-sudo / install.sh-prepared happy path.
 // Bug 10 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
-// Plan 06-07 attempt-7 against salar@mckee-small-desktop got past
+// Plan 06-07 attempt-7 against the maintainer's BYO test host got past
 // preflight + Path B prompt + Bug 9 fix (configure_runner Sudo: true)
 // and aborted with:
 //
@@ -186,7 +186,7 @@ func TestApplyEphemeralDownloadRunnerCommandUsesSudoForCurlSha256SumTar(t *testi
 //
 // Bug 15 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
-// Plan 06-07 attempt-12 against salar@mckee-small-desktop got past
+// Plan 06-07 attempt-12 against the maintainer's BYO test host got past
 // install_service (Bug 14 fix) and aborted at verify_service:
 //
 //   sudo: ./svc.sh: command not found
@@ -231,7 +231,7 @@ func TestApply_VerifyService_CdsIntoInstallPathBeforeSvcSh(t *testing.T) {
 
 // Bug 12 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
-// Plan 06-07 attempt-9 against salar@mckee-small-desktop got past Bug 11
+// Plan 06-07 attempt-9 against the maintainer's BYO test host got past Bug 11
 // (config.sh cwd) and aborted with the generic message:
 //
 //   ERROR RunnerKit installed the runner but the service is not active.
@@ -327,7 +327,7 @@ func TestApply_WithoutSudoPassword_BehaviorUnchangedFromPlan0605(t *testing.T) {
 
 // Bug 9 / Plan 06-09 — gap doc 06-GAP-byo-sudo-handling.md.
 //
-// Plan 06-07 attempt-6 against salar@mckee-small-desktop got past
+// Plan 06-07 attempt-6 against the maintainer's BYO test host got past
 // preflight (Bugs 7+8 closed) and aborted at the configure_runner
 // step:
 //

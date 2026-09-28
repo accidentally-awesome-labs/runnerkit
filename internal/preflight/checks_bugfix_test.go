@@ -66,7 +66,7 @@ func TestCheckPrivilege_PasswordRequired_WhenExecutorReturnsExitErr(t *testing.T
 			"probe_sudo_n": errors.New("ssh: command exited 1"),
 		},
 	}
-	target := remote.Target{User: "salar", Host: "mckee", Port: 22}
+	target := remote.Target{User: "alice", Host: "byo.example.com", Port: 22}
 	report, err := Run(context.Background(), exec, target, Options{})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -90,13 +90,13 @@ func TestCheckPrivilege_NoSudoers_WhenExecutorReturnsExitErr(t *testing.T) {
 	exec := errReturningFake{
 		probe: probe,
 		runResults: map[string]remote.Result{
-			"probe_sudo_n": {ExitCode: 1, Stderr: "alice may not run sudo on mckee"},
+			"probe_sudo_n": {ExitCode: 1, Stderr: "alice may not run sudo on byo.example.com"},
 		},
 		runErrors: map[string]error{
 			"probe_sudo_n": errors.New("ssh: command exited 1"),
 		},
 	}
-	target := remote.Target{User: "alice", Host: "mckee", Port: 22}
+	target := remote.Target{User: "alice", Host: "byo.example.com", Port: 22}
 	report, err := Run(context.Background(), exec, target, Options{})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
