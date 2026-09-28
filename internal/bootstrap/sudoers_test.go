@@ -43,7 +43,7 @@ func TestRenderSudoersEntry(t *testing.T) {
 		// Bug 33 (v1.3.3, 2026-05-18): post-fix_dependencies sudo commands used
 		// by RenderImageSetupScript (sudo ln, sudo chmod for geckodriver) and
 		// ephemeral log preservation in script.go (sudo cp) and sudoers readback
-		// (sudo cat). Live BYO smoke against `salar@mckee-small-desktop` failed
+		// (sudo cat). Live BYO smoke against the maintainer's test host failed
 		// at setup_runner_image because none of these were allowlisted.
 		"/bin/chmod",
 		"/usr/bin/chmod",

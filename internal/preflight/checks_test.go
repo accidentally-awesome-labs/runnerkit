@@ -267,7 +267,7 @@ func TestCheckPrivilege_AllowsInstallerSudoers(t *testing.T) {
 	exec := fakePreflightExecutor{probe: probe, runResults: map[string]remote.Result{
 		"probe_sudo_n": {ExitCode: 0, Stdout: "install (GNU coreutils) 9.4\n"},
 	}}
-	target := remote.Target{User: "salar", Host: "mckee-small-desktop", Port: 22}
+	target := remote.Target{User: "alice", Host: "byo.example.com", Port: 22}
 	report, err := Run(context.Background(), exec, target, Options{})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
