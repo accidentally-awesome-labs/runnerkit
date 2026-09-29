@@ -17,16 +17,16 @@ disables or refuses every command known to destroy a runner registration,
 orphan a billing server or show an invented price, and puts the Hetzner
 cloud path and BYO ephemeral mode behind `--experimental`.
 
+**BYO real-job gate (A-20):** a real GitHub job ran on a fresh
+password-sudo Ubuntu 24.04 x86_64 host prepared only by this release's
+`install.sh` (runner online, job with `gcc` and `docker run hello-world`
+green, `id -nG runnerkit-runner` contains `docker`).
+PASTE-GATE-LINE-HERE: replace this with the "Real-job gate (...)" line from
+gate.sh's EVIDENCE.md (written only for a clean, all-PASS run; it records
+install.sh's SHA-256). TestBYOClaimNeedsRealJobEvidence fails until you do.
+
 **Release gates still open (do not tag until they are closed):**
 
-- **Real job run (A-20).** The BYO repair below was validated only on a
-  local password-sudo Ubuntu 24.04 container against a **fake** GitHub API.
-  Before tagging, a real GitHub job must run on a fresh password-sudo
-  Ubuntu 24.04 x86_64 host prepared only by this release's `install.sh`
-  (runner online, job with `gcc` and `docker run hello-world` green,
-  `id -nG runnerkit-runner` contains `docker`). Run URL: _to be added_.
-  If it does not pass, this release must instead refuse BYO `up`/`register`
-  and say "BYO is not supported in this release" (A-21).
 - **govulncheck** result for the tagged commit: _link to be added_.
 
 ### Added
@@ -226,14 +226,12 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 
 The same list as the README "Known issues" section, word for word.
 
-- **BYO setup (the main path).** Repaired in v1.3.4 for fresh Ubuntu 24.04
-  x86_64 hosts prepared by the v1.3.4 `install.sh`. So far this was
-  validated only on a local password-sudo Ubuntu 24.04 container against a
-  fake GitHub API; a run of a real GitHub job is required before v1.3.4 is
-  tagged. If that run fails, v1.3.4 will ship with BYO marked as not
-  supported. Hosts prepared by an older `install.sh` must re-run the new
-  one. The sudoers fragment `install.sh` installs is **root-equivalent**;
-  see [docs/security-posture.md](docs/security-posture.md).
+- **BYO setup (the main path).** Fixed in v1.3.4 for fresh Ubuntu 24.04
+  x86_64 hosts prepared by the v1.3.4 `install.sh`; a real GitHub job ran on
+  such a host before the release (see the CHANGELOG). Hosts prepared by an
+  older `install.sh` must re-run it. The sudoers fragment `install.sh`
+  installs is **root-equivalent**; see
+  [docs/security-posture.md](docs/security-posture.md).
 - **Docker.** The runner user (`runnerkit-runner`) is in the `docker` group,
   which is **root-equivalent** for every job on the host. Existing hosts get
   the group on their next `runnerkit up --repo owner/name --host user@host

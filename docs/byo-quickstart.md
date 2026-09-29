@@ -2,7 +2,7 @@
 
 This guide connects RunnerKit to an existing trusted Ubuntu x86_64 host over SSH, installs a repository-scoped persistent GitHub Actions runner, and gives you the labels for your workflow job.
 
-**Status (v1.3.4):** the BYO path was repaired for fresh Ubuntu 24.04 x86_64 hosts prepared by the v1.3.4 `install.sh`. It has been validated on a local password-sudo container against a fake GitHub API; a real GitHub job run is still required before the release is tagged. See [Known issues](../README.md#known-issues).
+**Status (v1.3.4):** fixed in v1.3.4 for fresh Ubuntu 24.04 x86_64 hosts prepared by the v1.3.4 `install.sh`, and verified with a real GitHub job on such a host before the release. Hosts prepared by an older `install.sh` must run the current one again. See [Known issues](../README.md#known-issues).
 
 ## Prerequisites
 
