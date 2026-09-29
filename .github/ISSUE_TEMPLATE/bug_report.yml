@@ -1,0 +1,155 @@
+name: Bug report
+description: >-
+  RunnerKit does something wrong, fails, or does not do what its docs say.
+  Not for security problems.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Security problems do not go in issues.** Report a vulnerability
+        privately through the process in
+        [SECURITY.md](https://github.com/accidentally-awesome-labs/runnerkit/blob/main/SECURITY.md),
+        not in a public issue.
+  - type: markdown
+    attributes:
+      value: >-
+        Issues are public. Do not paste tokens, private keys or passwords,
+        and replace host names, IP addresses, user names and repository
+        names you do not want public. Exact commands, output and versions
+        make a report actionable.
+  - type: checkboxes
+    id: known-issues
+    attributes:
+      label: Known issues
+      description: >-
+        The [README "Known issues" section](https://github.com/accidentally-awesome-labs/runnerkit/blob/main/README.md#known-issues)
+        lists known defects and the commands that refuse to run on purpose.
+      options:
+        - label: >-
+            I checked the README "Known issues" section, and this bug is
+            not listed there (or I have new information about it).
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: RunnerKit version
+      description: >-
+        Output of `runnerkit --version`. On v1.3.3 or older that prints
+        nothing; run `runnerkit version` instead. If you built from source,
+        add the commit.
+      placeholder: runnerkit X.Y.Z
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How RunnerKit was installed
+      options:
+        - Homebrew
+        - GitHub Releases archive
+        - go install or built from source
+    validations:
+      required: true
+  - type: input
+    id: workstation-os
+    attributes:
+      label: Workstation OS
+      description: >-
+        The machine you run `runnerkit` on: operating system, version and
+        architecture.
+      placeholder: macOS 15.3, arm64
+    validations:
+      required: true
+  - type: input
+    id: runner-host
+    attributes:
+      label: Runner host
+      description: >-
+        Distribution, version and architecture of the machine the runner
+        runs on (`grep PRETTY_NAME /etc/os-release` and `uname -m` on that
+        machine). Only Ubuntu x86_64 runner hosts are supported. Write
+        "none" if the command does not involve a runner host.
+      placeholder: Ubuntu 24.04.1 LTS, x86_64
+    validations:
+      required: true
+  - type: dropdown
+    id: path
+    attributes:
+      label: Path
+      description: >-
+        BYO means a machine you already have, reached over SSH. The Hetzner
+        cloud path is experimental and needs `--experimental`.
+      options:
+        - BYO (--host)
+        - Hetzner cloud (experimental, --cloud hetzner)
+        - Neither (no runner host involved)
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      description: >-
+        The `--mode` of the runner. BYO ephemeral mode needs
+        `--experimental`; ephemeral cloud runners are disabled.
+      options:
+        - persistent (the default)
+        - ephemeral (experimental)
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command
+      description: >-
+        The full command you ran, with every flag. `up` also reads
+        `.github/workflows/` in the current directory, so say whether you
+        ran it inside a repository checkout.
+      placeholder: runnerkit up --repo owner/name --host user@host
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: >-
+        The output, including any error code (for example
+        `bootstrap_failed`) and the exit code (`echo $?`). Paste text, not
+        screenshots.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: >-
+        What you expected instead, and where it is documented, if it is
+        (README, `--help`, a docs page).
+    validations:
+      required: true
+  - type: textarea
+    id: doctor-json
+    attributes:
+      label: Output of runnerkit doctor --repo owner/name --json
+      description: >-
+        Run it on your workstation for the repository in your command; if
+        `doctor` fails (for example because there is no saved state for the
+        repository yet), paste its error instead. **Redaction is
+        best-effort: before you submit, remove any tokens, host names, IP
+        addresses, user names and paths you do not want public.** RunnerKit
+        masks only the secrets it recognizes.
+      render: json
+    validations:
+      required: false
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else
+      description: >-
+        Workarounds you tried, whether it worked in an earlier version, or
+        other context.
+    validations:
+      required: false

@@ -46,6 +46,11 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 - `LICENSE` (Apache-2.0), `CONTRIBUTING.md` (DCO sign-off, no CLA),
   `SECURITY.md`, [`docs/security-posture.md`](docs/security-posture.md) and
   this changelog.
+- GitHub issue forms (`.github/ISSUE_TEMPLATE/`) for bug reports and
+  feature requests. Blank issues are turned off; security reports go to
+  private vulnerability reporting (as `SECURITY.md` says) and questions to
+  GitHub Discussions. The feature request form states the scope rule from
+  `CONTRIBUTING.md` and asks who else needs the feature.
 - Makefile targets `generate`, `generate-check` and `vulncheck`.
 
 ### Changed
