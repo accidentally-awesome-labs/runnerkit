@@ -50,6 +50,12 @@ type Dependencies struct {
 	Explain func() bool
 	// UnicodeBox, when non-nil and returns true, uses UTF-8 borders in boxed command output.
 	UnicodeBox func() bool
+	// BYOUnsupportedRelease makes BYO `up` and `register` refuse with
+	// byo_unsupported_release unless --accept-known-issues is passed. The
+	// release binary sets it when the release ships without a passing
+	// real-job BYO gate (A-21); tests that do not test the refusal leave it
+	// off.
+	BYOUnsupportedRelease bool
 }
 
 func normalizeDependencies(deps Dependencies) Dependencies {

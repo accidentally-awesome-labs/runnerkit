@@ -23,6 +23,7 @@ const (
 	cloudRegionRequiredCode    = "cloud_region_required"
 	invalidSSHAllowedCIDRCode  = "invalid_ssh_allowed_cidr"
 	cloudStateExistsCode       = "cloud_state_exists"
+	byoUnsupportedReleaseCode  = "byo_unsupported_release"
 
 	experimentalFlagUsage = "opt in to experimental, unsupported paths: --cloud (billed by the provider) and BYO --mode ephemeral (not isolation)"
 	modeFlagUsage         = "runner mode: persistent, or ephemeral (experimental; not isolation; requires --experimental)"
@@ -33,6 +34,9 @@ const (
 	cloudExperimentalMessage     = "--cloud is experimental in this release: it creates servers billed by Hetzner and is unsupported."
 	ephemeralBYOExperimentalCopy = "--mode ephemeral on a BYO host is experimental: it is not isolation (the host is reused between jobs) and has known defects (the finalizer runs unprivileged and the TTL is ignored); it is untested in this release."
 	cloudRegionRequiredMessage   = "--cloud hetzner needs an explicit --cloud-region; RunnerKit does not pick a default location."
+
+	acceptKnownIssuesFlagUsage   = "run BYO setup even though this release does not support it (see Known issues in the README)"
+	byoUnsupportedReleaseMessage = "BYO setup is not supported in this release: it was not verified with a real GitHub job before release. Known issues: https://github.com/accidentally-awesome-labs/runnerkit#known-issues"
 
 	// modeBYOEphemeralExperimental labels BYO ephemeral as experimental
 	// and not isolation in the mode tradeoff output.
@@ -95,6 +99,22 @@ func enforceExperimentalGates(renderer *ui.Renderer, opts *upOptions) error {
 		return NewExitError(ExitInvalidInput, errors.New(experimentalRequiredCode))
 	}
 	return nil
+}
+
+// refuseUnsupportedBYO refuses BYO `up` and `register` in a release that
+// ships without a passing real-job BYO gate (A-21), unless the user passes
+// --accept-known-issues. runUp calls it once the setup path is known to be
+// BYO, before VerifyAuth (which creates a registration token) and before any
+// SSH call.
+func refuseUnsupportedBYO(deps Dependencies, renderer *ui.Renderer, opts *upOptions) error {
+	if !deps.BYOUnsupportedRelease || opts.acceptKnownIssues {
+		return nil
+	}
+	_ = renderer.Error(byoUnsupportedReleaseCode, byoUnsupportedReleaseMessage, []string{
+		"Set up the runner by hand with GitHub's instructions (the repository's Settings > Actions > Runners > New self-hosted runner), or run a container runner such as myoung34/docker-github-actions-runner.",
+		"To try RunnerKit's BYO setup anyway, re-run with --accept-known-issues.",
+	})
+	return NewExitError(ExitInvalidInput, errors.New(byoUnsupportedReleaseCode))
 }
 
 // refuseEphemeralCloud renders the ephemeral_cloud_disabled refusal. It

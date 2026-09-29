@@ -53,6 +53,7 @@ type upOptions struct {
 	ephemeralTTL          time.Duration
 	extraPackages         string
 	experimental          bool // --experimental: required for --cloud and BYO --mode ephemeral (v1.3.4)
+	acceptKnownIssues     bool // --accept-known-issues: BYO setup in a release that does not support it (A-21)
 	registerLifecycleOnly bool // true for `runnerkit register` (SEED-002 foundation gate)
 }
 
@@ -98,6 +99,7 @@ func newUpCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cobra.Com
 	cmd.Flags().StringVar(&opts.mode, "mode", "", modeFlagUsage)
 	cmd.Flags().DurationVar(&opts.ephemeralTTL, "ephemeral-ttl", runmode.DefaultEphemeralTTL, "TTL safeguard for ephemeral runners")
 	cmd.Flags().BoolVar(&opts.experimental, "experimental", false, experimentalFlagUsage)
+	cmd.Flags().BoolVar(&opts.acceptKnownIssues, "accept-known-issues", false, acceptKnownIssuesFlagUsage)
 	cmd.Flags().StringVar(&opts.extraPackages, "extra-packages", "", "comma-separated OS packages to pre-install on the runner host (e.g. libsecret-1-dev,dbus-x11)")
 	cmd.Flags().BoolVar(&opts.allowEphemeralBYORisk, "allow-ephemeral-byo-risk", false, "acknowledge that BYO ephemeral mode is not a clean VM for risky repositories")
 
@@ -148,6 +150,11 @@ func runUp(deps Dependencies, jsonOutput bool, noColor bool, opts *upOptions) er
 	}
 	if setupPath == setupPathCloud {
 		return runCloudUp(ctx, deps, renderer, repo, decision, modeDecision, opts, jsonOutput)
+	}
+	// A-21: before VerifyAuth, which creates a registration token, and
+	// before any SSH call.
+	if err := refuseUnsupportedBYO(deps, renderer, opts); err != nil {
+		return err
 	}
 
 	if deps.Explain() && !jsonOutput {

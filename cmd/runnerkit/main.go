@@ -35,6 +35,10 @@ func buildDependencies() cli.Dependencies {
 		Clock:         time.Now,
 		CommandRunner: github.OSCommandRunner{},
 		Prompts:       ui.NewCLIPrompter(os.Stdin, os.Stdout),
+		// v1.3.4 ships without a passing real-job BYO gate (A-20), so BYO
+		// setup is not supported in this release (A-21). Remove this line
+		// only in a release whose gate passed.
+		BYOUnsupportedRelease: true,
 	}
 }
 

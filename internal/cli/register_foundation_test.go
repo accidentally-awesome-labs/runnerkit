@@ -109,9 +109,9 @@ func TestRegisterFoundationUpCommandUsesPromptedHost(t *testing.T) {
 // runner, or a dry run into a real install.
 func TestRegisterFoundationUpCommandKeepsModeAndRiskFlags(t *testing.T) {
 	target := remote.Target{User: "alice", Host: "example.com", Port: 22, Raw: "alice@example.com"}
-	opts := &upOptions{host: "alice@example.com", sshPort: 22, allowEphemeralBYORisk: true, ephemeralTTL: 2 * time.Hour, extraPackages: "libfoo-dev", allowUnknownLinux: true, allowPublicRepoRisk: true, dryRun: true}
+	opts := &upOptions{host: "alice@example.com", sshPort: 22, allowEphemeralBYORisk: true, ephemeralTTL: 2 * time.Hour, extraPackages: "libfoo-dev", allowUnknownLinux: true, allowPublicRepoRisk: true, acceptKnownIssues: true, dryRun: true}
 	got := registerFoundationUpCommand("owner/repo", target, runmode.ModeEphemeral, opts)
-	want := "runnerkit up --repo owner/repo --host alice@example.com --mode ephemeral --experimental --allow-ephemeral-byo-risk --ephemeral-ttl 2h0m0s --extra-packages libfoo-dev --allow-public-repo-risk --allow-unknown-linux --dry-run"
+	want := "runnerkit up --repo owner/repo --host alice@example.com --mode ephemeral --experimental --allow-ephemeral-byo-risk --ephemeral-ttl 2h0m0s --extra-packages libfoo-dev --allow-public-repo-risk --allow-unknown-linux --accept-known-issues --dry-run"
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}

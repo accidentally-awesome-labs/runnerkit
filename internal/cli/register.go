@@ -38,6 +38,7 @@ func newRegisterCommand(deps Dependencies, jsonOutput *bool, noColor *bool) *cob
 	cmd.Flags().StringVar(&opts.mode, "mode", "", modeFlagUsage)
 	cmd.Flags().DurationVar(&opts.ephemeralTTL, "ephemeral-ttl", runmode.DefaultEphemeralTTL, "TTL safeguard for ephemeral runners")
 	cmd.Flags().BoolVar(&opts.experimental, "experimental", false, experimentalFlagUsage)
+	cmd.Flags().BoolVar(&opts.acceptKnownIssues, "accept-known-issues", false, acceptKnownIssuesFlagUsage)
 	cmd.Flags().BoolVar(&opts.allowEphemeralBYORisk, "allow-ephemeral-byo-risk", false, "acknowledge that BYO ephemeral mode is not a clean VM for risky repositories")
 	return cmd
 }

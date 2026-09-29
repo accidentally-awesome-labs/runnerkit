@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/accidentally-awesome-labs/runnerkit/internal/testsupport"
@@ -38,5 +39,22 @@ func TestBuildRecoveryPlanSelectsActionsAndBlocksUnsafeCases(t *testing.T) {
 	plan = BuildRecoveryPlan(repo, baseRecoveryObserved(repo), nil, false)
 	if !plan.Blocked || plan.BlockReason != "No recovery action is recommended; run runnerkit doctor --repo owner/repo." {
 		t.Fatalf("healthy runner should block with no recommendation: %#v", plan)
+	}
+}
+
+// A-21: the BYO steps warn that BYO setup is unsupported before the step
+// that removes the runner, and the up step carries --accept-known-issues.
+func TestManualReregisterSteps_BYOWarnsBeforeDown(t *testing.T) {
+	steps := strings.Join(ManualReregisterSteps("owner/repo", false), "\n")
+	warn := strings.Index(steps, "BYO setup is not supported in this release")
+	down := strings.Index(steps, "runnerkit down --repo owner/repo")
+	if warn < 0 || down < 0 || warn > down {
+		t.Fatalf("warning must come before down:\n%s", steps)
+	}
+	if !strings.Contains(steps, "runnerkit up --repo owner/repo --host user@host --accept-known-issues") {
+		t.Fatalf("up step must carry --accept-known-issues:\n%s", steps)
+	}
+	if cloud := strings.Join(ManualReregisterSteps("owner/repo", true), "\n"); strings.Contains(cloud, "accept-known-issues") {
+		t.Fatalf("cloud steps must not change:\n%s", cloud)
 	}
 }

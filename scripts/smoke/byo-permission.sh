@@ -17,8 +17,8 @@ trap 'rm -rf "${SMOKE_DIR}"' EXIT
 
 START_EPOCH=$(date +%s)
 
-echo "===> [smoke-byo] runnerkit up --repo ${REPO} --host ${HOST} --mode persistent --yes"
-go run ./cmd/runnerkit up --repo "${REPO}" --host "${HOST}" --mode persistent --yes
+echo "===> [smoke-byo] runnerkit up --repo ${REPO} --host ${HOST} --mode persistent --yes --accept-known-issues"
+go run ./cmd/runnerkit up --repo "${REPO}" --host "${HOST}" --mode persistent --yes --accept-known-issues
 
 # Verify the bootstrap actually landed the runner tarball and extracted
 # config.sh into the install dir on the remote host. This catches Bug 2
@@ -72,7 +72,7 @@ if [[ "${RUNNERKIT_SMOKE_MULTI_REPO:-}" == "1" ]]; then
 		exit 2
 	fi
 	echo "===> [smoke-byo] multi-repo: runnerkit register second repo ${RUNNERKIT_SMOKE_REPO2} on ${HOST}"
-	go run ./cmd/runnerkit register --repo "${RUNNERKIT_SMOKE_REPO2}" --host "${HOST}" --mode persistent --yes
+	go run ./cmd/runnerkit register --repo "${RUNNERKIT_SMOKE_REPO2}" --host "${HOST}" --mode persistent --yes --accept-known-issues
 	echo "===> [smoke-byo] multi-repo: assert list shows two repos on this host"
 	./scripts/smoke/assert-list-host-repo-count.sh 2 "${HOST}"
 	echo "===> [smoke-byo] multi-repo: doctor JSON contract for second repo"

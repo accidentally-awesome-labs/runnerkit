@@ -12,21 +12,19 @@ from the tag messages and the commits in each tag range.
 
 ## [Unreleased] — v1.3.4
 
-A harm-reduction release plus a minimal repair of the BYO setup path. It
-disables or refuses every command known to destroy a runner registration,
-orphan a billing server or show an invented price, and puts the Hetzner
-cloud path and BYO ephemeral mode behind `--experimental`.
+A harm-reduction release. It disables or refuses every command known to
+destroy a runner registration, orphan a billing server or show an invented
+price, and puts the Hetzner cloud path and BYO ephemeral mode behind
+`--experimental`.
+
+**BYO is not supported in this release.** It contains a minimal repair of
+the BYO setup path, validated only on a local password-sudo Ubuntu 24.04
+container against a **fake** GitHub API. The real-job release gate (A-20)
+was not passed, so BYO `up` and `register` refuse a BYO host unless you
+pass `--accept-known-issues` (A-21).
 
 **Release gates still open (do not tag until they are closed):**
 
-- **Real job run (A-20).** The BYO repair below was validated only on a
-  local password-sudo Ubuntu 24.04 container against a **fake** GitHub API.
-  Before tagging, a real GitHub job must run on a fresh password-sudo
-  Ubuntu 24.04 x86_64 host prepared only by this release's `install.sh`
-  (runner online, job with `gcc` and `docker run hello-world` green,
-  `id -nG runnerkit-runner` contains `docker`). Run URL: _to be added_.
-  If it does not pass, this release must instead refuse BYO `up`/`register`
-  and say "BYO is not supported in this release" (A-21).
 - **govulncheck** result for the tagged commit: _link to be added_.
 
 ### Added
@@ -34,6 +32,10 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 - `--experimental` flag on `up` and `register`. `--cloud` and BYO
   `--mode ephemeral` now require it (`experimental_required`, exit 2). The
   check runs offline, before any GitHub call.
+- `--accept-known-issues` flag on `up` and `register`. Without it, BYO
+  setup (including `--dry-run`) refuses with `byo_unsupported_release`
+  (exit 2) before any registration token or SSH connection, because BYO is
+  not supported in this release (A-21).
 - `runnerkit --version` prints `runnerkit <version>`.
 - The Hetzner cloud plan shows the price reported by the Hetzner API at plan
   time: the server type's price in the chosen location plus the primary
@@ -42,7 +44,7 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 - New refusals, all exit 2: `wrong_cleanup_command`, `cloud_state_exists`,
   `ephemeral_cloud_disabled`, `cloud_region_required`,
   `cloud_location_unpriced`, `invalid_ssh_allowed_cidr`,
-  `command_disabled`, `command_removed`.
+  `byo_unsupported_release`, `command_disabled`, `command_removed`.
 - `LICENSE` (Apache-2.0), `CONTRIBUTING.md` (DCO sign-off, no CLA),
   `SECURITY.md`, [`docs/security-posture.md`](docs/security-posture.md) and
   this changelog.
@@ -226,18 +228,19 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 
 The same list as the README "Known issues" section, word for word.
 
-- **BYO setup (the main path).** Repaired in v1.3.4 for fresh Ubuntu 24.04
-  x86_64 hosts prepared by the v1.3.4 `install.sh`. So far this was
-  validated only on a local password-sudo Ubuntu 24.04 container against a
-  fake GitHub API; a run of a real GitHub job is required before v1.3.4 is
-  tagged. If that run fails, v1.3.4 will ship with BYO marked as not
-  supported. Hosts prepared by an older `install.sh` must re-run the new
-  one. The sudoers fragment `install.sh` installs is **root-equivalent**;
-  see [docs/security-posture.md](docs/security-posture.md).
+- **BYO setup (the main path).** BYO is not supported in this release.
+  v1.3.4 contains a repair of the setup path, but it was validated only on
+  a local password-sudo Ubuntu 24.04 container against a fake GitHub API,
+  not with a real GitHub job. `runnerkit up` and `register` refuse a BYO
+  host (`byo_unsupported_release`) unless you pass `--accept-known-issues`.
+  Hosts prepared by an older `install.sh` must re-run the new one. The
+  sudoers fragment `install.sh` installs is **root-equivalent**; see
+  [docs/security-posture.md](docs/security-posture.md).
 - **Docker.** The runner user (`runnerkit-runner`) is in the `docker` group,
   which is **root-equivalent** for every job on the host. Existing hosts get
   the group on their next `runnerkit up --repo owner/name --host user@host
-  --replace` (or type `replace owner/name` when prompted).
+  --replace --accept-known-issues` (or type `replace owner/name` when
+  prompted).
 - **Job sudo.** Workflow steps that run `sudo apt-get` need
   `RUNNERKIT_GRANT_CI_SUDO=1` when you run `install.sh`. That grant is also
   root-equivalent.
