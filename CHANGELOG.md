@@ -4,9 +4,11 @@ All notable changes to RunnerKit are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-Releases before v1.3.4 were described in `RELEASE-NOTES-v*.md` files, which
-are in each release tag (for example
+Most releases before v1.3.4 were described in `RELEASE-NOTES-v*.md` files,
+which are in the release tag (for example
 `git show v1.3.3:RELEASE-NOTES-v1.3.3.md`); they are summarized below.
+v1.3.0 to v1.3.2 have no release notes: their sections are reconstructed
+from the tag messages and the commits in each tag range.
 
 ## [Unreleased] — v1.3.4
 
@@ -44,6 +46,11 @@ cloud path and BYO ephemeral mode behind `--experimental`.
 - `LICENSE` (Apache-2.0), `CONTRIBUTING.md` (DCO sign-off, no CLA),
   `SECURITY.md`, [`docs/security-posture.md`](docs/security-posture.md) and
   this changelog.
+- GitHub issue forms (`.github/ISSUE_TEMPLATE/`) for bug reports and
+  feature requests. Blank issues are turned off; security reports go to
+  private vulnerability reporting (as `SECURITY.md` says) and questions to
+  GitHub Discussions. The feature request form states the scope rule from
+  `CONTRIBUTING.md` and asks who else needs the feature.
 - Makefile targets `generate`, `generate-check` and `vulncheck`.
 
 ### Changed
@@ -313,10 +320,92 @@ wrong.**
   `next_actions` and `host_incident_hints` (arrays, never `null`). The existing `ok`, `error` and `redactions_applied` fields are
   unchanged.
 
-## [1.3.0] – [1.3.2]
+## [1.3.2] - 2026-05-13
 
-Not recorded. These releases have no release notes; they will be
-reconstructed from the tags later.
+### Fixed
+
+- The baseline package list drops `p7zip-rar` (it needs the multiverse
+  component), `sphinxsearch` and `ftp`, and installs `netcat-openbsd`
+  instead of `netcat`; it now has 70 packages. Cloud-init on
+  RunnerKit-created Hetzner VMs writes apt sources with the `universe`
+  component, and BYO `fix_dependencies` runs
+  `add-apt-repository -y universe` (errors ignored) before
+  `apt-get update`.
+- Cloud readiness was meant to accept cloud-init's "recoverable error"
+  (exit code 2, for example when one package in the cloud-init list
+  cannot be installed). **This never worked:** the wait script runs under
+  `set -e`, so it stops at the non-zero exit before the check, and `up`
+  retries until the 15-minute timeout, then fails. Still true in v1.3.4
+  (see Known issues above).
+
+## [1.3.1] - 2026-05-13
+
+### Added
+
+- `fix_dependencies` always installs a baseline of 73 apt packages from
+  the GitHub-hosted Ubuntu 24.04 image (for example `build-essential`,
+  `pkg-config`, `gcc`, `make`, `curl`, `jq`), so compiled-language jobs
+  find `cc`. On cloud VMs, cloud-init installs them at first boot
+  instead. Outside the Debian family, setup now fails because it installs
+  these Ubuntu package names (still true in v1.3.4).
+- On Ubuntu, Debian and Linux Mint hosts, BYO and cloud setup run a new
+  `setup_runner_image` step after `fix_dependencies`: Node.js 20, Python
+  pip and venv, the latest Go, Rust (rustup, for the runner user),
+  OpenJDK 17, .NET 8 SDK, Docker CE with buildx and compose, Google
+  Chrome, ChromeDriver, Firefox, Geckodriver, GitHub CLI, CMake, Ninja
+  and zstd. It adds third-party apt sources and adds the runner user to
+  the `docker` group (root-equivalent). A marker,
+  `/var/lib/runnerkit/image-setup.json`, makes later runs skip the step.
+  `upgrade-runner` also runs the baseline install and this step (that
+  command is disabled in v1.3.4).
+  Known problems, fixed in v1.3.4: the step ran before
+  `create_runner_user`, so on a new host the runner user silently got
+  neither the `docker` group nor Rust, and the marker stopped later runs
+  from retrying; the `--dry-run` plan did not list the step; a failed
+  Geckodriver version lookup aborted it. It installs amd64 builds, so
+  setup fails on arm64 hosts (v1.3.4 adds a preflight warning).
+
+### Changed
+
+- Cloud readiness waits up to 15 minutes for cloud-init (was 10), and new
+  VMs record `runnerkit-cloud-init-v3`.
+
+### Security
+
+- `RenderSudoersEntry`, the installer sudoers list, gains `tee`, `gpg`,
+  `mkdir`, `unzip`, `usermod`, `dpkg` and `add-apt-repository`, with any
+  arguments; like the rest of the list they are root-equivalent. Only
+  cloud-init used that list: `install.sh` kept its old one, so
+  `setup_runner_image` fails on BYO hosts that rely on the `install.sh`
+  fragment (fixed in v1.3.4; see the v1.3.3 erratum).
+
+## [1.3.0] - 2026-05-13
+
+### Added
+
+- `up --extra-packages "pkg1,pkg2"` installs extra OS packages on the
+  runner host: through cloud-init on RunnerKit-created Hetzner VMs, and
+  in the `fix_dependencies` step on BYO hosts. Only letters, digits, `-`,
+  `.`, `_`, `:` and `+` are accepted; other names are dropped without a
+  warning. The list is saved in state (`extra_packages`) for
+  `upgrade-runner` to re-install (that command is disabled in v1.3.4).
+  The docs also described a `defaults.extra_packages` setting in
+  `.runnerkit/config.yaml`, which RunnerKit never read.
+- Workflow package auto-detection: `up` and `register` scan
+  `.github/workflows/*.yml` and `*.yaml` in the current directory for
+  `apt-get install` and `apt install` lines, add the package names to the
+  extra packages and print `Auto-detected N workflow package(s): …` on
+  stderr (not with `--json`). It cannot be turned off, and an unusual
+  line (for example one with a trailing `# comment`) can yield wrong
+  package names (still true in v1.3.4; see Known issues above).
+
+### Changed
+
+- Interactive `up` without `--host`, `--cloud` or `--mode` asks two
+  questions, where the runner runs (BYO or Cloud) and then persistent or
+  ephemeral, instead of one three-way choice; a persistent cloud runner
+  can now be picked there. The first-run wizard's cloud hint suggests
+  `runnerkit up --repo owner/name`.
 
 ## [1.2.2] - 2026-05-12
 

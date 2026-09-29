@@ -1,0 +1,73 @@
+name: Feature request
+description: >-
+  A problem RunnerKit does not solve yet. Read the scope rule in
+  CONTRIBUTING.md first.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Scope rule.** RunnerKit is experimental and maintained on a
+        capped-hours basis. Under the
+        [scope rule in CONTRIBUTING.md](https://github.com/accidentally-awesome-labs/runnerkit/blob/main/CONTRIBUTING.md#scope-rule),
+        no new feature is built without **2 distinct external requests**:
+        two different people, not the maintainer, asking for it in an issue
+        or Discussion. The only exemption is the Stage 1 validation work
+        (W1 `runnerkit-watch`, W2 `runnerkit checkup`, W3 runner hygiene
+        recipes). Bug fixes, security fixes and documentation corrections
+        do not need requests: use the bug report form for bugs and
+        documentation errors, and report security problems privately as
+        [SECURITY.md](https://github.com/accidentally-awesome-labs/runnerkit/blob/main/SECURITY.md)
+        describes, not in an issue.
+  - type: markdown
+    attributes:
+      value: >-
+        [CONTRIBUTING.md](https://github.com/accidentally-awesome-labs/runnerkit/blob/main/CONTRIBUTING.md#scope-rule)
+        also lists what the project is not doing unless the evidence
+        changes, for example arm64, non-Ubuntu, macOS or Windows runner
+        hosts, autoscaling, new installer sudoers entries and default-on
+        telemetry.
+  - type: markdown
+    attributes:
+      value: >-
+        Describe the problem you have, not the solution you have in mind.
+        That makes it easier to see whether other people have the same
+        problem.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What are you trying to do, and what gets in the way? Describe the
+        problem, not a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you handle it today
+      description: >-
+        Your current workaround, another tool you use for it, or what
+        happens when you do nothing.
+    validations:
+      required: true
+  - type: textarea
+    id: who-else
+    attributes:
+      label: Who else needs this?
+      description: >-
+        Links to other issues, Discussions or threads where other people
+        (not you) ask for the same thing. The scope rule counts requests
+        from different people, so these links show whether it is met. If
+        you know of none, write "none yet".
+    validations:
+      required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else
+      description: >-
+        Your setup (runner host, number of repositories), constraints, or
+        other context.
+    validations:
+      required: false
